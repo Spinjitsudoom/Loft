@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import shutil
+import tempfile
 from pathlib import Path
 
 from PIL import Image
@@ -202,9 +203,15 @@ def render_page(cfg: Config, file_id: int, index: int, width: int) -> Path:
             f = (MAX_PIXELS / (image.width * image.height)) ** 0.5
             image = image.resize((int(image.width * f), int(image.height * f)), Image.Resampling.LANCZOS)
 
-    tmp = target.with_suffix(f".{os.getpid()}.tmp")
-    image.convert("RGB").save(tmp, "JPEG", quality=JPEG_QUALITY)
-    os.replace(tmp, target)  # two readers rendering the same page never see half a file
+    # A temp file of its own per render: two requests for the same page never share one.
+    fd, tmp = tempfile.mkstemp(dir=folder, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            image.convert("RGB").save(f, "JPEG", quality=JPEG_QUALITY)
+        os.replace(tmp, target)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
     return target
 
 

@@ -159,3 +159,11 @@ def test_sign_out_everywhere_keeps_this_device(client):
     assert client.get("/api/me").status_code == 200
     client.cookies.clear()
     assert client.get("/api/me", headers={"Authorization": f"Bearer {old}"}).status_code == 401
+
+
+def test_progress_rejects_infinite_time(client):
+    bid, fid = book_id(client, "Three Pages"), first_file(client, "Three Pages")
+    r = client.put(f"/api/books/{bid}/progress", content=b'{"file_id": %d, "page": 1, "pages": 3, "at": 1e999}' % fid,
+                   headers={"Content-Type": "application/json"})
+    assert r.status_code in (400, 422)
+    assert client.get(f"/api/books/{bid}").status_code == 200

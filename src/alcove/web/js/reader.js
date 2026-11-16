@@ -10,6 +10,13 @@ const READABLE = new Set(["pdf", "cbz", "cbr", "cb7"]);
 const NEAR = 4;
 const SAVE_AFTER = 1500;
 
+function retryOnce() {
+  if (this.dataset.retried) return;
+  this.dataset.retried = "1";
+  const url = this.getAttribute("src");
+  setTimeout(() => { if (this.getAttribute("src") === url) this.src = `${url}&retry=1`; }, 1500);
+}
+
 const snap = (px) => WIDTHS.find((w) => w >= px) || WIDTHS[WIDTHS.length - 1];
 
 function commonRatio(sizes) {
@@ -32,12 +39,16 @@ function unreadableCard(app, book, message) {
     </div></div></main>`;
 }
 
-export async function renderReader(app, bookId, params) {
+export async function renderReader(app, bookId, params, isCurrent = () => true) {
+  app.innerHTML = `<div class="reader" data-theme="dark"><p class="reader-loading">Opening the book…</p></div>`;
+  const stale = () => !isCurrent();
   const book = await api(`/books/${bookId}`);
+  if (stale()) return () => {};
   const wanted = Number(params.get("file")) || (book.progress && book.progress.file_id);
   const file = book.files.find((f) => f.id === wanted && READABLE.has(f.format))
     || book.files.find((f) => READABLE.has(f.format));
   if (!file) {
+    if (stale()) return () => {};
     unreadableCard(app, book, "This kind of book can’t be read here yet; download it instead.");
     return () => {};
   }
@@ -45,10 +56,11 @@ export async function renderReader(app, bookId, params) {
   try {
     manifest = await api(`/files/${file.id}/manifest`);
   } catch (e) {
-    unreadableCard(app, book, e.message);
+    if (!stale()) unreadableCard(app, book, e.message);
     return () => {};
   }
   const prefs = await loadPrefs();
+  if (stale()) return () => {};
   const r = new Reader(app, book, file, manifest, prefs.reading);
   const fromLink = params.get("page");
   const saved = book.progress && book.progress.file_id === file.id ? book.progress.page : 0;
@@ -70,6 +82,10 @@ class Reader {
     this.bookmarks = [];
     this.saveTimer = null;
     this.listeners = [];
+    this.dirty = false;   // read past a page since the last save
+    this.pageAt = 0;      // when that happened (seconds)
+    this.quiet = false;   // moving the book ourselves (opening it), not the reader turning pages
+    this.zoomView = null;
   }
 
   src(i, cssWidth) {
@@ -109,6 +125,7 @@ class Reader {
   }
 
   close() {
+    if (this.zoomView) { this.zoomView.close(true); this.zoomView = null; }
     this.saveNow(true);
     clearTimeout(this.saveTimer);
     clearTimeout(this.hideTimer);
@@ -169,7 +186,7 @@ class Reader {
       for (const e of entries) {
         if (!e.isIntersecting) continue;
         const img = e.target.querySelector("img");
-        if (!img.getAttribute("src")) img.src = this.src(Number(e.target.dataset.i), width());
+        if (!img.getAttribute("src")) { img.onerror = retryOnce; img.src = this.src(Number(e.target.dataset.i), width()); }
       }
     }, { root: col, rootMargin: "150% 0px" });
     const current = new IntersectionObserver((entries) => {
@@ -194,7 +211,11 @@ class Reader {
     if (!w) return; // the book isn't laid out yet; "init" calls back
     for (let j = Math.max(0, i - NEAR); j <= Math.min(this.count - 1, i + NEAR + 1); j++) {
       const want = this.src(j, w);
-      if (imgs[j] && imgs[j].getAttribute("src") !== want) imgs[j].src = want;
+      if (imgs[j] && imgs[j].dataset.want !== want) {
+        imgs[j].dataset.want = want;
+        imgs[j].onerror = retryOnce;
+        imgs[j].src = want;
+      }
     }
   }
 
@@ -202,12 +223,21 @@ class Reader {
 
   goTo(i, save = true) {
     i = Math.max(0, Math.min(this.count - 1, i));
-    if (this.flip) this.flip.turnToPage(i);
-    else if (this.scroller) {
-      const el = this.scroller.querySelector(`[data-i="${i}"]`);
-      if (el) this.scroller.scrollTop = el.offsetTop - 16;
+    this.quiet = !save;  // turnToPage fires "flip" straight away; that isn't the reader turning a page
+    try {
+      if (this.flip) this.flip.turnToPage(i);
+      else if (this.scroller) {
+        const el = this.scroller.querySelector(`[data-i="${i}"]`);
+        if (el) this.scroller.scrollTop = el.offsetTop - 16;
+      }
+    } finally {
+      this.quiet = false;
     }
     this.onPage(i, save);
+    if (!save && this.scroller) {  // scrolling to the saved page fires the observer too
+      this.quiet = true;
+      setTimeout(() => { this.quiet = false; }, 400);
+    }
   }
 
   step(dir) {
@@ -230,7 +260,9 @@ class Reader {
     if (document.activeElement !== scrubber) scrubber.value = i;
     this.root.querySelector(".reader-where").textContent = `Page ${i + 1} of ${this.count}`;
     this.markBookmarkButton();
-    if (save) {
+    if (save && !this.quiet) {
+      this.dirty = true;
+      this.pageAt = Date.now() / 1000;
       clearTimeout(this.saveTimer);
       this.saveTimer = setTimeout(() => this.saveNow(), SAVE_AFTER);
     }
@@ -238,11 +270,15 @@ class Reader {
 
   saveNow(leaving = false) {
     clearTimeout(this.saveTimer);
-    const body = JSON.stringify({ file_id: this.file.id, page: this.page, pages: this.count, at: Date.now() / 1000 });
+    if (!this.dirty) return;  // nothing read since the last save: never overwrite another device's place
+    this.dirty = false;
+    // The last page in view, so reaching the final spread of a two-page book counts as finished.
+    const page = Math.max(...this.visiblePages());
+    const body = JSON.stringify({ file_id: this.file.id, page, pages: this.count, at: this.pageAt });
     fetch(`/api/books/${this.book.id}/progress`, {
       method: "PUT", body, keepalive: leaving, credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-    }).catch(() => {});
+    }).then((r) => { if (!r.ok) this.dirty = true; }).catch(() => { this.dirty = true; });
   }
 
   // ---------- taps, keys, gestures ----------
@@ -266,7 +302,12 @@ class Reader {
       }
       if (this.reading.mode === "scroll") return;
       const forward = (x >= 0.7) !== this.reading.left_handed;
-      this.step(forward ? 1 : -1);
+      if (e.pointerType === "mouse" && this.flip) {
+        // StPageFlip turns the page itself when a corner is clicked (its mouseup comes after ours).
+        setTimeout(() => { if (this.flip && this.flip.getState() === "read") this.step(forward ? 1 : -1); }, 0);
+      } else {
+        this.step(forward ? 1 : -1);
+      }
     });
     this.on(this.stage, "touchstart", (e) => { if (e.touches.length === 2) { e.preventDefault(); this.zoom(); } }, { passive: false });
     this.on(this.stage, "wheel", (e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); this.zoom(); } }, { passive: false });
@@ -304,10 +345,11 @@ class Reader {
   }
 
   zoom() {
-    openZoom({
+    if (this.zoomView) return;
+    this.zoomView = openZoom({
       src: (i) => `/api/files/${this.file.id}/pages/${i}?w=2400&v=${this.m.version}`,
       index: this.page, count: this.count,
-      onClose: (i) => { if (i !== this.page) this.goTo(i); },
+      onClose: (i) => { this.zoomView = null; if (i !== this.page) this.goTo(i); },
     });
   }
 
@@ -348,7 +390,7 @@ class Reader {
   visiblePages() {
     if (this.flip && this.flip.getOrientation() === "landscape" && this.page > 0) {
       const left = this.page % 2 === 1 ? this.page : this.page - 1;
-      return [left, left + 1];
+      return [left, left + 1].filter((p) => p < this.count);
     }
     return [this.page];
   }

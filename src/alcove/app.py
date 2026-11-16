@@ -7,9 +7,10 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from . import auth, library, pages, reading, settings
 from .auth import User, admin_user, current_user
@@ -32,6 +33,7 @@ class PasswordChange(BaseModel):
 
 
 class ProgressIn(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
     file_id: int
     page: int
     pages: int
@@ -69,6 +71,12 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     app = FastAPI(title="Alcove", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.cfg = cfg
     app.state.scanner = scanner
+
+    @app.exception_handler(RequestValidationError)
+    def invalid_request(request: Request, e: RequestValidationError):
+        # Name the fields, but never echo the values back (they may not even be valid JSON, like infinity).
+        fields = sorted({".".join(str(p) for p in err.get("loc", ())[1:]) or "body" for err in e.errors()})
+        return JSONResponse({"detail": f"Some of what was sent isn’t valid: {', '.join(fields)}"}, status_code=422)
 
     @app.exception_handler(pages.Unreadable)
     def unreadable(request: Request, e: pages.Unreadable):

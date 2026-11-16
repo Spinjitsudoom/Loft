@@ -442,3 +442,4 @@ body.no-cover-titles .shelf-title, body.no-cover-titles .shelf-author { display:
   background: var(--raised); border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; font-size: 14px;
   opacity: 0; transition: opacity .2s; pointer-events: none; }
 .saved-note.show { opacity: 1; }
+.reader-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--r-muted); font: italic 17px var(--serif); }

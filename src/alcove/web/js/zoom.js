@@ -56,11 +56,12 @@ export function openZoom({ src, index, count, onClose }) {
     img.onload = () => { if (top) { x = 0; y = 0; } else { const { w, h, vw, vh } = fit(); x = (vw - w * scale) / 2; y = (vh - h * scale) / 2; } draw(); };
     img.src = src(page);
   };
-  function close() {
+  function close(silent = false) {
+    if (!layer.isConnected) return;
     layer.remove();
     removeEventListener("keydown", onKey, true);
     removeEventListener("resize", draw);
-    onClose(page);
+    if (silent !== true) onClose(page);
   }
 
   const pointers = new Map();
@@ -97,7 +98,7 @@ export function openZoom({ src, index, count, onClose }) {
   }, { passive: false });
   layer.addEventListener("dblclick", (e) => (scale > 1.5 ? close() : zoomAt(2.5, e.clientX, e.clientY)));
 
-  layer.querySelector("[data-close]").addEventListener("click", close);
+  layer.querySelector("[data-close]").addEventListener("click", () => close());
   layer.querySelector("[data-prev]").addEventListener("click", () => show(page - 1, true));
   layer.querySelector("[data-next]").addEventListener("click", () => show(page + 1, true));
   layer.querySelector("[data-in]").addEventListener("click", () => zoomAt(scale * 1.4, innerWidth / 2, innerHeight / 2));
@@ -114,4 +115,5 @@ export function openZoom({ src, index, count, onClose }) {
   addEventListener("resize", draw);
   show(page);
   layer.querySelector("[data-close]").focus();
+  return { close };
 }

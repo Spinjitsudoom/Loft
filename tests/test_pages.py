@@ -172,3 +172,33 @@ def test_toc_points_at_split_pages(cfg):
     m = pages.manifest(cfg, file_id(cfg, "Scanned.pdf"))
     assert m["count"] == 5
     assert [t["page"] for t in m["toc"]] == [0, 1, 3]
+
+
+def test_same_page_rendered_at_once(lib, monkeypatch):
+    """The zoom view and a prefetch (or two readers) asking for one page together both get it."""
+    import threading
+    real_replace = os.replace
+
+    def slow_replace(a, b):  # widen the window between writing a page and moving it into place
+        time.sleep(0.05)
+        real_replace(a, b)
+
+    monkeypatch.setattr(pages.os, "replace", slow_replace)
+    fid = file_id(lib, "Book.pdf")
+    pages.manifest(lib, fid)
+    errors, done = [], []
+
+    def go():
+        try:
+            done.append(pages.render_page(lib, fid, 0, 2400))
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+    for _ in range(4):
+        for p in lib.page_dir.rglob("0-2400.jpg"):
+            p.unlink()
+        threads = [threading.Thread(target=go) for _ in range(4)]
+        [t.start() for t in threads]
+        [t.join() for t in threads]
+    assert errors == [] and len(done) == 16
+    assert Image.open(done[0]).width == 2400

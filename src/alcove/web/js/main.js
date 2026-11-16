@@ -60,7 +60,7 @@ async function route() {
 
   if (page === "read" && arg) {
     try {
-      const done = await renderReader(app, Number(arg), params);
+      const done = await renderReader(app, Number(arg), params, () => token === renderToken);
       if (token === renderToken) cleanup = done; else done();
     } catch (e) {
       if (e.status !== 401) app.innerHTML = `<main class="reader-message"><div><p>${esc(e.message)}</p><a class="btn" href="#/">Back to the library</a></div></main>`;

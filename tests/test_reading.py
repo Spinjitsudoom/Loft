@@ -103,3 +103,21 @@ def test_get_book_has_your_progress(cfg, sam, add):
     reading.save_progress(cfg, sam.id, b, file_id=fid(cfg, b), page=7, pages=10)
     assert library.get_book(cfg, b, sam)["progress"]["page"] == 7
     assert library.get_book(cfg, b)["progress"] is None
+
+
+def test_future_timestamps_are_clamped(cfg, sam, add):
+    """A device whose clock runs ahead mustn't lock out every other device's saves."""
+    import time
+    b = add("It")
+    far = time.time() + 10 * 365 * 24 * 3600
+    stored = reading.save_progress(cfg, sam.id, b, file_id=fid(cfg, b), page=10, pages=100, at=far)
+    assert stored["updated_at"] <= time.time() + 61
+    assert reading.save_progress(cfg, sam.id, b, file_id=fid(cfg, b), page=20, pages=100,
+                                 at=time.time() + 120)["page"] == 20
+
+
+def test_non_finite_timestamps_refused(cfg, sam, add):
+    b = add("It")
+    for bad in (float("inf"), float("nan")):
+        with pytest.raises(ValueError):
+            reading.save_progress(cfg, sam.id, b, file_id=fid(cfg, b), page=1, pages=10, at=bad)

@@ -6,11 +6,13 @@ back online) never moves someone back past where they've read on another device.
 
 from __future__ import annotations
 
+import math
 import time
 
 from .config import Config
 from .db import session
 
+CLOCK_SLACK = 60  # seconds a device's clock may run ahead of the server's
 PROGRESS_FIELDS = ("file_id", "page", "pages", "position", "finished", "updated_at")
 
 
@@ -27,7 +29,11 @@ def get_progress(cfg: Config, user_id: int, book_id: int) -> dict | None:
 
 def save_progress(cfg: Config, user_id: int, book_id: int, *, file_id: int, page: int, pages: int,
                   at: float | None = None) -> dict:
-    at = time.time() if at is None else float(at)
+    now = time.time()
+    at = now if at is None else float(at)
+    if not math.isfinite(at):
+        raise ValueError("The reading time must be a real time")
+    at = min(at, now + CLOCK_SLACK)  # a device whose clock runs ahead can't lock out the others
     pages = max(1, int(pages))
     page = min(max(0, int(page)), pages - 1)
     position = min(1.0, max(0.0, page / max(1, pages - 1)))
