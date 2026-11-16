@@ -45,12 +45,53 @@ def _file(cfg: Config, file_id: int):
     return row
 
 
-def _pdf_manifest(path: Path) -> tuple[list[list[float]], list[dict]]:
+SPREAD_MIN_RATIO = 1.15          # wider than this is a two-page scan...
+HALF_RATIOS = (0.5, 0.9)         # ...if each half is page-shaped
+TEXT_CHARS = 20                  # a PDF page with real text isn't a scan
+
+
+def _is_spread(w: float, h: float) -> bool:
+    return w / h > SPREAD_MIN_RATIO and HALF_RATIOS[0] <= (w / 2) / h <= HALF_RATIOS[1]
+
+
+def split_plan(sizes: list[list[float]], scanned: bool = True) -> list[tuple[int, int | None]]:
+    """Which source page (and which half of it) each reader page shows.
+
+    Scanned comics often hold two printed pages per image. When at least half of a book's pages
+    are such spreads (and they're scans, not text), each one becomes a left and a right page, so
+    the pages turn one at a time like the printed book. Single pages (a cover) stay whole."""
+    spreads = [_is_spread(w, h) for w, h in sizes]
+    if not scanned or sum(spreads) * 2 < len(sizes):
+        return [(i, None) for i in range(len(sizes))]
+    plan: list[tuple[int, int | None]] = []
+    for i, is_spread in enumerate(spreads):
+        plan.extend([(i, 0), (i, 1)] if is_spread else [(i, None)])
+    return plan
+
+
+def _pdf_is_scanned(doc, sizes: list[list[float]]) -> bool:
+    """Look at the first wide page: scans have no text layer."""
+    i = next((i for i, (w, h) in enumerate(sizes) if _is_spread(w, h)), None)
+    if i is None:
+        return False
+    page = doc[i]
+    try:
+        text = page.get_textpage()
+        try:
+            return text.count_chars() < TEXT_CHARS
+        finally:
+            text.close()
+    finally:
+        page.close()
+
+
+def _pdf_manifest(path: Path) -> tuple[list[list[float]], list[dict], bool]:
     import pypdfium2 as pdfium
 
     try:
         with open_pdf(path) as doc:
             sizes = [[round(w), round(h)] for w, h in (doc.get_page_size(i) for i in range(len(doc)))]
+            scanned = _pdf_is_scanned(doc, sizes)
             toc = []
             for b in doc.get_toc():
                 dest = b.get_dest()
@@ -62,7 +103,7 @@ def _pdf_manifest(path: Path) -> tuple[list[list[float]], list[dict]]:
         raise Unreadable("protected" if "password" in str(e).lower() else "damaged") from e
     if not sizes:
         raise Unreadable("damaged")
-    return sizes, toc
+    return sizes, toc, scanned
 
 
 def _comic_manifest(path: Path) -> list[list[int]]:
@@ -88,18 +129,31 @@ def manifest(cfg: Config, file_id: int) -> dict:
     if row is None or row["mtime"] != f["mtime"]:
         path = Path(f["path"])
         if f["format"] == "pdf":
-            sizes, toc = _pdf_manifest(path)
+            source, toc, scanned = _pdf_manifest(path)
         else:
-            sizes, toc = _comic_manifest(path), []
+            source, toc, scanned = _comic_manifest(path), [], True
+        plan = split_plan(source, scanned)
+        first = {}
+        for n, (src, _) in enumerate(plan):
+            first.setdefault(src, n)
+        toc = [{**t, "page": first[t["page"]]} for t in toc]
+        sizes = [[source[src][0] / 2, source[src][1]] if half is not None else source[src] for src, half in plan]
+        sizes = [[round(w), round(h)] for w, h in sizes]
         with session(cfg.db_path) as con:
             con.execute("INSERT INTO page_info(file_id, mtime, count, sizes, toc) VALUES (?, ?, ?, ?, ?) "
                         "ON CONFLICT(file_id) DO UPDATE SET mtime = excluded.mtime, count = excluded.count, "
                         "sizes = excluded.sizes, toc = excluded.toc",
-                        (file_id, f["mtime"], len(sizes), json.dumps(sizes), json.dumps(toc)))
+                        (file_id, f["mtime"], len(sizes), json.dumps({"pages": sizes, "plan": plan, "source": source}),
+                         json.dumps(toc)))
     else:
-        sizes, toc = json.loads(row["sizes"]), json.loads(row["toc"])
+        stored = json.loads(row["sizes"])
+        if isinstance(stored, list):  # stored before pages could be split: work it out again
+            with session(cfg.db_path) as con:
+                con.execute("DELETE FROM page_info WHERE file_id = ?", (file_id,))
+            return manifest(cfg, file_id)
+        sizes, plan, source, toc = stored["pages"], stored["plan"], stored["source"], json.loads(row["toc"])
     return {"file_id": file_id, "format": f["format"], "count": len(sizes), "sizes": sizes, "toc": toc,
-            "version": int(f["mtime"])}
+            "version": int(f["mtime"]), "plan": [list(p) for p in plan], "source": source}
 
 
 def snap_width(width: int) -> int:
@@ -112,7 +166,7 @@ def render_page(cfg: Config, file_id: int, index: int, width: int) -> Path:
     if not 0 <= index < m["count"]:
         raise IndexError(index)
     w = snap_width(width)
-    folder = cfg.page_dir / f"{file_id}-{m['version']}"
+    folder = cfg.page_dir / f"{file_id}-{m['version']}-{m['count']}"  # count changes when pages are split
     target = folder / f"{index}-{w}.jpg"
     if target.is_file():
         return target
@@ -123,19 +177,25 @@ def render_page(cfg: Config, file_id: int, index: int, width: int) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
 
     path = Path(_file(cfg, file_id)["path"])
-    page_w, page_h = m["sizes"][index]
+    src, half = m["plan"][index]
+    page_w, page_h = m["source"][src]
+    full_w = w * 2 if half is not None else w  # a half page is rendered from a source twice as wide
     if m["format"] == "pdf":
-        scale = w / page_w
-        if (page_w * scale) * (page_h * scale) > MAX_PIXELS:
-            scale = (MAX_PIXELS / (page_w * page_h)) ** 0.5
+        scale = full_w / page_w
+        if (page_w * scale) * (page_h * scale) > MAX_PIXELS * (2 if half is not None else 1):
+            scale = (MAX_PIXELS * (2 if half is not None else 1) / (page_w * page_h)) ** 0.5
         with open_pdf(path) as doc:
-            page = doc[index]
+            page = doc[src]
             image = page.render(scale=scale).to_pil()
             page.close()
     else:
-        name = comics.page_names(path)[index]
+        name = comics.page_names(path)[src]
         image = Image.open(io.BytesIO(comics.read_member(path, name)))
         image.load()
+    if half is not None:
+        mid = image.width // 2
+        image = image.crop((0, 0, mid, image.height) if half == 0 else (mid, 0, image.width, image.height))
+    if m["format"] != "pdf":
         if image.width > w:
             image = image.resize((w, max(1, round(image.height * w / image.width))), Image.Resampling.LANCZOS)
         if image.width * image.height > MAX_PIXELS:

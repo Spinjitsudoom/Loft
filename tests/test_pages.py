@@ -112,3 +112,63 @@ def test_prune(lib):
     lib.page_cache_mb = 0
     pages.prune_page_cache(lib)
     assert not any(p.is_file() for p in lib.page_dir.rglob("*"))
+
+
+def spread_png(size=(160, 120)):
+    """A two-page scan: left half red, right half blue."""
+    img = Image.new("RGB", size, (200, 30, 30))
+    img.paste((30, 30, 200), (size[0] // 2, 0, size[0], size[1]))
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    return buf.getvalue()
+
+
+def test_scanned_spreads_are_split(cfg):
+    import zipfile
+    from conftest import png
+    root = cfg.books_dirs[0]
+    with zipfile.ZipFile(root / "Spreads.cbz", "w") as z:
+        z.writestr("01.png", png((90, 90, 90), (80, 120)))  # the cover, a single page
+        z.writestr("02.png", spread_png())
+        z.writestr("03.png", spread_png())
+    scan(cfg)
+    fid = file_id(cfg, "Spreads.cbz")
+    m = pages.manifest(cfg, fid)
+    assert m["count"] == 5
+    assert m["sizes"] == [[80, 120], [80, 120], [80, 120], [80, 120], [80, 120]]
+    left = Image.open(pages.render_page(cfg, fid, 1, 600)).convert("RGB")
+    right = Image.open(pages.render_page(cfg, fid, 2, 600)).convert("RGB")
+    assert left.size == (80, 120)
+    assert left.getpixel((40, 60))[0] > 150 and right.getpixel((40, 60))[2] > 150
+
+
+def test_text_pdf_in_landscape_is_not_split(cfg):
+    """Slides and landscape documents have real text: they stay whole."""
+    from pypdf import PdfWriter
+    from pypdf.generic import ContentStream, DecodedStreamObject, NameObject
+    root = cfg.books_dirs[0]
+    w = PdfWriter()
+    for _ in range(3):
+        page = w.add_blank_page(width=800, height=600)
+        font = w._add_object(__import__("pypdf").generic.DictionaryObject({
+            NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica")}))
+        page[NameObject("/Resources")] = __import__("pypdf").generic.DictionaryObject({
+            NameObject("/Font"): __import__("pypdf").generic.DictionaryObject({NameObject("/F1"): font})})
+        stream = DecodedStreamObject()
+        stream.set_data(b"BT /F1 24 Tf 72 500 Td (A slide with plenty of real words on it) Tj ET")
+        page[NameObject("/Contents")] = w._add_object(stream)
+    with (root / "Slides.pdf").open("wb") as f:
+        w.write(f)
+    scan(cfg)
+    m = pages.manifest(cfg, file_id(cfg, "Slides.pdf"))
+    assert m["count"] == 3 and m["sizes"][0] == [800, 600]
+
+
+def test_toc_points_at_split_pages(cfg):
+    """A scanned PDF (no text) of a cover plus two-page spreads: chapters land on the split pages."""
+    outline_pdf(cfg.books_dirs[0] / "Scanned.pdf", sizes=((300, 450), (800, 560), (800, 560)))
+    scan(cfg)
+    m = pages.manifest(cfg, file_id(cfg, "Scanned.pdf"))
+    assert m["count"] == 5
+    assert [t["page"] for t in m["toc"]] == [0, 1, 3]

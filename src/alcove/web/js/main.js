@@ -5,6 +5,7 @@ import { renderHome } from "./home.js";
 import { renderGrid } from "./grid.js";
 import { renderBook } from "./book.js";
 import { renderAdmin } from "./admin.js";
+import { renderReader } from "./reader.js";
 
 const app = document.getElementById("app");
 export const state = { me: null };
@@ -30,11 +31,13 @@ function parse() {
 }
 
 let renderToken = 0;
+let cleanup = null;
 
 async function route() {
   const token = ++renderToken;
   const { parts, params } = parse();
   const [page, arg] = parts;
+  if (cleanup) { cleanup(); cleanup = null; }
 
   if (page === "login" || page === "setup") {
     return renderLogin(app, page === "setup");
@@ -50,6 +53,16 @@ async function route() {
     }
   }
   if (token !== renderToken) return;
+
+  if (page === "read" && arg) {
+    try {
+      const done = await renderReader(app, Number(arg), params);
+      if (token === renderToken) cleanup = done; else done();
+    } catch (e) {
+      if (e.status !== 401) app.innerHTML = `<main class="reader-message"><div><p>${esc(e.message)}</p><a class="btn" href="#/">Back to the library</a></div></main>`;
+    }
+    return;
+  }
 
   const query = page === "search" ? params.get("q") || "" : "";
   app.innerHTML = `${topbar(query)}<main id="main" tabindex="-1"></main>`;
