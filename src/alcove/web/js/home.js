@@ -2,10 +2,19 @@
 import { api, authorLine, esc, icon, seriesLine } from "./api.js";
 import { coverHTML } from "./cover.js";
 
+const READABLE = new Set(["pdf", "cbz", "cbr", "cb7"]);
+export const canRead = (book) => (book.files || []).some((f) => READABLE.has(f.format));
+
+function progressBar(p) {
+  return p ? `<span class="cover-progress" aria-label="${Math.round(p.position * 100)}% read"><i style="width:${(p.position * 100).toFixed(1)}%"></i></span>` : "";
+}
+
 export function shelfItem(book) {
+  const href = book.progress ? `#/read/${book.id}` : `#/book/${book.id}`;
   return `<li class="shelf-item">
-    <a href="#/book/${book.id}" class="shelf-link">
+    <a href="${href}" class="shelf-link">
       ${coverHTML(book, 240)}
+      ${progressBar(book.progress)}
       <span class="shelf-title">${esc(book.title)}</span>
       <span class="shelf-author">${esc(authorLine(book.authors))}</span>
     </a>
@@ -21,7 +30,7 @@ export function shelfHTML(row) {
   return `<section class="shelf" aria-label="${esc(row.title)}">
     <header class="shelf-head">
       <h2>${esc(row.title)}</h2>
-      <a class="see-all" href="${allLink(row)}">See all</a>
+      ${row.kind === "continue" ? "" : `<a class="see-all" href="${allLink(row)}">See all</a>`}
     </header>
     <div class="shelf-frame">
       <button class="shelf-arrow prev" type="button" aria-label="Scroll left" tabindex="-1">${icon("left")}</button>
@@ -45,20 +54,25 @@ export function wireShelves(root) {
   }
 }
 
-function heroHTML(book, detail) {
+function heroHTML(home, detail) {
+  const book = home.hero;
+  const p = home.hero_progress;
   const description = (detail && detail.description) || "";
-  const firstFile = detail && detail.files && detail.files[0];
+  const readable = detail ? canRead(detail) : false;
+  const label = home.hero_kind === "continue" ? "Continue reading" : "Newly shelved";
   return `<section class="hero" style="--glow: ${esc(book.color || "#3a2a1e")}">
     <a class="hero-cover" href="#/book/${book.id}" aria-label="${esc(book.title)}">${coverHTML(book, 480, "book-thick")}</a>
     <div class="hero-text">
-      <p class="hero-label">Newly shelved</p>
+      <p class="hero-label">${label}</p>
       <h1 class="hero-title">${esc(book.title)}</h1>
       <p class="hero-author">${esc(authorLine(book.authors))}</p>
       ${book.series ? `<p class="hero-series">${esc(seriesLine(book))}</p>` : ""}
-      ${description ? `<p class="hero-blurb">${esc(description.split("\n\n")[0])}</p>` : ""}
+      ${p ? `<div class="hero-progress"><span class="bar"><i style="width:${(p.position * 100).toFixed(1)}%"></i></span>
+        <span>Page ${p.page + 1} of ${p.pages}</span></div>`
+        : description ? `<p class="hero-blurb">${esc(description.split("\n\n")[0])}</p>` : ""}
       <div class="hero-actions">
-        <a class="btn btn-primary" href="#/book/${book.id}">Open book</a>
-        ${firstFile ? `<a class="btn" href="/api/files/${firstFile.id}" download>${icon("download")}Download ${esc(firstFile.format.toUpperCase())}</a>` : ""}
+        ${readable ? `<a class="btn btn-primary" href="#/read/${book.id}">${p ? "Continue" : "Read"}</a>` : ""}
+        <a class="btn ${readable ? "" : "btn-primary"}" href="#/book/${book.id}">About this book</a>
       </div>
     </div>
   </section>`;
@@ -73,6 +87,6 @@ export async function renderHome(main) {
     return;
   }
   const detail = await api(`/books/${home.hero.id}`).catch(() => null);
-  main.innerHTML = heroHTML(home.hero, detail) + home.rows.map(shelfHTML).join("");
+  main.innerHTML = heroHTML(home, detail) + home.rows.map(shelfHTML).join("");
   wireShelves(main);
 }

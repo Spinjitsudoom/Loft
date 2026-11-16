@@ -14,7 +14,7 @@
   --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
 
   --gutter: clamp(16px, 4vw, 48px);
-  --cover-w: 132px;
+  --cover-w: var(--cw, 132px);
   --radius: 6px;
   color-scheme: dark;
 }
@@ -52,7 +52,7 @@ code { font-size: .9em; background: var(--raised); padding: 1px 5px; border-radi
 .btn:hover { border-color: #3d332c; background: #251f1b; }
 .btn .icon { width: 18px; height: 18px; }
 .btn-primary { background: var(--brass); border-color: var(--brass); color: #1b140e; }
-.btn-primary:hover { background: #d6b08a; border-color: #d6b08a; }
+.btn-primary:hover { background: color-mix(in oklab, var(--brass), white 14%); border-color: color-mix(in oklab, var(--brass), white 14%); }
 .btn-small { min-height: 32px; padding: 0 12px; font-size: 14px; }
 .btn:disabled { opacity: .5; cursor: default; }
 .file-size { font-weight: 400; opacity: .7; font-size: 13px; }
@@ -273,7 +273,7 @@ input:not([type="search"]):focus { outline: none; border-color: var(--brass); }
 /* ---------- phones ---------- */
 
 @media (max-width: 600px) {
-  :root { --cover-w: 104px; --gutter: 16px; }
+  :root { --cover-w: var(--cw-phone, 104px); --gutter: 16px; }
   .topbar { gap: 10px; }
   .brand { font-size: 21px; }
   .search { height: 40px; padding: 0 12px; gap: 8px; }
@@ -406,3 +406,39 @@ input:not([type="search"]):focus { outline: none; border-color: var(--brass); }
   .reader-where { min-width: 0; font-size: 13px; }
   .zoom-page { display: none; }
 }
+
+/* ---------- your look ---------- */
+
+body.no-cover-titles .shelf-title, body.no-cover-titles .shelf-author { display: none; }
+.cover-progress { display: block; height: 3px; margin-top: 18px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.cover-progress i { display: block; height: 100%; background: var(--brass); }
+.cover-progress + .shelf-title { margin-top: 8px; }
+.hero-progress { display: flex; align-items: center; gap: 12px; margin-top: 16px; color: var(--muted); font-size: 14px; }
+.hero-progress .bar { width: min(240px, 50%); height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--ink) 15%, transparent); overflow: hidden; }
+.hero-progress .bar i { display: block; height: 100%; background: var(--brass); }
+
+/* ---------- your settings ---------- */
+
+.settings-section { padding: 26px 0; border-top: 1px solid var(--line); }
+.settings-section > h2 { font: 600 22px/1.2 var(--serif); margin-bottom: 4px; }
+.settings-section > p.muted { font-size: 14px; margin-bottom: 8px; }
+.settings-section h3 { font-size: 14px; font-weight: 500; color: var(--muted); margin: 22px 0 10px; }
+.settings-section .swatches { max-width: 460px; }
+.settings-section .switch { color: var(--ink); }
+.accent-swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+.accent-swatch {
+  width: 44px; height: 44px; border-radius: 50%; border: 2px solid transparent; cursor: pointer;
+  box-shadow: inset 0 0 0 2px var(--bg);
+}
+.accent-swatch[aria-checked="true"] { border-color: var(--ink); }
+.password-form { display: grid; gap: 12px; max-width: 420px; }
+.password-form .btn { justify-self: start; }
+.home-rows { list-style: none; padding: 0; margin: 0; max-width: 460px; }
+.home-rows li { display: flex; align-items: center; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.home-rows li .switch { flex: 1; margin: 0; }
+.home-rows .icon-btn { width: 36px; height: 36px; }
+.home-rows .icon-btn:disabled { opacity: .3; cursor: default; }
+.saved-note { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 20;
+  background: var(--raised); border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; font-size: 14px;
+  opacity: 0; transition: opacity .2s; pointer-events: none; }
+.saved-note.show { opacity: 1; }

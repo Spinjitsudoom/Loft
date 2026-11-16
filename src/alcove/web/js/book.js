@@ -1,12 +1,18 @@
 // A book's own page.
 import { api, authorLine, esc, icon, seriesLine } from "./api.js";
 import { coverHTML } from "./cover.js";
-import { shelfHTML, wireShelves } from "./home.js";
+import { canRead, shelfHTML, wireShelves } from "./home.js";
 
 function size(bytes) {
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
   if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(bytes / 1e3))} KB`;
+}
+
+function readLabel(p) {
+  if (!p) return "Read";
+  if (p.finished) return "Read again";
+  return `Continue from page ${p.page + 1}`;
 }
 
 function link(kind, value, label = value) {
@@ -31,7 +37,8 @@ export async function renderBook(main, id) {
       ${authors ? `<p class="book-page-author">${authors}</p>` : ""}
       ${b.series ? `<p class="book-page-series">${link("series", b.series, seriesLine(b))}</p>` : ""}
       <div class="files">
-        ${b.files.map((f) => `<a class="btn ${f === b.files[0] ? "btn-primary" : ""}" href="/api/files/${f.id}" download>
+        ${canRead(b) ? `<a class="btn btn-primary" href="#/read/${b.id}${b.progress && b.progress.finished ? "?page=0" : ""}">${readLabel(b.progress)}</a>` : ""}
+        ${b.files.map((f) => `<a class="btn ${!canRead(b) && f === b.files[0] ? "btn-primary" : ""}" href="/api/files/${f.id}" download>
           ${icon("download")}Download ${esc(f.format.toUpperCase())}<span class="file-size">${size(f.size)}</span></a>`).join("")}
       </div>
       ${paragraphs ? `<div class="description">${paragraphs}</div>` : ""}
