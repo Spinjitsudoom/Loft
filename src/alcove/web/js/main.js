@@ -6,6 +6,7 @@ import { renderGrid } from "./grid.js";
 import { renderBook } from "./book.js";
 import { renderAdmin } from "./admin.js";
 import { renderReader } from "./reader.js";
+import "./flow.js";
 import { renderSettings } from "./settings.js";
 import { applyLook, loadPrefs } from "./prefs.js";
 

@@ -318,7 +318,7 @@ input:not([type="search"]):focus { outline: none; border-color: var(--brass); }
 .flip-book .leaf::after { content: ""; position: absolute; inset: 0; pointer-events: none; }
 .flip-book .leaf.--left::after { background: linear-gradient(to left, rgba(0, 0, 0, .2), rgba(0, 0, 0, .05) 3%, transparent 9%); }
 .flip-book .leaf.--right::after { background: linear-gradient(to right, rgba(0, 0, 0, .2), rgba(0, 0, 0, .05) 3%, transparent 9%); }
-.flip-book .leaf img { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; }
+.flip-book:not(.flow-book) .leaf img { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; }
 .stf__parent { margin: 0 auto; }
 
 .scroll-book {
@@ -443,3 +443,47 @@ body.no-cover-titles .shelf-title, body.no-cover-titles .shelf-author { display:
   opacity: 0; transition: opacity .2s; pointer-events: none; }
 .saved-note.show { opacity: 1; }
 .reader-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--r-muted); font: italic 17px var(--serif); }
+
+/* ---------- flowing books ---------- */
+
+.reader { --flow-page: #1d1916; --flow-ink: #e3d9cc; --flow-muted: #8f8478; }
+.reader[data-theme="sepia"] { --flow-page: #f6ecd6; --flow-ink: #3b2f22; --flow-muted: #8a7760; }
+.reader[data-theme="white"] { --flow-page: #ffffff; --flow-ink: #1f1f1f; --flow-muted: #8a8a8a; }
+.reader[data-theme="black"] { --flow-page: #000000; --flow-ink: #cfcfcf; --flow-muted: #777; }
+.flow-book .flow-leaf { background: var(--flow-page); color: var(--flow-ink); }
+.flow-page { position: absolute; overflow: hidden; }
+.folio { position: absolute; left: 0; right: 0; bottom: 3.2%; text-align: center; font: 12px var(--sans); color: var(--flow-muted); }
+
+.flow-text, .flow-measure .flow-text {
+  column-fill: auto; line-height: 1.55; overflow: visible; hyphens: auto; -webkit-hyphens: auto;
+  overflow-wrap: break-word; text-rendering: optimizeLegibility; font-kerning: normal; user-select: text;
+}
+.flow-measure { position: absolute; left: -200000px; top: 0; visibility: hidden; pointer-events: none; }
+.flow-text p, .flow-chapter p { margin: 0; text-indent: 1.3em; }
+.flow-text :is(h1, h2, h3, h4, h5, h6) + p, .flow-text p:first-child,
+.flow-chapter :is(h1, h2, h3, h4, h5, h6) + p { text-indent: 0; }
+.flow-text :is(h1, h2, h3, h4, h5, h6), .flow-chapter :is(h1, h2, h3, h4, h5, h6) {
+  font-family: inherit; line-height: 1.2; margin: 1.4em 0 .8em; break-after: avoid; text-wrap: balance;
+}
+.flow-text h1, .flow-chapter h1 { font-size: 1.6em; font-weight: 600; }
+.flow-text h2, .flow-chapter h2 { font-size: 1.35em; font-weight: 600; }
+.flow-text h3, .flow-chapter h3 { font-size: 1.15em; font-weight: 600; }
+.flow-text :is(h1, h2, h3):first-child { margin-top: 0; }
+.flow-text blockquote, .flow-chapter blockquote { margin: .8em 1.4em; font-style: italic; }
+.flow-text img, .flow-chapter img {
+  display: block; max-width: 100%; height: auto; margin: .6em auto; break-inside: avoid;
+}
+.flow-text img { max-height: var(--text-h); object-fit: contain; }
+.flow-text a, .flow-chapter a { color: inherit; text-decoration-color: var(--brass); text-underline-offset: 2px; }
+.flow-text :is(ul, ol), .flow-chapter :is(ul, ol) { padding-left: 1.4em; }
+.flow-text hr, .flow-chapter hr { border: 0; text-align: center; margin: 1em 0; }
+.flow-text hr::after, .flow-chapter hr::after { content: "⁂"; color: var(--flow-muted); }
+.flow-text table, .flow-chapter table { border-collapse: collapse; font-size: .9em; break-inside: avoid; }
+.flow-text :is(td, th), .flow-chapter :is(td, th) { border: 1px solid color-mix(in srgb, var(--flow-ink) 25%, transparent); padding: .2em .5em; }
+
+.flow-scroll { background: var(--flow-page); color: var(--flow-ink); line-height: 1.6; align-items: stretch; }
+.flow-scroll .flow-chapter { width: min(100%, 38em); margin: 0 auto; padding: 1em 0 3em; }
+.reader-loading-inline { color: var(--flow-muted); text-align: center; }
+.size-steps { align-items: center; }
+.size-steps .size-now { min-width: 4em; text-align: center; font-variant-numeric: tabular-nums; }
+.size-steps button:disabled { opacity: .35; cursor: default; }

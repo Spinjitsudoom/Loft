@@ -4,9 +4,12 @@ import { api, esc, icon } from "./api.js";
 import { openZoom } from "./zoom.js";
 import { loadPrefs, patchPrefs } from "./prefs.js";
 
+let FlowReaderClass = null;  // set by flow.js (it extends Reader)
+export function registerFlowReader(cls) { FlowReaderClass = cls; }
+
 const WIDTHS = [600, 900, 1200, 1800, 2400];
 const SPEEDS = { gentle: 1000, normal: 700, quick: 420, off: 1 };
-const READABLE = new Set(["pdf", "cbz", "cbr", "cb7"]);
+
 const NEAR = 4;
 const SAVE_AFTER = 1500;
 
@@ -45,38 +48,40 @@ export async function renderReader(app, bookId, params, isCurrent = () => true) 
   const book = await api(`/books/${bookId}`);
   if (stale()) return () => {};
   const wanted = Number(params.get("file")) || (book.progress && book.progress.file_id);
-  const file = book.files.find((f) => f.id === wanted && READABLE.has(f.format))
-    || book.files.find((f) => READABLE.has(f.format));
+  const file = book.files.find((f) => f.id === wanted && f.readable)
+    || book.files.find((f) => f.readable === "pages") || book.files.find((f) => f.readable);
   if (!file) {
     if (stale()) return () => {};
     unreadableCard(app, book, "This kind of book can’t be read here yet; download it instead.");
     return () => {};
   }
+  const flowing = file.readable === "flow";
   let manifest;
   try {
-    manifest = await api(`/files/${file.id}/manifest`);
+    manifest = await api(flowing ? `/files/${file.id}/flow` : `/files/${file.id}/manifest`);
   } catch (e) {
     if (!stale()) unreadableCard(app, book, e.message);
     return () => {};
   }
   const prefs = await loadPrefs();
   if (stale()) return () => {};
-  const r = new Reader(app, book, file, manifest, prefs.reading);
+  const Cls = flowing ? FlowReaderClass : Reader;
+  const r = new Cls(app, book, file, manifest, prefs.reading);
   const fromLink = params.get("page");
-  const saved = book.progress && book.progress.file_id === file.id ? book.progress.page : 0;
-  r.open(fromLink !== null ? Number(fromLink) : saved);
+  const progress = book.progress && book.progress.file_id === file.id ? book.progress : null;
+  r.open(fromLink !== null ? Number(fromLink) : progress ? progress.page : 0, fromLink !== null ? null : progress);
   return () => r.close();
 }
 
-class Reader {
+export class Reader {
   constructor(app, book, file, manifest, reading) {
     this.app = app;
     this.book = book;
     this.file = file;
     this.m = manifest;
-    this.count = manifest.count;
+    this.count = manifest.count || 0;
     this.reading = { ...reading };
-    this.ratio = commonRatio(manifest.sizes);
+    this.ratio = manifest.sizes ? commonRatio(manifest.sizes) : 0.7;
     this.page = 0;
     this.flip = null;
     this.bookmarks = [];
@@ -97,8 +102,8 @@ class Reader {
     this.listeners.push(() => target.removeEventListener(type, fn, opts));
   }
 
-  open(start) {
-    this.page = Math.max(0, Math.min(this.count - 1, start || 0));
+  open(start, _progress = null) {
+    this.page = Math.max(0, Math.min(Math.max(0, this.count - 1), start || 0));
     this.app.innerHTML = `<div class="reader" data-theme="${this.reading.theme}">
       <div class="reader-stage" aria-label="${esc(this.book.title)}"></div>
       <header class="reader-top">
@@ -109,7 +114,7 @@ class Reader {
         <button class="icon-btn" type="button" data-panel="prefs" aria-label="Reading settings">${icon("type")}</button>
       </header>
       <footer class="reader-bottom">
-        <input class="scrubber" type="range" min="0" max="${this.count - 1}" value="${this.page}" aria-label="Go to page">
+        <input class="scrubber" type="range" min="0" max="${Math.max(0, this.count - 1)}" value="${this.page}" aria-label="Go to page">
         <span class="reader-where"></span>
       </footer>
       <aside class="reader-panel" data-for="contents" hidden></aside>
@@ -272,14 +277,30 @@ class Reader {
     clearTimeout(this.saveTimer);
     if (!this.dirty) return;  // nothing read since the last save: never overwrite another device's place
     this.dirty = false;
-    // The last page in view, so reaching the final spread of a two-page book counts as finished.
-    const page = Math.max(...this.visiblePages());
-    const body = JSON.stringify({ file_id: this.file.id, page, pages: this.count, at: this.pageAt });
+    const body = JSON.stringify({ ...this.progressBody(), at: this.pageAt });
     fetch(`/api/books/${this.book.id}/progress`, {
       method: "PUT", body, keepalive: leaving, credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
     }).then((r) => { if (!r.ok) this.dirty = true; }).catch(() => { this.dirty = true; });
   }
+
+  progressBody() {
+    // The last page in view, so reaching the final spread of a two-page book counts as finished.
+    return { file_id: this.file.id, page: Math.max(...this.visiblePages()), pages: this.count };
+  }
+
+  bookmarkBody() { return { file_id: this.file.id, page: this.page }; }
+  bookmarkPage(b) { return b.page; }
+  tocEntries() {
+    return this.m.toc.length ? this.m.toc
+      : Array.from({ length: Math.ceil(this.count / 10) }, (_, k) => ({ title: `Page ${k * 10 + 1}`, page: k * 10, level: 0 }));
+  }
+  tocPage(t) { return t.page; }
+  extraPrefs() { return ""; }
+  relayoutFor(key) { return key === "mode" || key === "spread"; }
+  wireExtraPrefs(_panel) {}
+  handleTap(_e) { return false; }  // true when the tap was a link or picture the reader dealt with
+  rescaleSpread() { return this.reading.mode === "pages" && this.twoPages() !== this.spread; }
 
   // ---------- taps, keys, gestures ----------
 
@@ -292,6 +313,7 @@ class Reader {
       const quick = performance.now() - down.t < 350;
       down = null;
       if (moved > 8 || !quick) return;
+      if (this.handleTap(e)) return;
       const x = e.clientX / innerWidth;
       const now = performance.now();
       if (x > 0.3 && x < 0.7) {
@@ -323,7 +345,7 @@ class Reader {
     this.on(window, "resize", () => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        if (this.reading.mode === "pages" && this.twoPages() !== this.spread) this.build();
+        if (this.rescaleSpread()) this.build();
         else this.loadNear(this.page);
       }, 200);
     });
@@ -396,7 +418,7 @@ class Reader {
   }
 
   markBookmarkButton() {
-    const on = this.bookmarks.some((b) => this.visiblePages().includes(b.page));
+    const on = this.bookmarks.some((b) => this.visiblePages().includes(this.bookmarkPage(b)));
     const button = this.root && this.root.querySelector("[data-bookmark]");
     if (!button) return;
     button.setAttribute("aria-pressed", String(on));
@@ -404,16 +426,14 @@ class Reader {
   }
 
   async toggleBookmark() {
-    const here = this.bookmarks.filter((b) => this.visiblePages().includes(b.page));
+    const here = this.bookmarks.filter((b) => this.visiblePages().includes(this.bookmarkPage(b)));
     if (here.length) {
       await Promise.all(here.map((b) => api(`/bookmarks/${b.id}`, { method: "DELETE" })));
       this.bookmarks = this.bookmarks.filter((b) => !here.includes(b));
     } else {
-      const mark = await api(`/books/${this.book.id}/bookmarks`, {
-        method: "POST", body: { file_id: this.file.id, page: this.page },
-      });
+      const mark = await api(`/books/${this.book.id}/bookmarks`, { method: "POST", body: this.bookmarkBody() });
       this.bookmarks.push(mark);
-      this.bookmarks.sort((a, b) => a.page - b.page);
+      this.bookmarks.sort((a, b) => this.bookmarkPage(a) - this.bookmarkPage(b));
     }
     this.markBookmarkButton();
     const panel = this.root.querySelector('.reader-panel[data-for="contents"]');
@@ -421,16 +441,15 @@ class Reader {
   }
 
   drawContents(panel) {
-    const toc = this.m.toc.length ? this.m.toc
-      : Array.from({ length: Math.ceil(this.count / 10) }, (_, k) => ({ title: `Page ${k * 10 + 1}`, page: k * 10, level: 0 }));
+    const toc = this.tocEntries();
     panel.innerHTML = `
       <h2>Contents</h2>
-      <ol class="toc">${toc.map((t) => `<li style="--level:${Math.min(t.level, 4)}">
-        <button type="button" data-go="${t.page}"><span>${esc(t.title)}</span><span class="toc-page">${t.page + 1}</span></button></li>`).join("")}</ol>
+      <ol class="toc">${toc.map((t) => { const pg = this.tocPage(t); return `<li style="--level:${Math.min(t.level, 4)}">
+        <button type="button" data-go="${pg}"><span>${esc(t.title)}</span><span class="toc-page">${pg + 1}</span></button></li>`; }).join("")}</ol>
       <h2>Bookmarks</h2>
-      ${this.bookmarks.length ? `<ol class="toc marks">${this.bookmarks.map((b) => `<li>
-        <button type="button" data-go="${b.page}"><span>Page ${b.page + 1}${b.note ? ` · ${esc(b.note)}` : ""}</span></button>
-        <button type="button" class="icon-btn" data-unmark="${b.id}" aria-label="Remove bookmark on page ${b.page + 1}">×</button></li>`).join("")}</ol>`
+      ${this.bookmarks.length ? `<ol class="toc marks">${this.bookmarks.map((b) => { const pg = this.bookmarkPage(b); return `<li>
+        <button type="button" data-go="${pg}"><span>Page ${pg + 1}${b.note ? ` · ${esc(b.note)}` : ""}</span></button>
+        <button type="button" class="icon-btn" data-unmark="${b.id}" aria-label="Remove bookmark on page ${pg + 1}">×</button></li>`; }).join("")}</ol>`
         : `<p class="muted">Tap the bookmark at the top to keep your place on a page.</p>`}`;
     panel.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", () => {
       this.goTo(Number(b.dataset.go));
@@ -460,10 +479,12 @@ class Reader {
       ${seg("mode", [["pages", "Turn pages"], ["scroll", "Scroll"]])}
       <h3>Page turn</h3>
       ${seg("turn_speed", [["gentle", "Gentle"], ["normal", "Normal"], ["quick", "Quick"], ["off", "Instant"]])}
+      ${this.extraPrefs()}
       ${sw("spread", "Two pages side by side when there’s room")}
       ${sw("left_handed", "Left-handed: tap the left edge to go forward")}`;
     panel.querySelectorAll("[data-set]").forEach((b) => b.addEventListener("click", () => this.setPref(b.dataset.set, b.dataset.value, panel)));
     panel.querySelectorAll("[data-toggle]").forEach((c) => c.addEventListener("change", () => this.setPref(c.dataset.toggle, c.checked, panel)));
+    this.wireExtraPrefs(panel);
   }
 
   async setPref(key, value, panel) {
@@ -471,7 +492,7 @@ class Reader {
     this.reading[key] = value;
     if (key === "theme") this.root.dataset.theme = value;
     if (key === "turn_speed" && this.flip) this.flip.getSettings().flippingTime = SPEEDS[value];
-    if (key === "mode" || key === "spread") this.build();
+    if (this.relayoutFor(key)) this.build();
     this.drawPrefs(panel);
     try {
       await patchPrefs({ reading: { [key]: value } });
