@@ -24,6 +24,16 @@ from .scanner import Scanner
 WEB_DIR = Path(__file__).parent / "web"
 
 
+class WebFiles(StaticFiles):
+    """The web app's own files. Browsers may keep them but must check for a newer version each time
+    (a quick "not modified" when nothing changed), so an update never leaves anyone on stale code."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 class Credentials(BaseModel):
     username: str = ""
     password: str = ""
@@ -322,5 +332,5 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
 
     # ---------- the web app ----------
 
-    app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
+    app.mount("/", WebFiles(directory=WEB_DIR, html=True), name="web")
     return app

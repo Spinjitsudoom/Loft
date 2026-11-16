@@ -233,3 +233,11 @@ def test_flow_file_broken_after_opening_is_damaged_not_500(client, cfg):
     assert r.status_code == 415 and r.json()["reason"] == "damaged"
     r = client.get(f"/api/files/{fid}/res/OEBPS/Images/p.png")
     assert r.status_code == 415
+
+
+def test_web_app_files_are_revalidated(client):
+    """After an update, browsers must check for new app files rather than run a stale cached copy."""
+    for path in ("/", "/js/reader.js", "/vendor/page-flip.browser.js", "/style.css"):
+        r = client.get(path)
+        assert r.status_code == 200, path
+        assert r.headers.get("cache-control") == "no-cache", path
