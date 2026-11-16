@@ -90,3 +90,74 @@ def make_cbz():
                 z.writestr(name, png(PAGE_COLOURS[name]))
         return path
     return make
+
+
+CALIBRE_SCHEMA = """
+CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT, sort TEXT, author_sort TEXT, path TEXT,
+                    has_cover BOOL DEFAULT 0, series_index REAL DEFAULT 1.0, pubdate TIMESTAMP);
+CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT);
+CREATE TABLE books_authors_link (id INTEGER PRIMARY KEY, book INTEGER, author INTEGER);
+CREATE TABLE series (id INTEGER PRIMARY KEY, name TEXT);
+CREATE TABLE books_series_link (id INTEGER PRIMARY KEY, book INTEGER, series INTEGER);
+CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT);
+CREATE TABLE books_tags_link (id INTEGER PRIMARY KEY, book INTEGER, tag INTEGER);
+CREATE TABLE comments (id INTEGER PRIMARY KEY, book INTEGER, text TEXT);
+CREATE TABLE publishers (id INTEGER PRIMARY KEY, name TEXT);
+CREATE TABLE books_publishers_link (id INTEGER PRIMARY KEY, book INTEGER, publisher INTEGER);
+CREATE TABLE languages (id INTEGER PRIMARY KEY, lang_code TEXT);
+CREATE TABLE books_languages_link (id INTEGER PRIMARY KEY, book INTEGER, lang_code INTEGER);
+CREATE TABLE data (id INTEGER PRIMARY KEY, book INTEGER, format TEXT, name TEXT);
+"""
+
+
+@pytest.fixture
+def make_calibre_db(make_pdf, make_epub):
+    """Write a Calibre-style library under root. Each book dict: id, title, authors, and optionally
+    series, series_index, tags, comment, publisher, pubdate, language, formats (default ["PDF"]),
+    cover (bool)."""
+    import sqlite3
+
+    def make(root: Path, books: list[dict]) -> Path:
+        root.mkdir(parents=True, exist_ok=True)
+        con = sqlite3.connect(root / "metadata.db")
+        con.executescript(CALIBRE_SCHEMA)
+
+        def ref(table, col, value):
+            row = con.execute(f"SELECT id FROM {table} WHERE {col} = ?", (value,)).fetchone()
+            return row[0] if row else con.execute(f"INSERT INTO {table}({col}) VALUES (?)", (value,)).lastrowid
+
+        for b in books:
+            author = b["authors"][0]
+            folder = f"{author}/{b['title'][:30].replace(':', '_')} ({b['id']})"
+            name = f"{b['title'][:30].replace(':', '_')} - {author}"
+            con.execute("INSERT INTO books(id, title, sort, author_sort, path, has_cover, series_index, pubdate) "
+                        "VALUES (?,?,?,?,?,?,?,?)",
+                        (b["id"], b["title"], b["title"], author, folder, int(b.get("cover", False)),
+                         b.get("series_index", 1.0), b.get("pubdate", "0101-01-01 00:00:00+00:00")))
+            for a in b["authors"]:
+                con.execute("INSERT INTO books_authors_link(book, author) VALUES (?,?)", (b["id"], ref("authors", "name", a)))
+            if b.get("series"):
+                con.execute("INSERT INTO books_series_link(book, series) VALUES (?,?)", (b["id"], ref("series", "name", b["series"])))
+            for t in b.get("tags", []):
+                con.execute("INSERT INTO books_tags_link(book, tag) VALUES (?,?)", (b["id"], ref("tags", "name", t)))
+            if b.get("comment"):
+                con.execute("INSERT INTO comments(book, text) VALUES (?,?)", (b["id"], b["comment"]))
+            if b.get("publisher"):
+                con.execute("INSERT INTO books_publishers_link(book, publisher) VALUES (?,?)",
+                            (b["id"], ref("publishers", "name", b["publisher"])))
+            if b.get("language"):
+                con.execute("INSERT INTO books_languages_link(book, lang_code) VALUES (?,?)",
+                            (b["id"], ref("languages", "lang_code", b["language"])))
+            for fmt in b.get("formats", ["PDF"]):
+                con.execute("INSERT INTO data(book, format, name) VALUES (?,?,?)", (b["id"], fmt, name))
+                f = root / folder / f"{name}.{fmt.lower()}"
+                if fmt == "PDF":
+                    make_pdf(f, title="ignored")
+                else:
+                    make_epub(f, title="ignored", author="ignored")
+            if b.get("cover"):
+                (root / folder / "cover.jpg").write_bytes(jpg((150, 40, 30), (300, 450)))
+        con.commit()
+        con.close()
+        return root
+    return make
