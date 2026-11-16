@@ -252,10 +252,18 @@ export class Reader {
         const cur = this.flip.getCurrentPageIndex();
         this.goTo(dir > 0 ? cur + by : Math.max(0, cur - by));
       } else if (dir > 0) this.flip.flipNext("bottom");
-      else this.flip.flipPrev("bottom");
+      else this.flipBack();
     } else if (this.scroller) {
       this.scroller.scrollBy({ top: dir * this.scroller.clientHeight * 0.9, behavior: "smooth" });
     }
+  }
+
+  flipBack() {
+    // StPageFlip's flipPrev() aims 10px from the left of its whole area. When the book is centred
+    // with space beside it, that point misses the book, and with disableFlipByClick a miss is
+    // silently dropped: turning back did nothing. Aim at the book's own bottom-left corner instead.
+    const r = this.flip.getBoundsRect();
+    this.flip.getFlipController().flip({ x: r.left + 10, y: r.top + r.height - 2 });
   }
 
   onPage(i, save = true) {
