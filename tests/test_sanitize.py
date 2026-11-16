@@ -64,3 +64,9 @@ def test_html_entities_and_bad_markup_dont_break_it(book):
     out = chapter_html("<html><body><p>Caf&eacute; &nbsp;<b>bold<p>unclosed</body></html>", base="OEBPS/Text/x.xhtml",
                        book=book, image_size=lambda p: None, resource_url=lambda p: p)
     assert "Café" in out and "<b>bold</b>" in out.replace("\n", "")
+
+
+def test_omitted_head_end_tag_keeps_the_text(book):
+    out = chapter_html("<html><head><title>T</title><body><p>The whole chapter.</p>", base="OEBPS/Text/x.xhtml",
+                       book=book, image_size=lambda p: None, resource_url=lambda p: p)
+    assert "The whole chapter." in out

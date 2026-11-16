@@ -68,3 +68,32 @@ def test_damaged(tmp_path, kind):
     with pytest.raises(Unreadable) as e:
         open_epub(p)
     assert e.value.kind == "damaged"
+
+
+def test_sloppy_nav_falls_back_to_ncx(tmp_path, make_rich_epub):
+    p = make_rich_epub(tmp_path / "a.epub", chapters=CHAPTERS, nav=[("One", "Text/one.xhtml", 0)],
+                       ncx=[("One", "Text/one.xhtml", 0), ("Three", "Text/ch%203.xhtml", 0)])
+    with zipfile.ZipFile(p, "a") as z:  # a hand-made nav with an HTML entity XML can't parse
+        z.writestr("OEBPS/nav.xhtml", '<html xmlns="http://www.w3.org/1999/xhtml"><body><nav>One&nbsp;</nav></body></html>')
+    book = open_epub(p)
+    assert len(book.chapters) == 3
+    assert [t.title for t in book.toc] == ["One", "Three"]
+
+
+def test_sloppy_nav_without_ncx_means_no_contents(tmp_path, make_rich_epub):
+    p = make_rich_epub(tmp_path / "a.epub", chapters=CHAPTERS, nav=[("One", "Text/one.xhtml", 0)])
+    with zipfile.ZipFile(p, "a") as z:
+        z.writestr("OEBPS/nav.xhtml", "<html><body><nav>&nbsp;<</nav>")
+    book = open_epub(p)
+    assert len(book.chapters) == 3 and book.toc == []
+
+
+def test_oversized_member_is_damaged(tmp_path, make_rich_epub, monkeypatch):
+    """A zip bomb: a tiny file whose chapter unpacks to something enormous."""
+    from alcove import flow
+    p = make_rich_epub(tmp_path / "a.epub", chapters=[("Text/one.xhtml", "<p>" + "x" * 5000 + "</p>")])
+    monkeypatch.setattr(flow, "MAX_MEMBER", 2000)
+    book = open_epub(p)
+    with pytest.raises(Unreadable) as e:
+        book.read(book.chapters[0].href)
+    assert e.value.kind == "damaged"

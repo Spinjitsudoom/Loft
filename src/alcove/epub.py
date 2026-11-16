@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import unquote, urldefrag
 from xml.etree import ElementTree as ET
 
+from . import flow
 from .flow import Chapter, FlowBook, Resource, TocEntry, Unreadable
 
 NS = {
@@ -26,12 +27,19 @@ def _text(el) -> str:
     return " ".join("".join(el.itertext()).split()) if el is not None else ""
 
 
+def _read(z: zipfile.ZipFile, member: str) -> bytes:
+    """A file from inside the book, refusing anything that unpacks to more than flow.MAX_MEMBER."""
+    if z.getinfo(member).file_size > flow.MAX_MEMBER:
+        raise Unreadable("damaged")
+    return z.read(member)
+
+
 def _check_protection(z: zipfile.ZipFile) -> None:
     names = set(z.namelist())
     if "META-INF/sinf.xml" in names:  # Apple FairPlay
         raise Unreadable("protected")
     if "META-INF/encryption.xml" in names:
-        root = ET.fromstring(z.read("META-INF/encryption.xml"))
+        root = ET.fromstring(_read(z, "META-INF/encryption.xml"))
         algorithms = {m.get("Algorithm") for m in root.iter(f"{{{NS['enc']}}}EncryptionMethod")}
         if algorithms - FONT_OBFUSCATION:
             raise Unreadable("protected")
@@ -45,11 +53,11 @@ def open_epub(path: Path) -> FlowBook:
     try:
         with z:
             _check_protection(z)
-            rootfile = ET.fromstring(z.read("META-INF/container.xml")).find(".//c:rootfile", NS)
+            rootfile = ET.fromstring(_read(z, "META-INF/container.xml")).find(".//c:rootfile", NS)
             opf_path = rootfile.get("full-path") if rootfile is not None else None
             if not opf_path:
                 raise Unreadable("damaged")
-            opf = ET.fromstring(z.read(opf_path))
+            opf = ET.fromstring(_read(z, opf_path))
             book = _structure(z, opf, opf_path, path)
     except Unreadable:
         raise
@@ -91,15 +99,23 @@ def _structure(z: zipfile.ZipFile, opf, opf_path: str, path: Path) -> FlowBook:
             chapters.append(Chapter(p))
 
     def read(member: str) -> bytes:
-        with zipfile.ZipFile(path) as zz:
-            return zz.read(member)
+        try:
+            with zipfile.ZipFile(path) as zz:
+                return _read(zz, member)
+        except (zipfile.BadZipFile, OSError) as e:  # the file changed or the share went away since opening
+            raise Unreadable("damaged") from e
 
     book = FlowBook(chapters=chapters, toc=[], resources=resources, read=read)
     entries = []
-    if nav_path and nav_path in z.namelist():
-        entries = _nav_entries(z.read(nav_path), nav_path)
-    if not entries and ncx_path and ncx_path in z.namelist():
-        entries = _ncx_entries(z.read(ncx_path), ncx_path)
+    # A contents file that isn't tidy XML (hand-made navs often use &nbsp;) shouldn't cost the whole book:
+    # try the EPUB 3 nav, then the older NCX, then go without contents.
+    for toc_path, parse in ((nav_path, _nav_entries), (ncx_path, _ncx_entries)):
+        if entries or not toc_path or toc_path not in z.namelist():
+            continue
+        try:
+            entries = parse(_read(z, toc_path), toc_path)
+        except (ET.ParseError, Unreadable):
+            entries = []
     for title, target, level in entries:
         target_path, anchor = urldefrag(target)
         chapter = book.chapter_of(target_path)

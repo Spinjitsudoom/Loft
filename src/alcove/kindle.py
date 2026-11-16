@@ -19,6 +19,8 @@ from .flow import Chapter, FlowBook, Resource, TocEntry, Unreadable
 
 log = logging.getLogger(__name__)
 PAGEBREAK = re.compile(r"<mbp:pagebreak\s*/?>", re.I)
+ANCHOR = re.compile(r"""\bid=["']([^"']+)["']""", re.I)
+LOCAL_LINK = re.compile(r"""href=["']#([^"']+)["']""", re.I)
 TITLE = re.compile(r"<h[1-3][^>]*>(.*?)</h[1-3]>", re.I | re.S)
 IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif"}
 
@@ -59,7 +61,16 @@ def _html_book(folder: Path) -> FlowBook:
     raw = (folder / "book.html").read_text(encoding="utf-8", errors="replace")
     body = re.split(r"<body[^>]*>", raw, maxsplit=1, flags=re.I)[-1]
     body = re.split(r"</body>", body, maxsplit=1, flags=re.I)[0]
-    pieces = [p for p in PAGEBREAK.split(body) if re.sub(r"<[^>]+>|\s", "", p)]
+    pieces = [p for p in PAGEBREAK.split(body) if re.sub(r"<[^>]+>|\s", "", p) or ANCHOR.search(p)]
+    # The unpacker writes links as href="#fileposN" to <a id="fileposN"/>; once the book is split into
+    # chapters, each link has to name the chapter its target landed in.
+    where = {m.group(1): n for n, p in enumerate(pieces) for m in ANCHOR.finditer(p)}
+
+    def relink(m):
+        target = m.group(1)
+        return f'href="chapter-{where[target]}.xhtml#{target}"' if target in where else m.group(0)
+
+    pieces = [LOCAL_LINK.sub(relink, p) for p in pieces]
     files = {f"chapter-{n}.xhtml": f"<html><body>{p}</body></html>".encode() for n, p in enumerate(pieces)}
     resources = {}
     for img in folder.rglob("*"):

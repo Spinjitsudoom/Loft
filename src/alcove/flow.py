@@ -15,6 +15,9 @@ from urllib.parse import unquote, urldefrag
 from .pages import Unreadable  # noqa: F401  (re-exported: flow formats use the same reasons)
 
 READABLE_FLOW = {"epub", "mobi", "azw", "azw3", "fb2", "txt"}
+# The most one file inside a book may unpack to. A chapter or picture bigger than this is a zip bomb
+# (a tiny file that unpacks to gigabytes), not a book.
+MAX_MEMBER = 48 * 1024 * 1024
 IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"}
 
 

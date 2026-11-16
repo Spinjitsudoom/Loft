@@ -296,6 +296,7 @@ export class Reader {
       : Array.from({ length: Math.ceil(this.count / 10) }, (_, k) => ({ title: `Page ${k * 10 + 1}`, page: k * 10, level: 0 }));
   }
   tocPage(t) { return t.page; }
+  goToEntry(t) { this.goTo(this.tocPage(t)); }
   extraPrefs() { return ""; }
   relayoutFor(key) { return key === "mode" || key === "spread"; }
   wireExtraPrefs(_panel) {}
@@ -444,15 +445,16 @@ export class Reader {
     const toc = this.tocEntries();
     panel.innerHTML = `
       <h2>Contents</h2>
-      <ol class="toc">${toc.map((t) => { const pg = this.tocPage(t); return `<li style="--level:${Math.min(t.level, 4)}">
-        <button type="button" data-go="${pg}"><span>${esc(t.title)}</span><span class="toc-page">${pg + 1}</span></button></li>`; }).join("")}</ol>
+      <ol class="toc">${toc.map((t, n) => { const pg = this.tocPage(t); return `<li style="--level:${Math.min(t.level, 4)}">
+        <button type="button" data-go="${pg}" data-entry="${n}"><span>${esc(t.title)}</span><span class="toc-page">${pg + 1}</span></button></li>`; }).join("")}</ol>
       <h2>Bookmarks</h2>
       ${this.bookmarks.length ? `<ol class="toc marks">${this.bookmarks.map((b) => { const pg = this.bookmarkPage(b); return `<li>
         <button type="button" data-go="${pg}"><span>Page ${pg + 1}${b.note ? ` · ${esc(b.note)}` : ""}</span></button>
         <button type="button" class="icon-btn" data-unmark="${b.id}" aria-label="Remove bookmark on page ${pg + 1}">×</button></li>`; }).join("")}</ol>`
         : `<p class="muted">Tap the bookmark at the top to keep your place on a page.</p>`}`;
     panel.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", () => {
-      this.goTo(Number(b.dataset.go));
+      if (b.dataset.entry !== undefined) this.goToEntry(toc[Number(b.dataset.entry)]);
+      else this.goTo(Number(b.dataset.go));
       this.closePanels();
     }));
     panel.querySelectorAll("[data-unmark]").forEach((b) => b.addEventListener("click", async () => {

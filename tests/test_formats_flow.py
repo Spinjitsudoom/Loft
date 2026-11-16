@@ -92,3 +92,17 @@ def test_kindle_garbage_is_damaged(cfg, tmp_path):
     with pytest.raises(Unreadable) as e:
         kindle.open_kindle(cfg, 2, 1, p)
     assert e.value.kind == "damaged"
+
+
+def test_old_mobi_links_point_at_the_right_chapter(tmp_path):
+    """The MOBI unpacker writes links as #fileposN; after splitting into chapters they must still land."""
+    folder = tmp_path / "html"
+    folder.mkdir()
+    (folder / "book.html").write_text(
+        '<html><body><p>Contents: <a href="#filepos900">The end</a></p><mbp:pagebreak/>'
+        '<h2>Middle</h2><p>Text.</p><mbp:pagebreak/>'
+        '<h2><a id="filepos900"/>The End</h2><p>Done.</p></body></html>', encoding="utf-8")
+    book = kindle._html_book(folder)
+    assert len(book.chapters) == 3
+    first = book.read("chapter-0.xhtml").decode()
+    assert 'href="chapter-2.xhtml#filepos900"' in first

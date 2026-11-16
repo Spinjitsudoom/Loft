@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import quote
@@ -267,7 +268,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         chapter = book.chapters[n]
         try:
             raw = book.read(chapter.href)
-        except KeyError:
+        except (KeyError, OSError, zipfile.BadZipFile):
             raise pages.Unreadable("damaged")
         body = chapter_html(txt.decode(raw), base=chapter.href, book=book,
                             image_size=lambda p: flowbooks.image_size(file_id, version, book, p),
@@ -285,7 +286,11 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         headers = {"Cache-Control": "private, max-age=604800", "X-Content-Type-Options": "nosniff"}
         if resource.media_type == "image/svg+xml":
             headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
-        return Response(book.read(path), media_type=resource.media_type, headers=headers)
+        try:
+            data = book.read(path)
+        except (KeyError, OSError, zipfile.BadZipFile):
+            raise pages.Unreadable("damaged")
+        return Response(data, media_type=resource.media_type, headers=headers)
 
     @app.put("/api/books/{book_id}/progress")
     def put_progress(book_id: int, body: ProgressIn, user: User = Depends(current_user)):

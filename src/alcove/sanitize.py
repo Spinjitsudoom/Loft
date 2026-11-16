@@ -44,8 +44,6 @@ class _Rewriter(HTMLParser):
         self.images = book.images()
         self.out: list[str] = []
         self.skip = 0
-        self.in_body = False
-        self.saw_body = False
 
     def _emit_tag(self, tag: str, attrs: list[tuple[str, str | None]], close: bool = False) -> None:
         parts = [tag] + [f'{k}="{html.escape(v or "", quote=True)}"' for k, v in attrs]
@@ -63,7 +61,7 @@ class _Rewriter(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         if tag == "body":
-            self.in_body = self.saw_body = True
+            self.skip = 0  # a <head> or <title> left open (allowed in HTML) mustn't swallow the chapter
             return
         if tag in DROP_WITH_CONTENT:
             if tag not in VOID:
@@ -104,7 +102,6 @@ class _Rewriter(HTMLParser):
 
     def handle_endtag(self, tag):
         if tag == "body":
-            self.in_body = False
             return
         if tag in DROP_WITH_CONTENT:
             if tag not in VOID:

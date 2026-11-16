@@ -222,3 +222,14 @@ def test_flow_progress_with_locator(client):
     mark = client.post(f"/api/books/{b['id']}/bookmarks",
                        json={"file_id": fid, "page": 5, "locator": {"chapter": 2, "progress": 0.1}}).json()
     assert mark["locator"] == {"chapter": 2, "progress": 0.1}
+
+
+def test_flow_file_broken_after_opening_is_damaged_not_500(client, cfg):
+    b = epub_file(client)
+    fid = b["files"][0]["id"]
+    assert client.get(f"/api/files/{fid}/flow").status_code == 200
+    (cfg.books_dirs[0] / "Reader" / "Rich.epub").write_bytes(b"no longer a zip")  # replaced, not yet rescanned
+    r = client.get(f"/api/files/{fid}/chapters/0")
+    assert r.status_code == 415 and r.json()["reason"] == "damaged"
+    r = client.get(f"/api/files/{fid}/res/OEBPS/Images/p.png")
+    assert r.status_code == 415

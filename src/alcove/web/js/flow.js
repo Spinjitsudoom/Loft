@@ -12,6 +12,8 @@ const FONTS = {
 };
 const MARGINS = { narrow: 0.06, normal: 0.09, wide: 0.13 };
 const NEAR = 3;
+const KEEP = NEAR + 3;       // filled pages further than this from where you are are emptied again
+const MAX_CHAPTERS = 16;     // chapter texts kept in memory
 
 class Layout {
   constructor(reader, box) {
@@ -32,7 +34,7 @@ class Layout {
     const n = this.r.m.chapters.length;
     let cached = null;
     try { cached = JSON.parse(sessionStorage.getItem(this.key()) || "null"); } catch { /* private mode */ }
-    if (cached && cached.counts && cached.counts.length === n) {
+    if (cached && cached.counts && cached.counts.length === n && !cached.partial) {
       this.counts = cached.counts;
       this.anchors = cached.anchors;
     } else {
@@ -43,11 +45,18 @@ class Layout {
       const text = probe.firstChild;
       this.r.styleText(text, this.box);
       const step = this.box.textW + this.box.gap;
+      let lastYield = performance.now();
       try {
         for (let c = 0; c < n; c++) {
-          text.innerHTML = await this.r.chapter(c);
+          if (this.cancelled) throw new Error("cancelled");
+          const html = await this.r.chapter(c);
+          if (performance.now() - lastYield > 16) {  // let the page breathe (and the % repaint) on long books
+            await new Promise((done) => setTimeout(done, 0));
+            lastYield = performance.now();
+          }
+          text.innerHTML = html;
           const pages = Math.max(1, Math.ceil((text.scrollWidth + this.box.gap - 2) / step));
-          const anchors = {};
+          const anchors = Object.create(null);
           text.querySelectorAll("[id]").forEach((el) => {
             anchors[el.id] = Math.min(pages - 1, Math.max(0, Math.floor((el.offsetLeft + 1) / step)));
           });
@@ -84,7 +93,8 @@ class Layout {
 
   anchorPage(chapter, anchor) {
     const c = Math.min(Math.max(0, chapter), this.counts.length - 1);
-    return this.starts[c] + ((anchor && this.anchors[c][anchor]) || 0);
+    const pages = this.anchors[c];
+    return this.starts[c] + ((anchor && Object.prototype.hasOwnProperty.call(pages, anchor) && pages[anchor]) || 0);
   }
 }
 
@@ -103,11 +113,22 @@ class FlowReader extends Reader {
   }
 
   chapter(c) {
-    if (!this.texts.has(c)) {
-      this.texts.set(c, fetch(`/api/files/${this.file.id}/chapters/${c}`, { credentials: "same-origin" })
-        .then((r) => (r.ok ? r.text() : "<p>This part of the book couldn’t be loaded.</p>")));
+    if (this.texts.has(c)) {
+      const hit = this.texts.get(c);
+      this.texts.delete(c);  // most recently used last
+      this.texts.set(c, hit);
+      return hit;
     }
-    return this.texts.get(c);
+    const url = `/api/files/${this.file.id}/chapters/${c}?v=${this.m.version}`;
+    const p = fetch(url, { credentials: "same-origin" }).then((r) => {
+      if (!r.ok) throw new Error(`chapter ${c}: ${r.status}`);
+      return r.text();
+    });
+    // A failed fetch is forgotten, so the next try asks the server again.
+    p.catch(() => { if (this.texts.get(c) === p) this.texts.delete(c); });
+    this.texts.set(c, p);
+    while (this.texts.size > MAX_CHAPTERS) this.texts.delete(this.texts.keys().next().value);
+    return p;
   }
 
   // ---------- page size and type ----------
@@ -139,10 +160,36 @@ class FlowReader extends Reader {
   // ---------- building ----------
 
   async build() {
-    const keep = this.layout ? this.layout.locatorOf(this.page) : this.startLocator;
-    const keepPage = this.layout ? null : this.startPage;
+    try {
+      await this.buildInner();
+    } catch (e) {
+      if (!this.root.isConnected || (e && e.message === "cancelled")) return;
+      this.stage.innerHTML = `<div class="reader-message"><div><p>This book couldn’t be laid out just now.</p>
+        <button class="btn" type="button" data-retry>Try again</button></div></div>`;
+      this.stage.querySelector("[data-retry]").addEventListener("click", () => this.build());
+    }
+  }
+
+  close() {
+    if (this.measuring) this.measuring.cancelled = true;
+    this.buildToken = (this.buildToken || 0) + 1;
+    super.close();
+  }
+
+  currentLocator() {
+    if (this.wasScroll && this.scrollLoc) return this.scrollLoc;
+    if (this.layout) return this.layout.locatorOf(this.page);
+    return this.startLocator;
+  }
+
+  async buildInner() {
+    const keep = this.currentLocator();
+    const keepPage = this.layout || this.wasScroll ? null : this.startPage;
+    if (this.measuring) this.measuring.cancelled = true;
     this.destroyBook();
-    if (this.reading.mode === "scroll") return this.buildFlowScroll(keep);
+    this.filled = new Set();
+    this.wasScroll = this.reading.mode === "scroll";
+    if (this.wasScroll) return this.buildFlowScroll(keep);
     const box = this.pageBox();
     this.box = box;
     this.spread = box.two;
@@ -152,9 +199,11 @@ class FlowReader extends Reader {
     this.stage.appendChild(note);
     await (document.fonts ? document.fonts.ready : Promise.resolve());
     const layout = new Layout(this, box);
+    this.measuring = layout;
     const token = (this.buildToken = (this.buildToken || 0) + 1);
     await layout.measure((f) => { note.textContent = `Laying out the book… ${Math.round(f * 100)}%`; });
     if (token !== this.buildToken || !this.root.isConnected) return;
+    this.measuring = null;
     note.remove();
     this.layout = layout;
     this.count = layout.total;
@@ -184,18 +233,30 @@ class FlowReader extends Reader {
     if (!this.flip || !this.layout) return;
     const leaves = this.stage.querySelectorAll(".flow-leaf .flow-page");
     const step = this.box.textW + this.box.gap;
+    for (const j of [...this.filled]) {
+      if (Math.abs(j - i) > KEEP && leaves[j]) {
+        leaves[j].replaceChildren();
+        delete leaves[j].dataset.filled;
+        this.filled.delete(j);
+      }
+    }
     for (let j = Math.max(0, i - NEAR); j <= Math.min(this.count - 1, i + NEAR + 1); j++) {
       const page = leaves[j];
       if (!page || page.dataset.filled) continue;
       page.dataset.filled = "1";
+      this.filled.add(j);
       const { chapter, k } = this.layout.where(j);
       this.chapter(chapter).then((html) => {
+        if (!page.dataset.filled) return;  // emptied again before it arrived
         const text = document.createElement("div");
         text.className = "flow-text";
         this.styleText(text, this.box);
         text.style.transform = `translateX(${-k * step}px)`;
         text.innerHTML = html;
         page.replaceChildren(text);
+      }).catch(() => {
+        delete page.dataset.filled;  // try again next time this page comes near
+        this.filled.delete(j);
       });
     }
   }
@@ -231,17 +292,25 @@ class FlowReader extends Reader {
     this.count = n;
     this.root.querySelector(".scrubber").max = Math.max(0, n - 1);
     const sections = [...col.querySelectorAll(".flow-chapter")];
-    await Promise.all(sections.map(async (s, c) => { s.innerHTML = await this.chapter(c); }));
-    if (!this.root.isConnected) return;
+    const token = (this.buildToken = (this.buildToken || 0) + 1);
+    for (let c = 0; c < n; c++) {
+      const html = await this.chapter(c);
+      if (token !== this.buildToken || !col.isConnected) return;  // a newer build or the reader closed
+      sections[c].innerHTML = html;
+    }
     const target = keep || { chapter: 0, progress: 0 };
     const sec = sections[Math.min(target.chapter, n - 1)];
     this.quiet = true;
-    col.scrollTop = sec.offsetTop + target.progress * sec.offsetHeight - 40;
+    // The place is the line in the middle of the screen: put it back there.
+    col.scrollTop = sec.offsetTop + target.progress * sec.offsetHeight - col.clientHeight / 2;
     setTimeout(() => { this.quiet = false; }, 400);
     this.onScroll = () => {
+      if (!col.isConnected) return;
       const mid = col.scrollTop + col.clientHeight / 2;
       const s = sections.find((el) => el.offsetTop + el.offsetHeight > mid) || sections[n - 1];
-      this.scrollLoc = { chapter: Number(s.dataset.c), progress: Math.min(1, Math.max(0, (mid - s.offsetTop) / s.offsetHeight)) };
+      const height = Math.max(1, s.offsetHeight);
+      this.scrollLoc = { chapter: Number(s.dataset.c), progress: Math.min(1, Math.max(0, (mid - s.offsetTop) / height)) };
+      this.atEnd = col.scrollTop + col.clientHeight >= col.scrollHeight - 4;
       this.onPage(this.scrollLoc.chapter);
     };
     col.addEventListener("scroll", this.onScroll, { passive: true });
@@ -271,7 +340,8 @@ class FlowReader extends Reader {
     if (this.reading.mode === "scroll" || !this.layout) {
       const loc = this.scrollLoc || { chapter: 0, progress: 0 };
       const n = this.m.chapters.length;
-      const page = Math.min(1000, Math.round(((loc.chapter + loc.progress) / n) * 1000));
+      // Scrolled to the very bottom of the book counts as finished.
+      const page = this.atEnd ? 1000 : Math.min(999, Math.round(((loc.chapter + loc.progress) / n) * 1000));
       return { file_id: this.file.id, page, pages: 1001, locator: loc };
     }
     return { file_id: this.file.id, page: Math.max(...this.visiblePages()), pages: this.count,
@@ -296,6 +366,18 @@ class FlowReader extends Reader {
 
   tocPage(t) { return this.layout ? this.layout.anchorPage(t.chapter, t.anchor) : t.chapter; }
 
+  goToEntry(t) { this.goToPlace(t.chapter, t.anchor); }
+
+  goToPlace(chapter, anchor) {
+    if (this.layout) return this.goTo(this.layout.anchorPage(chapter, anchor));
+    if (!this.scroller) return;
+    const sec = this.scroller.querySelector(`[data-c="${chapter}"]`);
+    if (!sec) return;
+    const target = anchor ? sec.querySelector(`[id="${CSS.escape(anchor)}"]`) : null;
+    const top = (target || sec).getBoundingClientRect().top - this.scroller.getBoundingClientRect().top;
+    this.scroller.scrollTop += top - 16;
+  }
+
   // ---------- taps on links and pictures ----------
 
   handleTap(e) {
@@ -303,15 +385,13 @@ class FlowReader extends Reader {
     if (link) {
       if (link.dataset.chapter !== undefined) {
         e.preventDefault();
-        const c = Number(link.dataset.chapter);
-        if (this.layout) this.goTo(this.layout.anchorPage(c, link.dataset.anchor));
-        else this.goTo(c);
+        this.goToPlace(Number(link.dataset.chapter), link.dataset.anchor);
       }
       return true;  // external links open in a new tab by themselves
     }
     const img = e.target.closest && e.target.closest(".flow-text img, .flow-chapter img");
     if (img) {
-      openZoom({ src: () => img.src, index: 0, count: 1, onClose: () => {} });
+      this.zoomView = openZoom({ src: () => img.src, index: 0, count: 1, onClose: () => { this.zoomView = null; } });
       return true;
     }
     return false;
