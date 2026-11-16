@@ -71,3 +71,16 @@ def test_html_to_text():
     assert html_to_text('<p>One &amp; two</p><script>alert(1)</script><p>Three<br>four</p>') == "One & two\n\nThree\nfour"
     assert html_to_text('<div><p style="x">A  <b>bold</b>\n move</p></div>') == "A bold move"
     assert html_to_text("") == ""
+
+
+@pytest.mark.parametrize("junk", ["327842\x00", "12345", "www.example.com", "PDFDrive.com"])
+def test_more_junk_titles(tmp_path, make_pdf, junk):
+    p = make_pdf(tmp_path / "#03 Assassin's Creed - The Secret Crusade.pdf", title=junk)
+    assert read_file_meta(p, "pdf").title == "#03 Assassin's Creed - The Secret Crusade"
+
+
+def test_title_cleanup(tmp_path, make_pdf):
+    p = make_pdf(tmp_path / "x.pdf", title="Assassin\\'s Creed The Secret Crusade - PDFDrive.com")
+    assert read_file_meta(p, "pdf").title == "Assassin's Creed The Secret Crusade"
+    p = make_pdf(tmp_path / "y.pdf", title="Tide\x00 Line\x07")
+    assert read_file_meta(p, "pdf").title == "Tide Line"

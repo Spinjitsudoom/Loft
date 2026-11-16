@@ -10,6 +10,7 @@ import logging
 import re
 import sqlite3
 from dataclasses import dataclass, field
+from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import quote
@@ -79,6 +80,7 @@ class CalibreBook:
     tags: list[str] = field(default_factory=list)
     cover: Path | None = None
     files: list[Path] = field(default_factory=list)
+    added: float | None = None  # when it was added to Calibre (Unix time)
 
 
 def _many(con, sql: str) -> dict[int, list[str]]:
@@ -117,8 +119,8 @@ def _read(con: sqlite3.Connection, root: Path) -> dict[Path, CalibreBook]:
     data = _many(con, "SELECT book, format || char(0) || name FROM data")
 
     result: dict[Path, CalibreBook] = {}
-    for bid, title, sort, author_sort, path, has_cover, series_index, pubdate in con.execute(
-            "SELECT id, title, sort, author_sort, path, has_cover, series_index, pubdate FROM books"):
+    for bid, title, sort, author_sort, path, has_cover, series_index, pubdate, added in con.execute(
+            "SELECT id, title, sort, author_sort, path, has_cover, series_index, pubdate, timestamp FROM books"):
         folder = root / path
         files = []
         for entry in data.get(bid, []):
@@ -141,10 +143,18 @@ def _read(con: sqlite3.Connection, root: Path) -> dict[Path, CalibreBook]:
             tags=tags.get(bid, []),
             cover=cover if has_cover and cover.is_file() else None,
             files=files,
+            added=_timestamp(added),
         )
         for f in files:
             result[f] = book
     return result
+
+
+def _timestamp(value) -> float | None:
+    try:
+        return datetime.fromisoformat(str(value)).timestamp()
+    except (TypeError, ValueError):
+        return None
 
 
 def _date(value) -> str:

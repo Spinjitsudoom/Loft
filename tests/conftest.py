@@ -94,7 +94,8 @@ def make_cbz():
 
 CALIBRE_SCHEMA = """
 CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT, sort TEXT, author_sort TEXT, path TEXT,
-                    has_cover BOOL DEFAULT 0, series_index REAL DEFAULT 1.0, pubdate TIMESTAMP);
+                    has_cover BOOL DEFAULT 0, series_index REAL DEFAULT 1.0, pubdate TIMESTAMP,
+                    timestamp TIMESTAMP);
 CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT);
 CREATE TABLE books_authors_link (id INTEGER PRIMARY KEY, book INTEGER, author INTEGER);
 CREATE TABLE series (id INTEGER PRIMARY KEY, name TEXT);
@@ -130,10 +131,11 @@ def make_calibre_db(make_pdf, make_epub):
             author = b["authors"][0]
             folder = f"{author}/{b['title'][:30].replace(':', '_')} ({b['id']})"
             name = f"{b['title'][:30].replace(':', '_')} - {author}"
-            con.execute("INSERT INTO books(id, title, sort, author_sort, path, has_cover, series_index, pubdate) "
-                        "VALUES (?,?,?,?,?,?,?,?)",
+            con.execute("INSERT INTO books(id, title, sort, author_sort, path, has_cover, series_index, pubdate, "
+                        "timestamp) VALUES (?,?,?,?,?,?,?,?,?)",
                         (b["id"], b["title"], b["title"], author, folder, int(b.get("cover", False)),
-                         b.get("series_index", 1.0), b.get("pubdate", "0101-01-01 00:00:00+00:00")))
+                         b.get("series_index", 1.0), b.get("pubdate", "0101-01-01 00:00:00+00:00"),
+                         b.get("added", "2024-05-01 10:00:00+00:00")))
             for a in b["authors"]:
                 con.execute("INSERT INTO books_authors_link(book, author) VALUES (?,?)", (b["id"], ref("authors", "name", a)))
             if b.get("series"):
@@ -161,3 +163,14 @@ def make_calibre_db(make_pdf, make_epub):
         con.close()
         return root
     return make
+
+
+@pytest.fixture
+def cfg(tmp_path, monkeypatch):
+    from alcove.config import load_config
+    monkeypatch.setenv("ALCOVE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.delenv("ALCOVE_BOOKS_DIRS", raising=False)
+    c = load_config(tmp_path / "none.toml")
+    c.books_dirs = [tmp_path / "books"]
+    c.books_dirs[0].mkdir()
+    return c

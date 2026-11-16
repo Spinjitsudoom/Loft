@@ -48,6 +48,18 @@ def title_from_filename(path: Path) -> str:
     return re.sub(r"\s+", " ", stem).strip() or path.name
 
 
+SITE_SUFFIX = re.compile(r"\s*[-|–]\s*(?:www\.)?[\w-]+\.(?:com|net|org|ru|info|to)\s*$", re.I)
+SITE = re.compile(r"^(?:www\.)?[\w-]+\.(?:com|net|org|ru|info|to)$", re.I)
+
+
+def clean_title(title: str) -> str:
+    """Tidy an embedded title: control characters, escaped quotes, download-site suffixes."""
+    t = "".join(ch for ch in (title or "") if ch.isprintable() or ch == " ")
+    t = t.replace("\\'", "'").replace('\\"', '"')
+    t = SITE_SUFFIX.sub("", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
 def is_junk_title(title: str, path: Path) -> bool:
     t = (title or "").strip()
     if not t:
@@ -55,6 +67,8 @@ def is_junk_title(title: str, path: Path) -> bool:
     low = t.lower()
     return (low.startswith("microsoft word - ")
             or re.fullmatch(r"untitled\d*", low) is not None
+            or re.fullmatch(r"[\d\W_]+", t) is not None
+            or SITE.fullmatch(t) is not None
             or t == path.stem
             or low.endswith(JUNK_EXTENSIONS))
 
@@ -80,6 +94,7 @@ def read_file_meta(path: Path, fmt: str) -> FileMeta:
     except Exception as e:  # damaged files must never stop a scan
         log.info("Couldn't read details from %s: %s", path, e)
         return fallback
+    meta.title = clean_title(meta.title)
     if is_junk_title(meta.title, path):
         meta.title = fallback.title
     return meta

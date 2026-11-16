@@ -1,0 +1,264 @@
+"""Keeps the database in step with the books folders.
+
+One book per Calibre entry (all its formats together) and one per loose file. Unchanged files
+(same size and modification time) are skipped. A folder that can't be read, or that suddenly looks
+empty (an SMB share that dropped shows as a bare mount point), is left alone: its books stay.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import sqlite3
+import threading
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+from .calibre import CalibreBook, read_calibre
+from .config import Config
+from .covers import extract_cover, remove_cover, store_cover
+from .db import session
+from .filemeta import FileMeta, read_file_meta
+from .formats import format_of
+
+log = logging.getLogger(__name__)
+
+ARTICLES = ("the ", "a ", "an ")
+
+
+@dataclass(frozen=True)
+class ScanResult:
+    added: int = 0
+    updated: int = 0
+    removed: int = 0
+
+    def json(self) -> dict:
+        return {"added": self.added, "updated": self.updated, "removed": self.removed}
+
+
+@dataclass
+class _Found:
+    fmt: str
+    size: int
+    mtime: float
+
+
+def sort_title(title: str) -> str:
+    low = title.lower()
+    for a in ARTICLES:
+        if low.startswith(a) and len(title) > len(a):
+            return title[len(a):].strip()
+    return title
+
+
+def _walk(root: Path) -> dict[Path, _Found]:
+    """Every book file under root. Raises OSError if root itself can't be listed."""
+    found: dict[Path, _Found] = {}
+    stack = [root]
+    first = True
+    while stack:
+        folder = stack.pop()
+        try:
+            entries = list(os.scandir(folder))
+        except OSError:
+            if first:
+                raise
+            log.warning("Couldn't read folder %s", folder)
+            continue
+        first = False
+        for e in entries:
+            if e.name.startswith("."):
+                continue
+            try:
+                if e.is_dir(follow_symlinks=True):
+                    stack.append(Path(e.path))
+                elif e.is_file(follow_symlinks=True):
+                    fmt = format_of(Path(e.name))
+                    if fmt:
+                        st = e.stat()
+                        found[Path(e.path)] = _Found(fmt, st.st_size, st.st_mtime)
+            except OSError:
+                continue
+    return found
+
+
+def _write_book(con: sqlite3.Connection, book_id: int | None, *, title: str, authors: list[str], author_sort: str,
+                series: str, series_index: float | None, description: str, publisher: str, published: str,
+                language: str, tags: list[str], calibre_id: int | None, added_at: float) -> int:
+    now = time.time()
+    values = dict(title=title, sort_title=sort_title(title), authors=json.dumps(authors),
+                  author_sort=author_sort or (authors[0] if authors else ""), series=series,
+                  series_index=series_index, description=description, publisher=publisher, published=published,
+                  language=language, tags=json.dumps(tags), calibre_id=calibre_id, updated_at=now)
+    if book_id is None:
+        values["added_at"] = added_at
+        cols = ", ".join(values)
+        book_id = con.execute(f"INSERT INTO books({cols}) VALUES ({', '.join('?' * len(values))})",
+                              tuple(values.values())).lastrowid
+    else:
+        sets = ", ".join(f"{k} = ?" for k in values)
+        con.execute(f"UPDATE books SET {sets} WHERE id = ?", (*values.values(), book_id))
+    con.execute("DELETE FROM books_fts WHERE rowid = ?", (book_id,))
+    con.execute("INSERT INTO books_fts(rowid, title, authors, series, tags) VALUES (?, ?, ?, ?, ?)",
+                (book_id, title, " ".join(authors), series, " ".join(tags)))
+    return book_id
+
+
+def _set_cover(cfg: Config, con: sqlite3.Connection, book_id: int, image: bytes | None) -> None:
+    colour = None
+    if image:
+        try:
+            colour = store_cover(cfg, book_id, image)
+        except Exception as e:
+            log.info("Couldn't use the cover for book %s: %s", book_id, e)
+    if colour is None:
+        remove_cover(cfg, book_id)
+    con.execute("UPDATE books SET has_cover = ?, cover_color = ? WHERE id = ?", (int(colour is not None), colour, book_id))
+
+
+def _upsert_file(con: sqlite3.Connection, book_id: int, path: Path, f: _Found, root: Path) -> None:
+    con.execute("INSERT INTO book_files(book_id, path, format, size, mtime, root) VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(path) DO UPDATE SET book_id = excluded.book_id, format = excluded.format, "
+                "size = excluded.size, mtime = excluded.mtime, root = excluded.root",
+                (book_id, str(path), f.fmt, f.size, f.mtime, str(root)))
+
+
+def _calibre_book(cfg: Config, con: sqlite3.Connection, cb: CalibreBook, path: Path, f: _Found, root: Path,
+                  done: set[int]) -> str:
+    """Record a file Calibre knows about. Returns "added" or "updated"."""
+    row = con.execute("SELECT id FROM books WHERE calibre_id = ?", (cb.calibre_id,)).fetchone()
+    book_id = row["id"] if row else None
+    outcome = "updated" if row else "added"
+    if cb.calibre_id not in done:
+        done.add(cb.calibre_id)
+        book_id = _write_book(con, book_id, title=cb.title, authors=cb.authors, author_sort=cb.author_sort,
+                              series=cb.series, series_index=cb.series_index, description=cb.description,
+                              publisher=cb.publisher, published=cb.published, language=cb.language, tags=cb.tags,
+                              calibre_id=cb.calibre_id, added_at=cb.added or time.time())
+        image = None
+        if cb.cover:
+            try:
+                image = cb.cover.read_bytes()
+            except OSError:
+                image = None
+        _set_cover(cfg, con, book_id, image or extract_cover(path, f.fmt))
+    _upsert_file(con, book_id, path, f, root)
+    return outcome
+
+
+def _loose_book(cfg: Config, con: sqlite3.Connection, book_id: int | None, path: Path, f: _Found, root: Path) -> str:
+    meta: FileMeta = read_file_meta(path, f.fmt)
+    outcome = "updated" if book_id else "added"
+    book_id = _write_book(con, book_id, title=meta.title, authors=meta.authors, author_sort="", series=meta.series,
+                          series_index=meta.series_index, description=meta.description, publisher=meta.publisher,
+                          published=meta.published, language=meta.language, tags=[], calibre_id=None,
+                          added_at=time.time())
+    _set_cover(cfg, con, book_id, extract_cover(path, f.fmt))
+    _upsert_file(con, book_id, path, f, root)
+    return outcome
+
+
+def _scan_root(cfg: Config, con: sqlite3.Connection, root: Path) -> tuple[int, int, int]:
+    known = {Path(r["path"]): r for r in con.execute(
+        "SELECT id, book_id, path, size, mtime FROM book_files WHERE root = ?", (str(root),))}
+    if not root.is_dir():
+        log.warning("Books folder %s isn't reachable; leaving its books as they are", root)
+        return 0, 0, 0
+    try:
+        found = _walk(root)
+    except OSError as e:
+        log.warning("Couldn't read books folder %s (%s); leaving its books as they are", root, e)
+        return 0, 0, 0
+    if not found and known:
+        log.warning("Books folder %s looks empty; leaving its books as they are (is the share mounted?)", root)
+        return 0, 0, 0
+
+    db_file = root / "metadata.db"
+    cal_mtime = str(db_file.stat().st_mtime) if db_file.is_file() else ""
+    meta_key = f"calibre_mtime:{root}"
+    row = con.execute("SELECT value FROM meta WHERE key = ?", (meta_key,)).fetchone()
+    calibre_changed = (row["value"] if row else "") != cal_mtime
+    calibre = read_calibre(root) if cal_mtime else {}
+
+    added = updated = 0
+    done: set[int] = set()  # Calibre books already written this scan (several formats, one book)
+    for path, f in sorted(found.items()):
+        k = known.get(path)
+        unchanged = k is not None and k["size"] == f.size and k["mtime"] == f.mtime
+        cb = calibre.get(path)
+        if unchanged and not (cb and calibre_changed):
+            continue
+        try:
+            if cb:
+                outcome = _calibre_book(cfg, con, cb, path, f, root, done)
+            else:
+                outcome = _loose_book(cfg, con, k["book_id"] if k else None, path, f, root)
+        except Exception:
+            log.exception("Couldn't add %s", path)
+            continue
+        if outcome == "added":
+            added += 1
+        else:
+            updated += 1
+    con.execute("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (meta_key, cal_mtime))
+
+    removed = 0
+    gone = [k for p, k in known.items() if p not in found]
+    for k in gone:
+        con.execute("DELETE FROM book_files WHERE id = ?", (k["id"],))
+    for book_id in {k["book_id"] for k in gone}:
+        if not con.execute("SELECT 1 FROM book_files WHERE book_id = ?", (book_id,)).fetchone():
+            con.execute("DELETE FROM books WHERE id = ?", (book_id,))
+            con.execute("DELETE FROM books_fts WHERE rowid = ?", (book_id,))
+            remove_cover(cfg, book_id)
+            removed += 1
+    return added, updated, removed
+
+
+_scan_lock = threading.Lock()
+
+
+def scan(cfg: Config) -> ScanResult:
+    totals = [0, 0, 0]
+    with _scan_lock:
+        for root in cfg.books_dirs:
+            with session(cfg.db_path) as con:
+                for i, n in enumerate(_scan_root(cfg, con, Path(root))):
+                    totals[i] += n
+    result = ScanResult(*totals)
+    log.info("Scan finished: %s added, %s updated, %s removed", *totals)
+    return result
+
+
+class Scanner:
+    """Scans at start, then every scan_interval_minutes, and whenever trigger() is called."""
+
+    def __init__(self, cfg: Config) -> None:
+        self.cfg = cfg
+        self.running = False
+        self.last: ScanResult | None = None
+        self._wake = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self._thread is None:
+            self._thread = threading.Thread(target=self._loop, name="alcove-scanner", daemon=True)
+            self._thread.start()
+
+    def trigger(self) -> None:
+        self._wake.set()
+
+    def _loop(self) -> None:
+        while True:
+            self.running = True
+            try:
+                self.last = scan(self.cfg)
+            except Exception:
+                log.exception("Scan failed")
+            finally:
+                self.running = False
+            self._wake.wait(timeout=max(1, self.cfg.scan_interval_minutes) * 60)
+            self._wake.clear()

@@ -4,7 +4,8 @@ from alcove.calibre import read_calibre
 
 IT = {"id": 7, "title": "It", "authors": ["Stephen King"], "series": "Dark Tower", "series_index": 3,
       "tags": ["Horror", "Fiction"], "comment": "<p>Derry.</p><script>x()</script>", "publisher": "Viking",
-      "pubdate": "1986-09-15 00:00:00+00:00", "language": "eng", "cover": True}
+      "pubdate": "1986-09-15 00:00:00+00:00", "language": "eng", "cover": True,
+      "added": "2020-01-02 03:04:05.123456+00:00"}
 
 
 def test_reads_calibre_book(tmp_path, make_calibre_db):
@@ -20,6 +21,7 @@ def test_reads_calibre_book(tmp_path, make_calibre_db):
     assert (b.publisher, b.published, b.language) == ("Viking", "1986-09-15", "eng")
     assert b.cover == root / "Stephen King" / "It (7)" / "cover.jpg"
     assert b.files == [pdf]
+    assert b.added == 1577934245.123456
 
 
 def test_placeholder_date_and_no_cover(tmp_path, make_calibre_db):
