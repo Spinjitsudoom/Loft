@@ -111,16 +111,15 @@ def read_file_meta(path: Path, fmt: str) -> FileMeta:
 def _pdf(path: Path) -> FileMeta:
     import pypdfium2 as pdfium
 
+    from .pdfium import open_pdf
+
     try:
-        doc = pdfium.PdfDocument(str(path))
+        with open_pdf(path) as doc:
+            info = doc.get_metadata_dict(skip_empty=True)
     except pdfium.PdfiumError as e:
         if "password" in str(e).lower():
             return FileMeta(title=title_from_filename(path), encrypted=True)
         raise
-    try:
-        info = doc.get_metadata_dict(skip_empty=True)
-    finally:
-        doc.close()
     return FileMeta(title=info.get("Title", "").strip(), authors=split_authors(info.get("Author", "")))
 
 

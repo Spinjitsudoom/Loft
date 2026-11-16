@@ -83,11 +83,27 @@ def make_epub():
 
 @pytest.fixture
 def make_cbz():
-    def make(path: Path) -> Path:
+    def make(path: Path, junk: bool = False) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(path, "w") as z:
             for name in ("page10.png", "page2.png", "page1.png"):  # out of order on purpose
                 z.writestr(name, png(PAGE_COLOURS[name]))
+            if junk:
+                z.writestr("__MACOSX/._page1.png", b"junk")
+                z.writestr(".DS_Store", b"junk")
+        return path
+    return make
+
+
+@pytest.fixture
+def make_cb7(tmp_path_factory):
+    import py7zr
+
+    def make(path: Path) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with py7zr.SevenZipFile(path, "w") as z:
+            for name in ("page10.png", "page2.png", "page1.png"):
+                z.writestr(png(PAGE_COLOURS[name]), name)
         return path
     return make
 

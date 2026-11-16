@@ -13,22 +13,19 @@ from xml.etree import ElementTree as ET
 
 from PIL import Image
 
+from . import comics
 from .config import Config
+from .pdfium import open_pdf
 
 log = logging.getLogger(__name__)
 
 WIDTHS = (240, 480)
 PDF_COVER_WIDTH = 600
 MAX_LIGHTNESS = 0.29  # a little under the 0.30 limit, so rounding to whole RGB values stays under it
-IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp")
 NS = {
     "c": "urn:oasis:names:tc:opendocument:xmlns:container",
     "opf": "http://www.idpf.org/2007/opf",
 }
-
-
-def natural_key(name: str) -> list:
-    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", name)]
 
 
 def extract_cover(path: Path, fmt: str) -> bytes | None:
@@ -38,8 +35,9 @@ def extract_cover(path: Path, fmt: str) -> bytes | None:
             return _epub_cover(path)
         if fmt == "pdf":
             return _pdf_cover(path)
-        if fmt == "cbz":
-            return _cbz_cover(path)
+        if fmt in ("cbz", "cbr", "cb7"):
+            names = comics.page_names(path)
+            return comics.read_member(path, names[0]) if names else None
     except Exception as e:
         log.info("No cover from %s: %s", path, e)
     return None
@@ -66,27 +64,13 @@ def _epub_cover(path: Path) -> bytes | None:
 
 
 def _pdf_cover(path: Path) -> bytes | None:
-    import pypdfium2 as pdfium
-
-    doc = pdfium.PdfDocument(str(path))
-    try:
+    with open_pdf(path) as doc:
         page = doc[0]
-        width = page.get_width()
-        image = page.render(scale=PDF_COVER_WIDTH / width).to_pil().convert("RGB")
+        image = page.render(scale=PDF_COVER_WIDTH / page.get_width()).to_pil().convert("RGB")
         page.close()
-    finally:
-        doc.close()
     buf = io.BytesIO()
     image.save(buf, "JPEG", quality=90)
     return buf.getvalue()
-
-
-def _cbz_cover(path: Path) -> bytes | None:
-    with zipfile.ZipFile(path) as z:
-        names = sorted((n for n in z.namelist()
-                        if n.lower().endswith(IMAGE_EXTS) and not posixpath.basename(n).startswith(".")
-                        and "__macosx" not in n.lower()), key=natural_key)
-        return z.read(names[0]) if names else None
 
 
 def cover_path(cfg: Config, book_id: int, width: int) -> Path | None:

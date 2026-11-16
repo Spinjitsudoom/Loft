@@ -8,7 +8,9 @@ dependencies = [
     "fastapi>=0.115",
     "itsdangerous>=2.2.0",
     "pillow>=11.0.0",
+    "py7zr>=0.22",
     "pypdfium2>=4.30",
+    "rarfile>=4.2",
     "uvicorn[standard]>=0.32",
 ]
 
