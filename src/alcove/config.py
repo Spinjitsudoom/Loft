@@ -22,6 +22,8 @@ class Config:
     host: str = "0.0.0.0"
     port: int = 4545
     scan_interval_minutes: int = 10
+    # How much disk the reader's page images may take up.
+    page_cache_mb: int = 2048
     secret_key: str = ""
 
     @property
@@ -31,6 +33,10 @@ class Config:
     @property
     def cover_dir(self) -> Path:
         return self.data_dir / "covers"
+
+    @property
+    def page_dir(self) -> Path:
+        return self.data_dir / "pages"
 
 
 def _path(value: str) -> Path:
@@ -52,7 +58,7 @@ def load_config(path: Path | None = None) -> Config:
     for key in ("host", "secret_key"):
         if key in raw:
             setattr(cfg, key, str(raw[key]))
-    for key in ("port", "scan_interval_minutes"):
+    for key in ("port", "scan_interval_minutes", "page_cache_mb"):
         if key in raw:
             setattr(cfg, key, int(raw[key]))
 

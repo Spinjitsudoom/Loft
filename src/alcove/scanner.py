@@ -22,6 +22,7 @@ from .covers import extract_cover, remove_cover, store_cover
 from .db import session
 from .filemeta import FileMeta, read_file_meta
 from .formats import format_of
+from .pages import prune_page_cache
 
 log = logging.getLogger(__name__)
 
@@ -284,6 +285,7 @@ class Scanner:
             self.running = True
             try:
                 self.last = scan(self.cfg)
+                prune_page_cache(self.cfg)
             except Exception:
                 log.exception("Scan failed")
             finally:

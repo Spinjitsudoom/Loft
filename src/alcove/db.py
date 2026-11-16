@@ -55,6 +55,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(
     title, authors, series, tags, tokenize = 'unicode61 remove_diacritics 2'
 );
 
+CREATE TABLE IF NOT EXISTS page_info (
+    file_id INTEGER PRIMARY KEY REFERENCES book_files(id) ON DELETE CASCADE,
+    mtime   REAL NOT NULL,
+    count   INTEGER NOT NULL,
+    sizes   TEXT NOT NULL,  -- JSON [[w, h], ...]
+    toc     TEXT NOT NULL   -- JSON [{"title", "page", "level"}, ...]
+);
+
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT

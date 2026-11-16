@@ -12,3 +12,6 @@ port = 4545
 
 # How often to look for new, changed or removed books.
 scan_interval_minutes = 10
+
+# How much disk the reader's page images may take up (MB).
+page_cache_mb = 2048
