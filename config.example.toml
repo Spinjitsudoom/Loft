@@ -1,0 +1,14 @@
+# Copy to config.toml and edit. Environment variables ALCOVE_BOOKS_DIRS, ALCOVE_DATA_DIR and
+# ALCOVE_PORT override these.
+
+# Folders containing your books. Subfolders are scanned. Alcove only reads them.
+books_dirs = ["/var/mnt/smb-g/EBooks"]
+
+# Database and covers. Keep this on a local disk, not a network share.
+# data_dir = "~/.local/share/alcove"
+
+host = "0.0.0.0"
+port = 4545
+
+# How often to look for new, changed or removed books.
+scan_interval_minutes = 10
