@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS progress (
     position   REAL NOT NULL,
     finished   INTEGER NOT NULL DEFAULT 0,
     updated_at REAL NOT NULL,
+    locator    TEXT,  -- JSON {"chapter", "progress"} for flowing books
     PRIMARY KEY (user_id, book_id)
 );
 
@@ -87,7 +88,8 @@ CREATE TABLE IF NOT EXISTS bookmarks (
     file_id    INTEGER NOT NULL,
     page       INTEGER NOT NULL,
     note       TEXT NOT NULL DEFAULT '',
-    created_at REAL NOT NULL
+    created_at REAL NOT NULL,
+    locator    TEXT
 );
 CREATE INDEX IF NOT EXISTS bookmarks_user_book ON bookmarks(user_id, book_id);
 
@@ -98,6 +100,21 @@ CREATE TABLE IF NOT EXISTS meta (
 """
 
 
+# Columns added after a table first shipped: (table, column, type). Added to older databases on open.
+MIGRATIONS = [
+    ("progress", "locator", "TEXT"),
+    ("bookmarks", "locator", "TEXT"),
+]
+
+
+def migrate(con: sqlite3.Connection) -> None:
+    for table, column, kind in MIGRATIONS:
+        have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+        if have and column not in have:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+    con.commit()
+
+
 def connect(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(path, timeout=30, check_same_thread=False)
@@ -105,6 +122,7 @@ def connect(path: Path) -> sqlite3.Connection:
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA foreign_keys=ON")
     con.executescript(SCHEMA)
+    migrate(con)
     return con
 
 

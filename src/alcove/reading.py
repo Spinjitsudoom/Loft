@@ -6,6 +6,7 @@ back online) never moves someone back past where they've read on another device.
 
 from __future__ import annotations
 
+import json
 import math
 import time
 
@@ -13,12 +14,28 @@ from .config import Config
 from .db import session
 
 CLOCK_SLACK = 60  # seconds a device's clock may run ahead of the server's
-PROGRESS_FIELDS = ("file_id", "page", "pages", "position", "finished", "updated_at")
+PROGRESS_FIELDS = ("file_id", "page", "pages", "position", "finished", "updated_at", "locator")
+
+
+def check_locator(locator) -> dict | None:
+    """Where you are in a flowing book: a chapter and how far through it (0–1)."""
+    if locator is None:
+        return None
+    if (not isinstance(locator, dict) or set(locator) != {"chapter", "progress"}
+            or not isinstance(locator["chapter"], int) or isinstance(locator["chapter"], bool) or locator["chapter"] < 0
+            or not isinstance(locator["progress"], (int, float)) or isinstance(locator["progress"], bool)
+            or not math.isfinite(locator["progress"])):
+        raise ValueError("A place in a book is a chapter number and how far through it")
+    return {"chapter": locator["chapter"], "progress": min(1.0, max(0.0, float(locator["progress"])))}
+
+
+def _locator(text):
+    return json.loads(text) if text else None
 
 
 def _progress(row) -> dict:
     return {"file_id": row["file_id"], "page": row["page"], "pages": row["pages"], "position": row["position"],
-            "finished": bool(row["finished"]), "updated_at": row["updated_at"]}
+            "finished": bool(row["finished"]), "updated_at": row["updated_at"], "locator": _locator(row["locator"])}
 
 
 def get_progress(cfg: Config, user_id: int, book_id: int) -> dict | None:
@@ -28,7 +45,8 @@ def get_progress(cfg: Config, user_id: int, book_id: int) -> dict | None:
 
 
 def save_progress(cfg: Config, user_id: int, book_id: int, *, file_id: int, page: int, pages: int,
-                  at: float | None = None) -> dict:
+                  at: float | None = None, locator: dict | None = None) -> dict:
+    locator = check_locator(locator)
     now = time.time()
     at = now if at is None else float(at)
     if not math.isfinite(at):
@@ -40,12 +58,13 @@ def save_progress(cfg: Config, user_id: int, book_id: int, *, file_id: int, page
     finished = page >= pages - 1
     with session(cfg.db_path) as con:
         con.execute(
-            "INSERT INTO progress(user_id, book_id, file_id, page, pages, position, finished, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, book_id) DO UPDATE SET "
+            "INSERT INTO progress(user_id, book_id, file_id, page, pages, position, finished, updated_at, locator) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, book_id) DO UPDATE SET "
             "file_id = excluded.file_id, page = excluded.page, pages = excluded.pages, position = excluded.position, "
-            "finished = excluded.finished, updated_at = excluded.updated_at "
+            "finished = excluded.finished, updated_at = excluded.updated_at, locator = excluded.locator "
             "WHERE excluded.updated_at >= progress.updated_at",
-            (user_id, book_id, file_id, page, pages, position, int(finished), at))
+            (user_id, book_id, file_id, page, pages, position, int(finished), at,
+             json.dumps(locator) if locator else None))
     return get_progress(cfg, user_id, book_id)
 
 
@@ -55,15 +74,18 @@ def in_progress(cfg: Config, user_id: int, limit: int = 20) -> list[tuple[dict, 
     with session(cfg.db_path) as con:
         rows = con.execute(
             "SELECT b.*, p.file_id AS p_file_id, p.page AS p_page, p.pages AS p_pages, p.position AS p_position, "
-            "p.finished AS p_finished, p.updated_at AS p_updated_at FROM progress p JOIN books b ON b.id = p.book_id "
+            "p.finished AS p_finished, p.updated_at AS p_updated_at, p.locator AS p_locator FROM progress p JOIN books b ON b.id = p.book_id "
             "WHERE p.user_id = ? AND p.finished = 0 ORDER BY p.updated_at DESC LIMIT ?", (user_id, limit)).fetchall()
-    return [(book_card(r), {k: (bool(r[f"p_{k}"]) if k == "finished" else r[f"p_{k}"]) for k in PROGRESS_FIELDS})
-            for r in rows]
+    def value(r, k):
+        v = r[f"p_{k}"]
+        return bool(v) if k == "finished" else _locator(v) if k == "locator" else v
+
+    return [(book_card(r), {k: value(r, k) for k in PROGRESS_FIELDS}) for r in rows]
 
 
 def _bookmark(row) -> dict:
     return {"id": row["id"], "file_id": row["file_id"], "page": row["page"], "note": row["note"],
-            "created_at": row["created_at"]}
+            "created_at": row["created_at"], "locator": _locator(row["locator"])}
 
 
 def list_bookmarks(cfg: Config, user_id: int, book_id: int) -> list[dict]:
@@ -72,11 +94,14 @@ def list_bookmarks(cfg: Config, user_id: int, book_id: int) -> list[dict]:
             "SELECT * FROM bookmarks WHERE user_id = ? AND book_id = ? ORDER BY page, id", (user_id, book_id))]
 
 
-def add_bookmark(cfg: Config, user_id: int, book_id: int, *, file_id: int, page: int, note: str = "") -> dict:
+def add_bookmark(cfg: Config, user_id: int, book_id: int, *, file_id: int, page: int, note: str = "",
+                 locator: dict | None = None) -> dict:
+    locator = check_locator(locator)
     with session(cfg.db_path) as con:
-        bid = con.execute("INSERT INTO bookmarks(user_id, book_id, file_id, page, note, created_at) "
-                          "VALUES (?, ?, ?, ?, ?, ?)",
-                          (user_id, book_id, file_id, max(0, int(page)), (note or "")[:500], time.time())).lastrowid
+        bid = con.execute("INSERT INTO bookmarks(user_id, book_id, file_id, page, note, created_at, locator) "
+                          "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                          (user_id, book_id, file_id, max(0, int(page)), (note or "")[:500], time.time(),
+                           json.dumps(locator) if locator else None)).lastrowid
         return _bookmark(con.execute("SELECT * FROM bookmarks WHERE id = ?", (bid,)).fetchone())
 
 

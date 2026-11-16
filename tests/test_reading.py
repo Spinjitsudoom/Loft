@@ -121,3 +121,25 @@ def test_non_finite_timestamps_refused(cfg, sam, add):
     for bad in (float("inf"), float("nan")):
         with pytest.raises(ValueError):
             reading.save_progress(cfg, sam.id, b, file_id=fid(cfg, b), page=1, pages=10, at=bad)
+
+
+def test_locator_round_trip(cfg, sam, add):
+    b = add("Tide Line")
+    p = reading.save_progress(cfg, sam.id, b, file_id=fid(cfg, b), page=40, pages=300,
+                              locator={"chapter": 3, "progress": 0.25})
+    assert p["locator"] == {"chapter": 3, "progress": 0.25}
+    assert reading.get_progress(cfg, sam.id, b)["locator"] == {"chapter": 3, "progress": 0.25}
+    assert reading.in_progress(cfg, sam.id)[0][1]["locator"] == {"chapter": 3, "progress": 0.25}
+    mark = reading.add_bookmark(cfg, sam.id, b, file_id=fid(cfg, b), page=41, locator={"chapter": 3, "progress": 1.7})
+    assert mark["locator"] == {"chapter": 3, "progress": 1.0}  # clamped
+    assert reading.list_bookmarks(cfg, sam.id, b)[0]["locator"] == {"chapter": 3, "progress": 1.0}
+    assert reading.save_progress(cfg, sam.id, b, file_id=fid(cfg, b), page=1, pages=10)["locator"] is None
+
+
+@pytest.mark.parametrize("bad", [{"chapter": -1, "progress": 0}, {"chapter": 1, "progress": "x"},
+                                 {"chapter": 1.5, "progress": 0}, {"chapter": 1}, {"chapter": 1, "progress": float("nan")},
+                                 "chapter 1"])
+def test_bad_locators_refused(cfg, sam, add, bad):
+    b = add("Tide Line")
+    with pytest.raises(ValueError):
+        reading.save_progress(cfg, sam.id, b, file_id=fid(cfg, b), page=1, pages=10, locator=bad)
