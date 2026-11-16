@@ -63,6 +63,11 @@ CREATE TABLE IF NOT EXISTS page_info (
     toc     TEXT NOT NULL   -- JSON [{"title", "page", "level"}, ...]
 );
 
+CREATE TABLE IF NOT EXISTS user_settings (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    data    TEXT NOT NULL  -- JSON, only what the person changed
+);
+
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT

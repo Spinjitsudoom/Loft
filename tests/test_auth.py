@@ -56,3 +56,23 @@ def test_list_and_delete(cfg):
     auth.delete_user(cfg, b.id)
     assert [u.id for u in auth.list_users(cfg)] == [a.id]
     assert auth.user_from_token(cfg, token) is None
+
+
+def test_change_password(cfg):
+    u = auth.create_user(cfg, "sam", "longpassword")
+    old_token = auth.make_token(cfg, u)
+    with pytest.raises(ValueError, match="current password"):
+        auth.change_password(cfg, u.id, "wrong-one", "newpassword")
+    assert auth.user_from_token(cfg, old_token) == u
+    updated = auth.change_password(cfg, u.id, "longpassword", "newpassword")
+    assert auth.user_from_token(cfg, old_token) is None
+    assert auth.user_from_token(cfg, auth.make_token(cfg, updated)) == updated
+    assert auth.authenticate(cfg, "sam", "newpassword", "ip-cp") is not None
+
+
+def test_sign_out_everywhere(cfg):
+    u = auth.create_user(cfg, "sam", "longpassword")
+    token = auth.make_token(cfg, u)
+    updated = auth.sign_out_everywhere(cfg, u.id)
+    assert auth.user_from_token(cfg, token) is None
+    assert auth.user_from_token(cfg, auth.make_token(cfg, updated)) == updated

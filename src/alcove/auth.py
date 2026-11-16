@@ -125,6 +125,23 @@ def set_password(cfg: Config, user_id: int, password: str) -> None:
                     (hash_password(password), user_id))
 
 
+def change_password(cfg: Config, user_id: int, current: str, new: str) -> User:
+    """Change your own password. Signs you out on every other device; returns you with the new
+    session version so this device can be signed back in."""
+    with session(cfg.db_path) as con:
+        row = con.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,)).fetchone()
+    if row is None or not verify_password(current or "", row["password_hash"]):
+        raise ValueError("Your current password isn't right")
+    set_password(cfg, user_id, new)
+    return get_user(cfg, user_id)
+
+
+def sign_out_everywhere(cfg: Config, user_id: int) -> User:
+    with session(cfg.db_path) as con:
+        con.execute("UPDATE users SET version = version + 1 WHERE id = ?", (user_id,))
+    return get_user(cfg, user_id)
+
+
 def _locked_out(ip: str) -> bool:
     window = _failures[ip]
     cutoff = time.time() - LOCK_WINDOW
