@@ -92,8 +92,9 @@ def _many(con, sql: str) -> dict[int, list[str]]:
     return out
 
 
-def read_calibre(root: Path) -> dict[Path, CalibreBook]:
-    """Every book file Calibre knows about under root, mapped to its details. {} without a usable metadata.db."""
+def read_calibre(root: Path) -> dict[Path, CalibreBook] | None:
+    """Every book file Calibre knows about under root, mapped to its details: {} when there's no
+    metadata.db, None when there is one but it couldn't be read (so the caller can try again later)."""
     db = root / "metadata.db"
     if not db.is_file():
         return {}
@@ -105,7 +106,7 @@ def read_calibre(root: Path) -> dict[Path, CalibreBook]:
             con.close()
     except sqlite3.Error as e:
         log.warning("Couldn't read Calibre's library at %s: %s", db, e)
-        return {}
+        return None
 
 
 def _read(con: sqlite3.Connection, root: Path) -> dict[Path, CalibreBook]:

@@ -87,3 +87,88 @@ def test_loose_files_never_written(cfg, make_calibre_db, make_cbz):
     scan(cfg)
     after = sorted((p, os.stat(os.path.join(p, f)).st_mtime_ns) for p, _, fs in os.walk(root) for f in fs)
     assert before == after
+
+
+def test_unreadable_subfolder_keeps_its_books(cfg, make_pdf):
+    root = cfg.books_dirs[0]
+    make_pdf(root / "Top.pdf")
+    make_pdf(root / "Sub" / "A.pdf")
+    make_pdf(root / "Sub" / "B.pdf")
+    scan(cfg)
+    ids = {t: b["id"] for t, b in books(cfg).items()}
+    (root / "Sub").chmod(0)
+    try:
+        assert scan(cfg).removed == 0
+        assert len(books(cfg)) == 3
+    finally:
+        (root / "Sub").chmod(0o755)
+    assert scan(cfg) == ScanResult(0, 0, 0)
+    assert {t: b["id"] for t, b in books(cfg).items()} == ids
+
+
+def test_loose_file_becoming_calibre_leaves_no_orphan(cfg, make_calibre_db):
+    import sqlite3
+    root = cfg.books_dirs[0]
+    make_calibre_db(root, [{"id": 4, "title": "Leila", "authors": ["A. B."]}])
+    con = sqlite3.connect(root / "metadata.db")
+    con.execute("DELETE FROM data")  # Calibre hasn't recorded the file yet
+    con.commit()
+    scan(cfg)
+    assert len(books(cfg)) == 1
+    con.execute("INSERT INTO data(book, format, name) VALUES (4, 'PDF', 'Leila - A. B.')")
+    con.commit()
+    con.close()
+    import os, time
+    os.utime(root / "metadata.db", (time.time() + 5, time.time() + 5))
+    scan(cfg)
+    b = books(cfg)
+    assert list(b) == ["Leila"] and b["Leila"]["calibre_id"] == 4
+
+
+def test_failed_calibre_read_is_retried(cfg, make_calibre_db, monkeypatch):
+    import alcove.scanner as scanner_mod
+    root = cfg.books_dirs[0]
+    make_calibre_db(root, [{"id": 4, "title": "Leila", "authors": ["A. B."]}])
+    real = scanner_mod.read_calibre
+    monkeypatch.setattr(scanner_mod, "read_calibre", lambda r: None)  # e.g. Calibre mid-write
+    scan(cfg)
+    assert books(cfg) == {}  # not imported as a loose file with the wrong details
+    monkeypatch.setattr(scanner_mod, "read_calibre", real)
+    scan(cfg)
+    assert books(cfg)["Leila"]["calibre_id"] == 4
+
+
+def test_two_calibre_libraries_stay_apart(cfg, make_calibre_db, tmp_path):
+    second = tmp_path / "books2"
+    make_calibre_db(cfg.books_dirs[0], [{"id": 1, "title": "Dune", "authors": ["F. Herbert"]}])
+    make_calibre_db(second, [{"id": 1, "title": "Saga Vol 1", "authors": ["B. K. Vaughan"]}])
+    cfg.books_dirs.append(second)
+    assert scan(cfg).added == 2
+    assert set(books(cfg)) == {"Dune", "Saga Vol 1"}
+
+
+def test_others_can_write_while_a_scan_runs(cfg, make_pdf, monkeypatch):
+    """Creating the admin account during the first scan mustn't wait for (or time out on) the scan."""
+    import sqlite3
+    import alcove.scanner as scanner_mod
+    root = cfg.books_dirs[0]
+    for name in ("A", "B", "C"):
+        make_pdf(root / f"{name}.pdf")
+    real = scanner_mod.extract_cover
+    results = []
+
+    def cover_and_write(path, fmt):
+        con = sqlite3.connect(cfg.db_path, timeout=0.3)
+        try:
+            con.execute("INSERT INTO meta(key, value) VALUES (?, 'x')", (str(path),))
+            con.commit()
+            results.append(True)
+        except sqlite3.OperationalError:
+            results.append(False)
+        finally:
+            con.close()
+        return real(path, fmt)
+
+    monkeypatch.setattr(scanner_mod, "extract_cover", cover_and_write)
+    scan(cfg)
+    assert results == [True, True, True]

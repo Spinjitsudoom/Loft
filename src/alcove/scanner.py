@@ -53,9 +53,11 @@ def sort_title(title: str) -> str:
     return title
 
 
-def _walk(root: Path) -> dict[Path, _Found]:
-    """Every book file under root. Raises OSError if root itself can't be listed."""
+def _walk(root: Path) -> tuple[dict[Path, _Found], set[Path]]:
+    """Every book file under root, and the folders and files that couldn't be read (their books
+    must not be treated as gone). Raises OSError if root itself can't be listed."""
     found: dict[Path, _Found] = {}
+    unreadable: set[Path] = set()
     stack = [root]
     first = True
     while stack:
@@ -65,7 +67,8 @@ def _walk(root: Path) -> dict[Path, _Found]:
         except OSError:
             if first:
                 raise
-            log.warning("Couldn't read folder %s", folder)
+            log.warning("Couldn't read folder %s; leaving its books as they are", folder)
+            unreadable.add(folder)
             continue
         first = False
         for e in entries:
@@ -80,8 +83,12 @@ def _walk(root: Path) -> dict[Path, _Found]:
                         st = e.stat()
                         found[Path(e.path)] = _Found(fmt, st.st_size, st.st_mtime)
             except OSError:
-                continue
-    return found
+                unreadable.add(Path(e.path))
+    return found, unreadable
+
+
+def _protected(path: Path, unreadable: set[Path]) -> bool:
+    return path in unreadable or any(parent in unreadable for parent in path.parents)
 
 
 def _write_book(con: sqlite3.Connection, book_id: int | None, *, title: str, authors: list[str], author_sort: str,
@@ -126,38 +133,50 @@ def _upsert_file(con: sqlite3.Connection, book_id: int, path: Path, f: _Found, r
 
 
 def _calibre_book(cfg: Config, con: sqlite3.Connection, cb: CalibreBook, path: Path, f: _Found, root: Path,
-                  done: set[int]) -> str:
+                  done: set[int], known_book_id: int | None) -> str:
     """Record a file Calibre knows about. Returns "added" or "updated"."""
-    row = con.execute("SELECT id FROM books WHERE calibre_id = ?", (cb.calibre_id,)).fetchone()
-    book_id = row["id"] if row else None
-    outcome = "updated" if row else "added"
+    row = con.execute("SELECT b.id FROM books b WHERE b.calibre_id = ? AND EXISTS "
+                      "(SELECT 1 FROM book_files f WHERE f.book_id = b.id AND f.root = ?)",
+                      (cb.calibre_id, str(root))).fetchone()
+    # A file that was first found loose (Calibre hadn't recorded it yet) keeps its book.
+    book_id = row["id"] if row else known_book_id
+    outcome = "updated" if book_id else "added"
     if cb.calibre_id not in done:
         done.add(cb.calibre_id)
-        book_id = _write_book(con, book_id, title=cb.title, authors=cb.authors, author_sort=cb.author_sort,
-                              series=cb.series, series_index=cb.series_index, description=cb.description,
-                              publisher=cb.publisher, published=cb.published, language=cb.language, tags=cb.tags,
-                              calibre_id=cb.calibre_id, added_at=cb.added or time.time())
         image = None
         if cb.cover:
             try:
                 image = cb.cover.read_bytes()
             except OSError:
                 image = None
-        _set_cover(cfg, con, book_id, image or extract_cover(path, f.fmt))
+        image = image or extract_cover(path, f.fmt)
+        book_id = _write_book(con, book_id, title=cb.title, authors=cb.authors, author_sort=cb.author_sort,
+                              series=cb.series, series_index=cb.series_index, description=cb.description,
+                              publisher=cb.publisher, published=cb.published, language=cb.language, tags=cb.tags,
+                              calibre_id=cb.calibre_id, added_at=cb.added or time.time())
+        _set_cover(cfg, con, book_id, image)
     _upsert_file(con, book_id, path, f, root)
     return outcome
 
 
 def _loose_book(cfg: Config, con: sqlite3.Connection, book_id: int | None, path: Path, f: _Found, root: Path) -> str:
+    # Read the file before writing anything, so the database is only held for the writes themselves.
     meta: FileMeta = read_file_meta(path, f.fmt)
+    image = extract_cover(path, f.fmt)
     outcome = "updated" if book_id else "added"
     book_id = _write_book(con, book_id, title=meta.title, authors=meta.authors, author_sort="", series=meta.series,
                           series_index=meta.series_index, description=meta.description, publisher=meta.publisher,
                           published=meta.published, language=meta.language, tags=[], calibre_id=None,
                           added_at=time.time())
-    _set_cover(cfg, con, book_id, extract_cover(path, f.fmt))
+    _set_cover(cfg, con, book_id, image)
     _upsert_file(con, book_id, path, f, root)
     return outcome
+
+
+def _delete_book(cfg: Config, con: sqlite3.Connection, book_id: int) -> None:
+    con.execute("DELETE FROM books WHERE id = ?", (book_id,))
+    con.execute("DELETE FROM books_fts WHERE rowid = ?", (book_id,))
+    remove_cover(cfg, book_id)
 
 
 def _scan_root(cfg: Config, con: sqlite3.Connection, root: Path) -> tuple[int, int, int]:
@@ -167,7 +186,7 @@ def _scan_root(cfg: Config, con: sqlite3.Connection, root: Path) -> tuple[int, i
         log.warning("Books folder %s isn't reachable; leaving its books as they are", root)
         return 0, 0, 0
     try:
-        found = _walk(root)
+        found, unreadable = _walk(root)
     except OSError as e:
         log.warning("Couldn't read books folder %s (%s); leaving its books as they are", root, e)
         return 0, 0, 0
@@ -181,40 +200,49 @@ def _scan_root(cfg: Config, con: sqlite3.Connection, root: Path) -> tuple[int, i
     row = con.execute("SELECT value FROM meta WHERE key = ?", (meta_key,)).fetchone()
     calibre_changed = (row["value"] if row else "") != cal_mtime
     calibre = read_calibre(root) if cal_mtime else {}
+    calibre_ok = calibre is not None
+    if not calibre_ok:  # e.g. Calibre was writing to it; try again next scan
+        log.warning("Couldn't read Calibre's library in %s; new books there wait for the next scan", root)
+        calibre = {}
 
     added = updated = 0
     done: set[int] = set()  # Calibre books already written this scan (several formats, one book)
+    con.commit()
     for path, f in sorted(found.items()):
         k = known.get(path)
         unchanged = k is not None and k["size"] == f.size and k["mtime"] == f.mtime
         cb = calibre.get(path)
         if unchanged and not (cb and calibre_changed):
             continue
+        if not calibre_ok:
+            continue  # without Calibre's details a Calibre book would be imported wrongly
         try:
             if cb:
-                outcome = _calibre_book(cfg, con, cb, path, f, root, done)
+                outcome = _calibre_book(cfg, con, cb, path, f, root, done, k["book_id"] if k else None)
             else:
                 outcome = _loose_book(cfg, con, k["book_id"] if k else None, path, f, root)
+            con.commit()  # one book at a time: others can write in between, and progress survives a crash
         except Exception:
+            con.rollback()
             log.exception("Couldn't add %s", path)
             continue
         if outcome == "added":
             added += 1
         else:
             updated += 1
-    con.execute("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                (meta_key, cal_mtime))
+    if calibre_ok:
+        con.execute("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (meta_key, cal_mtime))
 
     removed = 0
-    gone = [k for p, k in known.items() if p not in found]
+    gone = [k for p, k in known.items() if p not in found and not _protected(p, unreadable)]
     for k in gone:
         con.execute("DELETE FROM book_files WHERE id = ?", (k["id"],))
-    for book_id in {k["book_id"] for k in gone}:
-        if not con.execute("SELECT 1 FROM book_files WHERE book_id = ?", (book_id,)).fetchone():
-            con.execute("DELETE FROM books WHERE id = ?", (book_id,))
-            con.execute("DELETE FROM books_fts WHERE rowid = ?", (book_id,))
-            remove_cover(cfg, book_id)
-            removed += 1
+    # Any book left without a file (gone, or whose file moved to another book) goes too.
+    for r in con.execute("SELECT id FROM books b WHERE NOT EXISTS "
+                         "(SELECT 1 FROM book_files f WHERE f.book_id = b.id)").fetchall():
+        _delete_book(cfg, con, r["id"])
+        removed += 1
     return added, updated, removed
 
 

@@ -45,7 +45,7 @@ def test_two_formats_one_book(tmp_path, make_calibre_db):
 def test_missing_or_corrupt_db(tmp_path):
     assert read_calibre(tmp_path) == {}
     (tmp_path / "metadata.db").write_bytes(os.urandom(4096))
-    assert read_calibre(tmp_path) == {}
+    assert read_calibre(tmp_path) is None  # there, but unreadable: try again later
 
 
 def test_never_writes(tmp_path, make_calibre_db):
