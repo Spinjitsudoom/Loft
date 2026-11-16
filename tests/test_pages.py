@@ -202,3 +202,36 @@ def test_same_page_rendered_at_once(lib, monkeypatch):
         [t.join() for t in threads]
     assert errors == [] and len(done) == 16
     assert Image.open(done[0]).width == 2400
+
+
+def two_tone(left, right, size=(160, 120)):
+    img = Image.new("RGB", size, left)
+    img.paste(right, (size[0] // 2, 0, size[0], size[1]))
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    return buf.getvalue()
+
+
+def test_wraparound_cover_front_first_back_last(cfg):
+    import zipfile
+    root = cfg.books_dirs[0]
+    green, red, blue, gold = (30, 200, 30), (200, 30, 30), (30, 30, 200), (220, 180, 30)
+    with zipfile.ZipFile(root / "Wrap.cbz", "w") as z:
+        z.writestr("01.png", two_tone(green, red))   # back cover | front cover
+        z.writestr("02.png", two_tone(blue, gold))
+        z.writestr("03.png", two_tone(blue, gold))
+    scan(cfg)
+    fid = file_id(cfg, "Wrap.cbz")
+    m = pages.manifest(cfg, fid)
+    assert m["count"] == 6
+
+    def colour(i):
+        return Image.open(pages.render_page(cfg, fid, i, 600)).convert("RGB").getpixel((40, 60))
+
+    def near(c, want):
+        return all(abs(a - b) < 40 for a, b in zip(c, want))
+
+    assert near(colour(0), red)       # the front cover comes first
+    assert near(colour(1), blue) and near(colour(2), gold)
+    assert near(colour(3), blue) and near(colour(4), gold)
+    assert near(colour(5), green)     # the back cover comes last

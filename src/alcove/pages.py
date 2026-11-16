@@ -67,6 +67,10 @@ def split_plan(sizes: list[list[float]], scanned: bool = True) -> list[tuple[int
     plan: list[tuple[int, int | None]] = []
     for i, is_spread in enumerate(spreads):
         plan.extend([(i, 0), (i, 1)] if is_spread else [(i, None)])
+    if spreads[0]:
+        # A wide first scan is a wraparound cover (the inside of a comic never opens on a spread):
+        # like the printed comic, the front (right half) comes first and the back (left half) last.
+        plan = [(0, 1)] + plan[2:] + [(0, 0)]
     return plan
 
 
