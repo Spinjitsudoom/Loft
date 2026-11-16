@@ -174,3 +174,28 @@ def cfg(tmp_path, monkeypatch):
     c.books_dirs = [tmp_path / "books"]
     c.books_dirs[0].mkdir()
     return c
+
+
+@pytest.fixture
+def app_lib(cfg, make_calibre_db, make_cbz, make_pdf):
+    """A small scanned library and an app over it (no one signed in yet)."""
+    from fastapi.testclient import TestClient
+
+    from alcove.app import create_app
+    from alcove.scanner import scan
+
+    root = cfg.books_dirs[0]
+    make_calibre_db(root, [{"id": 7, "title": "It", "authors": ["Stephen King"], "cover": True,
+                            "comment": "<p>Derry.</p><script>alert(1)</script>"}])
+    make_cbz(root / "Comics" / "Tide Line.cbz")
+    make_pdf(root / "Odd" / "Who's #1? odd.pdf")
+    scan(cfg)
+    return TestClient(create_app(cfg, scan_on_start=False))
+
+
+@pytest.fixture
+def client(app_lib):
+    """Signed in as the admin."""
+    r = app_lib.post("/api/setup", json={"username": "admin", "password": "longpassword"})
+    assert r.status_code == 200, r.text
+    return app_lib
