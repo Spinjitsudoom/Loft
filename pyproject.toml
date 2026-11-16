@@ -3,10 +3,13 @@ name = "alcove"
 version = "0.1.0"
 description = "A self-hosted ebook library with pages that turn like paper"
 readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.115",
     "itsdangerous>=2.2.0",
+    "mobi>=0.3.3",
     "nh3>=0.2.17",
     "pillow>=11.0.0",
     "py7zr>=0.22",

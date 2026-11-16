@@ -9,6 +9,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "itsdangerous" },
+    { name = "mobi" },
     { name = "nh3" },
     { name = "pillow" },
     { name = "py7zr" },
@@ -28,6 +29,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "itsdangerous", specifier = ">=2.2.0" },
+    { name = "mobi", specifier = ">=0.3.3" },
     { name = "nh3", specifier = ">=0.2.17" },
     { name = "pillow", specifier = ">=11.0.0" },
     { name = "py7zr", specifier = ">=0.22" },
@@ -383,6 +385,32 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9c/cb/8ac0172223afbccb63986cc25049b154ecfb5e85932587206f42317be31d/itsdangerous-2.2.0.tar.gz", hash = "sha256:e0050c0b7da1eea53ffaf149c0cfbb5c6e2e2b69c4bef22c81fa6eb73e5f6173", size = 54410, upload-time = "2024-04-16T21:28:15.614Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/04/96/92447566d16df59b2a776c0fb82dbc4d9e07cd95062562af01e408583fc4/itsdangerous-2.2.0-py3-none-any.whl", hash = "sha256:c6242fc49e35958c8b15141343aa660db5fc54d4f13a1db01a3f5891b98700ef", size = 16234, upload-time = "2024-04-16T21:28:14.499Z" },
+]
+
+[[package]]
+name = "loguru"
+version = "0.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "win32-setctime", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/61/ce/b5bb93d4d9fc7a067f69140b3bb3782f6ad6360bc76e99b6e3d386cb1320/loguru-0.8.0.tar.gz", hash = "sha256:fb3e4623288e37700a0577f6e0ce776cc1860b5d95c657d67f07a2476b304867", size = 71232, upload-time = "2026-11-11T18:50:26.248Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c8/00/9ee7c8da7342b1a5524bca9d036f89e7d1d1e5a6345c9623763eeeac941f/loguru-0.8.0-py3-none-any.whl", hash = "sha256:e0fba09d6f76ba2d2f4bd1757122942f5a670c702e988b5efaeab99dacba0069", size = 69409, upload-time = "2026-11-11T18:50:24.148Z" },
+]
+
+[[package]]
+name = "mobi"
+version = "0.4.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "loguru" },
+    { name = "standard-imghdr" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7f/fc/efbab42351ebdd594e23f069934bff882f1c15129f61cbff13d1990243b5/mobi-0.4.1.tar.gz", hash = "sha256:9b814f42cd3750d22377e8095d84974943b94dd8081a90a1c403c64c3602bd26", size = 106448, upload-time = "2025-09-14T12:59:17.28Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/02/cacca68175f8fbdb9d4cf81028e924e5d1d0c29c509fe6721d331ed61921/mobi-0.4.1-py3-none-any.whl", hash = "sha256:5490ea1d8e62c4d94352b6ba8eb117b9f9e5df2a1e8b38687c11d1f390cf86e5", size = 99813, upload-time = "2025-09-14T12:59:16.021Z" },
 ]
 
 [[package]]
@@ -835,6 +863,15 @@ wheels = [
 ]
 
 [[package]]
+name = "standard-imghdr"
+version = "3.13.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1a/8d/ab2620fbe2e348483c9cb776c3b7b3cc407899291a041d7fa026469b7cd1/standard_imghdr-3.13.0.tar.gz", hash = "sha256:8d9c68058d882f6fc3542a8d39ef9ff94d2187dc90bd0c851e0902776b7b7a42", size = 5511, upload-time = "2024-10-30T16:01:36.412Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/df/cb/e1da7e340586a078404c7e4328bfefc930867ace8a9a55916fd220cf9547/standard_imghdr-3.13.0-py3-none-any.whl", hash = "sha256:30a1bff5465605bb496f842a6ac3cc1f2131bf3025b0da28d4877d6d4b7cc8e9", size = 4639, upload-time = "2024-10-30T16:01:13.829Z" },
+]
+
+[[package]]
 name = "starlette"
 version = "1.10.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1057,4 +1094,13 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/f9/53/8f37a3943517bba77fc86f7c4162c455018c5b6d760c5e9c9a11de9e37f7/websockets-17.4-cp315-cp315t-win_amd64.whl", hash = "sha256:6e6558efbb256b532c9f06a21ba42bcac729718e365c505819f181f25e5c0eca", size = 219195, upload-time = "2026-10-30T15:10:12.336Z" },
     { url = "https://files.pythonhosted.org/packages/69/35/cf33cba7248fcd80cfe5911ffe67aa2637f50c2bfaada123b1e9d2aeca90/websockets-17.4-cp315-cp315t-win_arm64.whl", hash = "sha256:fcac44d917672ad6257ad64b80b5168306f168a78cab5c0612e4c699caed18cf", size = 219117, upload-time = "2026-10-30T15:10:13.771Z" },
     { url = "https://files.pythonhosted.org/packages/eb/27/9db924cb0dbf22eade78d98fbae77790f9bf6bc729e6ab29aef9d68e4156/websockets-17.4-py3-none-any.whl", hash = "sha256:c6bd2c9781915592b209160d0f017d4c7c82ad53075e6b0c24d2a89299e7f9e9", size = 212900, upload-time = "2026-10-30T15:10:34.482Z" },
+]
+
+[[package]]
+name = "win32-setctime"
+version = "1.2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1a/e4/f0f252c65f9bf7c4042b1f707ef338d49f799da582234e1d3e6e2cfca291/win32_setctime-1.2.1.tar.gz", hash = "sha256:077b35471bf1ff1d71e165c919ddc0cecf51b8e1802f5d820d33a96e2f6717dd", size = 4983, upload-time = "2026-10-25T18:21:32.318Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bd/df/5593480bc1e932eeae28e4fa182ab68174edd0d77409ced3b6491d02d1d5/win32_setctime-1.2.1-py3-none-any.whl", hash = "sha256:a9edc685b35414bec69392c866ed82456ad125ac4a6a4b703ec1d8b462d4f477", size = 4215, upload-time = "2026-10-25T18:21:30.939Z" },
 ]

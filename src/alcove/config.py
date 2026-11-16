@@ -38,6 +38,11 @@ class Config:
     def page_dir(self) -> Path:
         return self.data_dir / "pages"
 
+    @property
+    def flow_dir(self) -> Path:
+        """Kindle books unpacked for reading."""
+        return self.data_dir / "flow"
+
 
 def _path(value: str) -> Path:
     return Path(value).expanduser()

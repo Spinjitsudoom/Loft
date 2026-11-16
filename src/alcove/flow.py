@@ -65,3 +65,22 @@ class FlowBook:
 
     def images(self) -> dict[str, Resource]:
         return {p: r for p, r in self.resources.items() if r.media_type in IMAGE_TYPES}
+
+
+def memory_book(chapters: list[tuple[str, str]], toc: list[TocEntry],
+                images: dict[str, tuple[str, bytes]] | None = None) -> FlowBook:
+    """A flow book made by Alcove itself (FB2, plain text): chapters are (title, body XHTML),
+    stored as chapter-0.xhtml, chapter-1.xhtml…; images are {path: (media type, bytes)}."""
+    images = images or {}
+    files: dict[str, bytes] = {}
+    for n, (_, body) in enumerate(chapters):
+        files[f"chapter-{n}.xhtml"] = f"<html><body>{body}</body></html>".encode()
+    for path, (_, data) in images.items():
+        files[path] = data
+    resources = {path: Resource(path, media) for path, (media, _) in images.items()}
+
+    def read(path: str) -> bytes:
+        return files[path]
+
+    return FlowBook(chapters=[Chapter(f"chapter-{n}.xhtml", title) for n, (title, _) in enumerate(chapters)],
+                    toc=toc, resources=resources, read=read)
