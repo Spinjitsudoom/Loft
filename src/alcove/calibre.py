@@ -15,6 +15,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import quote
 
+from .filemeta import real_authors
+
 log = logging.getLogger(__name__)
 
 BLOCK_TAGS = {"p", "div", "li", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "tr"}
@@ -132,7 +134,7 @@ def _read(con: sqlite3.Connection, root: Path) -> dict[Path, CalibreBook]:
             calibre_id=bid,
             title=title or "",
             sort_title=sort or title or "",
-            authors=authors.get(bid, []),
+            authors=real_authors(authors.get(bid, [])),
             author_sort=author_sort or "",
             series=in_series,
             series_index=float(series_index) if in_series and series_index is not None else None,

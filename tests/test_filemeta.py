@@ -84,3 +84,9 @@ def test_title_cleanup(tmp_path, make_pdf):
     assert read_file_meta(p, "pdf").title == "Assassin's Creed The Secret Crusade"
     p = make_pdf(tmp_path / "y.pdf", title="Tide\x00 Line\x07")
     assert read_file_meta(p, "pdf").title == "Tide Line"
+
+
+@pytest.mark.parametrize("placeholder", ["Unknown", "unknown author", "Unknown Authors"])
+def test_placeholder_author_dropped(tmp_path, make_pdf, placeholder):
+    p = make_pdf(tmp_path / "x.pdf", title="Real Title", author=placeholder)
+    assert read_file_meta(p, "pdf").authors == []

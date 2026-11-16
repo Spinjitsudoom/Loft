@@ -73,8 +73,16 @@ def is_junk_title(title: str, path: Path) -> bool:
             or low.endswith(JUNK_EXTENSIONS))
 
 
+PLACEHOLDER_AUTHORS = {"unknown", "unknown author", "unknown authors"}
+
+
+def real_authors(names: list[str]) -> list[str]:
+    """Drop "Unknown" and its kin: they're what Calibre and PDF tools write when there's no author."""
+    return [n for n in names if n.strip().lower() not in PLACEHOLDER_AUTHORS]
+
+
 def split_authors(value: str) -> list[str]:
-    return [a.strip() for a in AUTHOR_SPLIT.split(value or "") if a.strip()]
+    return real_authors([a.strip() for a in AUTHOR_SPLIT.split(value or "") if a.strip()])
 
 
 def _text(html: str) -> str:
@@ -134,7 +142,7 @@ def _epub(path: Path) -> FileMeta:
 
     meta = FileMeta(
         title=first("title"),
-        authors=[(el.text or "").strip() for el in md.findall("dc:creator", NS) if (el.text or "").strip()],
+        authors=real_authors([(el.text or "").strip() for el in md.findall("dc:creator", NS) if (el.text or "").strip()]),
         description=_text(first("description")),
         language=first("language"),
         published=first("date")[:10],

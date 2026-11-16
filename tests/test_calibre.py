@@ -53,3 +53,8 @@ def test_never_writes(tmp_path, make_calibre_db):
     before = sorted(os.listdir(root)), (root / "metadata.db").stat().st_mtime_ns
     read_calibre(root)
     assert (sorted(os.listdir(root)), (root / "metadata.db").stat().st_mtime_ns) == before
+
+
+def test_unknown_author_is_no_author(tmp_path, make_calibre_db):
+    root = make_calibre_db(tmp_path / "lib", [{"id": 2, "title": "Leila", "authors": ["Unknown"]}])
+    assert next(iter(read_calibre(root).values())).authors == []
