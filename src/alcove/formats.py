@@ -10,7 +10,12 @@ BOOK_FORMATS: dict[str, str] = {ext: ext for ext in (
 )}
 
 
-def format_of(path: Path) -> str | None:
-    """The book format of a file, from its extension, or None if it isn't a book."""
+def format_of(path: Path, allow_txt: bool = False) -> str | None:
+    """The book format of a file, from its extension, or None if it isn't a book.
+
+    Plain-text files only count when the admin allows them: a stray notes or passwords file in the
+    books folder mustn't show up for everyone."""
     suffix = path.suffix.lower().lstrip(".")
+    if suffix == "txt" and not allow_txt:
+        return None
     return BOOK_FORMATS.get(suffix) if suffix else None

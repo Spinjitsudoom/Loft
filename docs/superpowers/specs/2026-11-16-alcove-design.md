@@ -118,8 +118,10 @@ if released halfway) — the StPageFlip library's behaviour.
 - **Adding (admin):** drag files onto the browser/desktop app. Details are read from the file, gaps
   filled from Open Library; the admin reviews before saving. Saved into the books folder as
   `Author/Title/file`.
-- **Editing (admin):** title, authors, series and number, cover (upload or pick from lookup),
-  description, tags/shelves. Stored in Alcove's database; existing files are not renamed or rewritten.
+- **Editing (admin), right on the book page:** an Edit button on the book page turns its details
+  into fields in place — title, authors, series and number, cover (upload or pick from lookup),
+  description, tags/shelves, publisher, date, language. Stored in Alcove's database; existing files
+  are not renamed or rewritten. (Owner's request, 2026-11-16.)
 - **Download:** the original file, for reading elsewhere.
 
 ## People
@@ -127,14 +129,59 @@ if released halfway) — the StPageFlip library's behaviour.
 - **Admin** (the owner) and **members**. First person to open a new server makes the admin
   account (as Shelf). Admin adds members.
 - Each person: their own progress, bookmarks, and shelves (Want to read, Finished, own shelves).
-- **Submit a book:** member uploads a file; it waits in the admin's approval queue (admin checks
-  details and cover, approves or rejects). Nothing appears for others until approved.
+- **Submit a book:** member uploads a file and **must fill in its details before it can be sent**
+  (owner's request, 2026-11-16). The form is pre-filled from the file and Open Library where
+  possible. It then waits in the admin's approval queue (admin checks and can correct the details
+  and cover, approves or rejects). Nothing appears for others until approved.
 - **Request a book:** member asks for a title; others can upvote; admin sees requests ranked; when
   the admin adds the book and links it to the request, the requester is notified.
 - **Discussion per book**, from the book page or the reader. Each message is stamped with where the
   writer was (page or %). **Messages from further ahead than you are blurred** until you reach that
   point; tap to reveal anyway. Live updates while open.
 - Notifications (in-app): request fulfilled, submission approved/rejected, replies.
+
+## Settings and customization
+
+The owner asked for settings for people and the admin, customization, and a library check, and left
+the details to the builder (2026-11-16). Everything a person sets is stored on the server, so it
+follows them to every device.
+
+**Your settings** (everyone, from the top bar):
+- **Account:** change password; sign out on every device.
+- **Reading:** open books in pages (paper curl) or scrolling; reading colours (dark, sepia, white,
+  black); page-turn speed (gentle / normal / quick / off); two pages side by side on wide screens on
+  or off; left-handed taps (swap which edge goes back); for EPUBs, font, text size and margins.
+- **Look:** accent colour (brass by default, plus a handful of curated alternatives); cover size on
+  the shelves (small / medium / large); titles under covers on or off; which rows the home screen
+  shows and in what order (Recently added, series, genres; hide any).
+
+**Library settings** (admin):
+- **People:** add, remove, reset a password, make or unmake admin (never the last admin).
+  Sign-up requests appear here once members can ask to join (M5).
+- **Books folders:** the folders scanned (editable here; `config.toml` still works and is where
+  the first one comes from), how often to scan, rescan now, last scan's result.
+- **Plain-text files:** `.txt` files are **not** shown as books unless this is turned on — a stray
+  notes or passwords file in the share must not appear for members (spec anti-goal).
+- **Library name:** shown in the top bar and sign-in page instead of "Alcove" if set.
+- **Online lookups:** allow Alcove to ask Open Library for details and covers (on by default; sends
+  titles, authors and ISBNs only).
+- Approvals and requests queues (M5).
+
+**Library check** (admin): one page listing what needs attention, each with a direct fix:
+- books with no cover → find one online or upload one;
+- books with no author, or whose title came from the filename → edit;
+- possible duplicates (same title and author, different files) → keep both or remove one;
+- gaps in a series (e.g. *Uprising* has #1–7 and #9–12: #8 is missing) → request it or ignore;
+- files that couldn't be opened (damaged), and protected (DRM) files;
+- folders the last scan couldn't read, and files Calibre lists that aren't on disk.
+Anything can be marked "ignore" so the list stays useful.
+
+## Getting book details without Calibre
+
+Alcove reads the folder itself (its own scanner, M1). For details it uses, in order: what the admin
+typed, Calibre's import (once), the file's own details, then Open Library (by ISBN found in the
+file, else title and author). The admin always sees and can correct the result. A camera barcode
+scanner was considered and left out for now.
 
 ## Away from home and offline
 
@@ -144,14 +191,15 @@ if released halfway) — the StPageFlip library's behaviour.
 
 ## Milestones for the first build (server + browser)
 
-1. **Library:** server, config, accounts, folder scan, Calibre import, covers, cover-wall library,
-   book page, search.
+1. **Library** (done): server, config, accounts, folder scan, Calibre import, covers, cover-wall
+   library, book page, search.
 2. **Reader for PDF and comics:** page images, paper curl, zoom, controls, themes, progress,
-   bookmarks.
+   bookmarks, "Continue reading" on the home screen, and **your settings** (account, reading, look).
 3. **EPUB and the other formats:** EPUB pagination and curl, MOBI/AZW3/FB2/TXT conversion, DRM flag.
-4. **Adding and editing books:** uploads, Open Library lookup, editing, shelves, download.
-5. **Members:** submissions queue, requests with upvotes, per-book discussion with spoiler blur,
-   notifications.
+4. **Adding and editing books:** edit on the book page, uploads, Open Library lookup, shelves,
+   **library settings** and the **library check**.
+5. **Members:** sign-up requests, submissions (details required) and the approval queue, requests
+   with upvotes, per-book discussion with spoiler blur, notifications.
 
 Then: Docker and packaging, desktop apps, Lite, Android.
 
@@ -164,6 +212,8 @@ clean sans for the interface), tests.
 ## Calls made without asking (check these)
 
 - Port 4545.
+- `.txt` files hidden unless the admin turns them on.
+- Settings, customization and library check contents (section above).
 - Non-book files in the books folder are never shown.
 - Uploads go into the books folder as `Author/Title/file`; edits are stored in Alcove's database only.
 - PDFs and comics rendered as images on the server; EPUB laid out in the browser.
