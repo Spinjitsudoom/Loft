@@ -2,8 +2,7 @@
 import { api, authorLine, esc, icon, seriesLine } from "./api.js";
 import { coverHTML } from "./cover.js";
 
-const READABLE = new Set(["pdf", "cbz", "cbr", "cb7"]);
-export const canRead = (book) => (book.files || []).some((f) => READABLE.has(f.format));
+export const canRead = (book) => (book.files || []).some((f) => f.readable);
 
 function progressBar(p) {
   return p ? `<span class="cover-progress" aria-label="${Math.round(p.position * 100)}% read"><i style="width:${(p.position * 100).toFixed(1)}%"></i></span>` : "";

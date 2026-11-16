@@ -12,11 +12,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
-from . import auth, library, pages, reading, settings
+from . import auth, flowbooks, library, pages, reading, settings, txt
 from .auth import User, admin_user, current_user
 from .config import Config
 from .covers import cover_path
 from .db import session
+from .sanitize import chapter_html
 from .scanner import Scanner
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -38,12 +39,15 @@ class ProgressIn(BaseModel):
     page: int
     pages: int
     at: float | None = None
+    locator: dict | None = None
 
 
 class BookmarkIn(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
     file_id: int
     page: int
     note: str = ""
+    locator: dict | None = None
 
 
 UNREADABLE = {
@@ -240,11 +244,57 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             raise HTTPException(404, "No such page")
         return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=604800"})
 
+    def _flow(file_id: int):
+        try:
+            return flowbooks.open_flow(cfg, file_id)
+        except LookupError:
+            raise HTTPException(404, "No such file")
+
+    @app.get("/api/files/{file_id}/flow")
+    def flow_outline(file_id: int, _: User = Depends(current_user)):
+        book, version = _flow(file_id)
+        with session(cfg.db_path) as con:
+            fmt = con.execute("SELECT format FROM book_files WHERE id = ?", (file_id,)).fetchone()["format"]
+        return {"file_id": file_id, "format": fmt, "version": version,
+                "chapters": [{"title": c.title} for c in book.chapters],
+                "toc": [{"title": t.title, "chapter": t.chapter, "anchor": t.anchor, "level": t.level} for t in book.toc]}
+
+    @app.get("/api/files/{file_id}/chapters/{n}")
+    def flow_chapter(file_id: int, n: int, _: User = Depends(current_user)):
+        book, version = _flow(file_id)
+        if not 0 <= n < len(book.chapters):
+            raise HTTPException(404, "No such chapter")
+        chapter = book.chapters[n]
+        try:
+            raw = book.read(chapter.href)
+        except KeyError:
+            raise pages.Unreadable("damaged")
+        body = chapter_html(txt.decode(raw), base=chapter.href, book=book,
+                            image_size=lambda p: flowbooks.image_size(file_id, version, book, p),
+                            resource_url=lambda p: f"/api/files/{file_id}/res/{quote(p)}")
+        return Response(body, media_type="text/html; charset=utf-8", headers={
+            "Cache-Control": "private, max-age=604800",
+            "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'"})
+
+    @app.get("/api/files/{file_id}/res/{path:path}")
+    def flow_resource(file_id: int, path: str, _: User = Depends(current_user)):
+        book, _version = _flow(file_id)
+        resource = book.images().get(path)
+        if resource is None:
+            raise HTTPException(404, "No such picture")
+        headers = {"Cache-Control": "private, max-age=604800", "X-Content-Type-Options": "nosniff"}
+        if resource.media_type == "image/svg+xml":
+            headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
+        return Response(book.read(path), media_type=resource.media_type, headers=headers)
+
     @app.put("/api/books/{book_id}/progress")
     def put_progress(book_id: int, body: ProgressIn, user: User = Depends(current_user)):
         _book_file(book_id, body.file_id)
-        return reading.save_progress(cfg, user.id, book_id, file_id=body.file_id, page=body.page,
-                                     pages=body.pages, at=body.at)
+        try:
+            return reading.save_progress(cfg, user.id, book_id, file_id=body.file_id, page=body.page,
+                                         pages=body.pages, at=body.at, locator=body.locator)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
     @app.get("/api/books/{book_id}/bookmarks")
     def get_bookmarks(book_id: int, user: User = Depends(current_user)):
@@ -253,7 +303,11 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     @app.post("/api/books/{book_id}/bookmarks")
     def post_bookmark(book_id: int, body: BookmarkIn, user: User = Depends(current_user)):
         _book_file(book_id, body.file_id)
-        return reading.add_bookmark(cfg, user.id, book_id, file_id=body.file_id, page=body.page, note=body.note)
+        try:
+            return reading.add_bookmark(cfg, user.id, book_id, file_id=body.file_id, page=body.page, note=body.note,
+                                        locator=body.locator)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
     @app.delete("/api/bookmarks/{bookmark_id}")
     def remove_bookmark(bookmark_id: int, user: User = Depends(current_user)):

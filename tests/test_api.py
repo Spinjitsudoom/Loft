@@ -167,3 +167,58 @@ def test_progress_rejects_infinite_time(client):
                    headers={"Content-Type": "application/json"})
     assert r.status_code in (400, 422)
     assert client.get(f"/api/books/{bid}").status_code == 200
+
+
+def epub_file(client, title="Rich"):
+    books = client.get("/api/search?q=" + title).json()
+    return client.get(f"/api/books/{books[0]['id']}").json()
+
+
+def test_flow_outline_and_chapters(client):
+    b = epub_file(client)
+    f = b["files"][0]
+    assert f["readable"] == "flow"
+    outline = client.get(f"/api/files/{f['id']}/flow").json()
+    assert [c["title"] for c in outline["chapters"]] == ["One", "Two", "Three"]
+    assert outline["toc"][1] == {"title": "Two", "chapter": 1, "anchor": "", "level": 0}
+    r = client.get(f"/api/files/{f['id']}/chapters/0")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
+    assert "default-src 'none'" in r.headers["content-security-policy"]
+    assert "<script" not in r.text and "x()" not in r.text
+    assert f'src="/api/files/{f["id"]}/res/OEBPS/Images/p.png"' in r.text and 'width="60"' in r.text
+    assert 'data-chapter="1"' in r.text
+    assert client.get(f"/api/files/{f['id']}/chapters/3").status_code == 404
+    assert client.get(f"/api/files/{f['id']}/chapters/-1").status_code == 404
+
+
+def test_flow_resources(client):
+    f = epub_file(client)["files"][0]
+    r = client.get(f"/api/files/{f['id']}/res/OEBPS/Images/p.png")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    assert client.get(f"/api/files/{f['id']}/res/OEBPS/Text/one.xhtml").status_code == 404
+    assert client.get(f"/api/files/{f['id']}/res/../../etc/passwd").status_code == 404
+    assert client.get(f"/api/files/{f['id']}/res/OEBPS/content.opf").status_code == 404
+
+
+def test_flow_protected_and_pdf(client):
+    locked = epub_file(client, "Sealed")["files"][0]
+    r = client.get(f"/api/files/{locked['id']}/flow")
+    assert r.status_code == 415 and r.json()["reason"] == "protected"
+    pdf = client.get(f"/api/books/{book_id(client, 'Three Pages')}").json()["files"][0]
+    assert pdf["readable"] == "pages"
+    assert client.get(f"/api/files/{pdf['id']}/flow").status_code == 415
+
+
+def test_flow_progress_with_locator(client):
+    b = epub_file(client)
+    fid = b["files"][0]["id"]
+    r = client.put(f"/api/books/{b['id']}/progress",
+                   json={"file_id": fid, "page": 5, "pages": 20, "locator": {"chapter": 1, "progress": 0.5}})
+    assert r.status_code == 200
+    assert client.get(f"/api/books/{b['id']}").json()["progress"]["locator"] == {"chapter": 1, "progress": 0.5}
+    bad = client.put(f"/api/books/{b['id']}/progress",
+                     json={"file_id": fid, "page": 5, "pages": 20, "locator": {"chapter": -2, "progress": 0.5}})
+    assert bad.status_code == 400
+    mark = client.post(f"/api/books/{b['id']}/bookmarks",
+                       json={"file_id": fid, "page": 5, "locator": {"chapter": 2, "progress": 0.1}}).json()
+    assert mark["locator"] == {"chapter": 2, "progress": 0.1}

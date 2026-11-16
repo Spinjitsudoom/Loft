@@ -193,7 +193,7 @@ def cfg(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def app_lib(cfg, make_calibre_db, make_cbz, make_pdf, make_epub):
+def app_lib(cfg, make_calibre_db, make_cbz, make_pdf, make_epub, make_rich_epub):
     """A small scanned library and an app over it (no one signed in yet)."""
     from fastapi.testclient import TestClient
 
@@ -208,6 +208,14 @@ def app_lib(cfg, make_calibre_db, make_cbz, make_pdf, make_epub):
     make_pdf(root / "Reader" / "Three Pages.pdf", title="Three Pages", pages=3)
     make_pdf(root / "Reader" / "Locked.pdf", title="Locked", encrypt=True)
     make_epub(root / "Reader" / "Tale.epub", title="Tale", author="A")
+    make_rich_epub(root / "Reader" / "Rich.epub",
+                   chapters=[("Text/one.xhtml", '<h1>One</h1><script>x()</script><img src="../Images/p.png"/>'
+                                                '<a href="two.xhtml#n2">on</a>'),
+                             ("Text/two.xhtml", '<p id="n2">Two</p>'), ("Text/three.xhtml", "<p>Three</p>")],
+                   nav=[("One", "Text/one.xhtml", 0), ("Two", "Text/two.xhtml", 0), ("Three", "Text/three.xhtml", 0)],
+                   images={"Images/p.png": png((4, 5, 6), (60, 90))})
+    make_rich_epub(root / "Reader" / "Sealed.epub", chapters=[("Text/one.xhtml", "<p>x</p>")],
+                   encryption="http://www.w3.org/2001/04/xmlenc#aes128-cbc")
     scan(cfg)
     return TestClient(create_app(cfg, scan_on_start=False))
 
@@ -244,7 +252,7 @@ def make_rich_epub():
     """An EPUB with real chapters. chapters: [(href, body_html)] (hrefs relative to OEBPS/);
     spine: hrefs in reading order (default: chapter order); nav / ncx: [(title, target, level)];
     images: {href: bytes}; encryption: an algorithm URI for META-INF/encryption.xml."""
-    def make(path: Path, *, chapters, spine=None, nav=None, ncx=None, images=None, encryption=None) -> Path:
+    def make(path: Path, *, chapters, spine=None, nav=None, ncx=None, images=None, encryption=None, title=None) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         images = images or {}
         ids = {href: f"c{i}" for i, (href, _) in enumerate(chapters)}
@@ -258,7 +266,7 @@ def make_rich_epub():
         spine_items = "".join(f'<itemref idref="{ids[h]}"/>' for h in (spine or [h for h, _ in chapters]))
         opf = f"""<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">
-  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Rich</dc:title><dc:creator>A</dc:creator></metadata>
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>{title or path.stem}</dc:title><dc:creator>A</dc:creator></metadata>
   <manifest>{"".join(manifest)}</manifest>
   <spine{' toc="ncx"' if ncx is not None else ''}>{spine_items}</spine>
 </package>"""

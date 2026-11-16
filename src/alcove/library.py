@@ -7,6 +7,8 @@ import re
 
 from .config import Config
 from .db import session
+from .flow import READABLE_FLOW
+from .pages import READABLE as PAGE_FORMATS
 from .reading import get_progress, in_progress
 from .settings import DEFAULTS, get_settings
 
@@ -100,7 +102,8 @@ def get_book(cfg: Config, book_id: int, user=None) -> dict | None:
         row = con.execute("SELECT * FROM books WHERE id = ?", (book_id,)).fetchone()
         if row is None:
             return None
-        files = [{"id": f["id"], "format": f["format"], "size": f["size"]} for f in con.execute(
+        files = [{"id": f["id"], "format": f["format"], "size": f["size"], "readable": readable(f["format"])}
+                 for f in con.execute(
             "SELECT id, format, size FROM book_files WHERE book_id = ? ORDER BY format", (book_id,))]
         series_books = []
         if row["series"]:
@@ -117,6 +120,13 @@ def get_book(cfg: Config, book_id: int, user=None) -> dict | None:
         "series_books": series_books,
         "progress": get_progress(cfg, user.id, book_id) if user else None,
     }
+
+
+def readable(fmt: str) -> str | None:
+    """How the reader shows a format: as page images, as flowing text, or not at all (download only)."""
+    if fmt in PAGE_FORMATS:
+        return "pages"
+    return "flow" if fmt in READABLE_FLOW else None
 
 
 FTS_KEYWORDS = {"AND", "OR", "NOT", "NEAR"}
