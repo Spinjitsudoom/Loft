@@ -7,6 +7,8 @@ import re
 
 from .config import Config
 from .db import session
+from .reading import get_progress, in_progress
+from .settings import DEFAULTS, get_settings
 
 RECENT = 15
 SERIES_ROWS = 8
@@ -34,19 +36,23 @@ def book_card(row) -> dict:
 
 
 def home(cfg: Config, user) -> dict:
+    """The home screen for this person: a hero book, then rows in the order they chose."""
+    look = get_settings(cfg, user.id)["look"] if user else DEFAULTS["look"]
+    reading_now = in_progress(cfg, user.id) if user else []
+    rows_by_kind: dict[str, list[dict]] = {"continue": [], "recent": [], "series": [], "genres": []}
     with session(cfg.db_path) as con:
         recent = [book_card(r) for r in con.execute(
             f"SELECT * FROM books ORDER BY {SORTS['added']} LIMIT ?", (RECENT,))]
         if not recent:
-            return {"hero": None, "rows": []}
-        rows = [{"title": "Recently added", "kind": "recent", "value": None, "books": recent}]
+            return {"hero": None, "hero_kind": None, "hero_progress": None, "rows": []}
+        rows_by_kind["recent"].append({"title": "Recently added", "kind": "recent", "value": None, "books": recent})
 
         for s in con.execute(
                 "SELECT series FROM books WHERE series != '' GROUP BY series HAVING COUNT(*) >= 2 "
                 "ORDER BY MAX(added_at) DESC LIMIT ?", (SERIES_ROWS,)):
             books = [book_card(r) for r in con.execute(
                 f"SELECT * FROM books WHERE series = ? ORDER BY {SERIES_ORDER}", (s["series"],))]
-            rows.append({"title": s["series"], "kind": "series", "value": s["series"], "books": books})
+            rows_by_kind["series"].append({"title": s["series"], "kind": "series", "value": s["series"], "books": books})
 
         for t in con.execute(
                 "SELECT j.value AS tag, COUNT(*) AS n FROM books, json_each(books.tags) j "
@@ -54,8 +60,16 @@ def home(cfg: Config, user) -> dict:
             books = [book_card(r) for r in con.execute(
                 "SELECT books.* FROM books, json_each(books.tags) j WHERE j.value = ? "
                 f"ORDER BY {SORTS['title']} LIMIT ?", (t["tag"], TAG_ROW_BOOKS))]
-            rows.append({"title": t["tag"], "kind": "tag", "value": t["tag"], "books": books})
-    return {"hero": recent[0], "rows": rows}
+            rows_by_kind["genres"].append({"title": t["tag"], "kind": "tag", "value": t["tag"], "books": books})
+
+    if len(reading_now) >= 2:
+        rows_by_kind["continue"].append({"title": "Continue reading", "kind": "continue", "value": None,
+                                         "books": [{**card, "progress": p} for card, p in reading_now]})
+    rows = [row for r in look["home_rows"] if r["visible"] for row in rows_by_kind[r["kind"]]]
+    if reading_now:
+        card, progress = reading_now[0]
+        return {"hero": card, "hero_kind": "continue", "hero_progress": progress, "rows": rows}
+    return {"hero": recent[0], "hero_kind": "new", "hero_progress": None, "rows": rows}
 
 
 def _filter(kind: str | None, value: str | None) -> tuple[str, tuple]:
@@ -81,7 +95,7 @@ def list_books(cfg: Config, *, kind: str | None, value: str | None, sort: str = 
     return {"total": total, "books": books}
 
 
-def get_book(cfg: Config, book_id: int) -> dict | None:
+def get_book(cfg: Config, book_id: int, user=None) -> dict | None:
     with session(cfg.db_path) as con:
         row = con.execute("SELECT * FROM books WHERE id = ?", (book_id,)).fetchone()
         if row is None:
@@ -101,6 +115,7 @@ def get_book(cfg: Config, book_id: int) -> dict | None:
         "tags": json.loads(row["tags"] or "[]"),
         "files": files,
         "series_books": series_books,
+        "progress": get_progress(cfg, user.id, book_id) if user else None,
     }
 
 

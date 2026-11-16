@@ -215,3 +215,22 @@ def client(app_lib):
     r = app_lib.post("/api/setup", json={"username": "admin", "password": "longpassword"})
     assert r.status_code == 200, r.text
     return app_lib
+
+
+@pytest.fixture
+def add(cfg):
+    from alcove.db import session
+    from alcove.scanner import _write_book
+
+    counter = {"t": 1000.0}
+
+    def add(title, authors=("A. Writer",), series="", index=None, tags=(), added=None, description=""):
+        counter["t"] += 1
+        with session(cfg.db_path) as con:
+            bid = _write_book(con, None, title=title, authors=list(authors), author_sort="", series=series,
+                              series_index=index, description=description, publisher="", published="", language="",
+                              tags=list(tags), calibre_id=None, added_at=added or counter["t"])
+            con.execute("INSERT INTO book_files(book_id, path, format, size, mtime, root) VALUES (?,?,?,?,?,?)",
+                        (bid, f"/b/{bid}.pdf", "pdf", 10, 0, "/b"))
+        return bid
+    return add

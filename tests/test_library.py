@@ -4,23 +4,6 @@ import pytest
 
 from alcove import library
 from alcove.db import session
-from alcove.scanner import _write_book
-
-
-@pytest.fixture
-def add(cfg):
-    counter = {"t": 1000.0}
-
-    def add(title, authors=("A. Writer",), series="", index=None, tags=(), added=None, description=""):
-        counter["t"] += 1
-        with session(cfg.db_path) as con:
-            bid = _write_book(con, None, title=title, authors=list(authors), author_sort="", series=series,
-                              series_index=index, description=description, publisher="", published="", language="",
-                              tags=list(tags), calibre_id=None, added_at=added or counter["t"])
-            con.execute("INSERT INTO book_files(book_id, path, format, size, mtime, root) VALUES (?,?,?,?,?,?)",
-                        (bid, f"/b/{bid}.pdf", "pdf", 10, 0, "/b"))
-        return bid
-    return add
 
 
 def titles(cards):
@@ -58,7 +41,7 @@ def test_card_shape(cfg, add):
 
 
 def test_empty_library(cfg):
-    assert library.home(cfg, None) == {"hero": None, "rows": []}
+    assert library.home(cfg, None) == {"hero": None, "hero_kind": None, "hero_progress": None, "rows": []}
 
 
 def test_list_books_filters_and_sorts(cfg, add):

@@ -68,6 +68,29 @@ CREATE TABLE IF NOT EXISTS user_settings (
     data    TEXT NOT NULL  -- JSON, only what the person changed
 );
 
+CREATE TABLE IF NOT EXISTS progress (
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    book_id    INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    file_id    INTEGER NOT NULL,
+    page       INTEGER NOT NULL,
+    pages      INTEGER NOT NULL,
+    position   REAL NOT NULL,
+    finished   INTEGER NOT NULL DEFAULT 0,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (user_id, book_id)
+);
+
+CREATE TABLE IF NOT EXISTS bookmarks (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    book_id    INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    file_id    INTEGER NOT NULL,
+    page       INTEGER NOT NULL,
+    note       TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS bookmarks_user_book ON bookmarks(user_id, book_id);
+
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT
