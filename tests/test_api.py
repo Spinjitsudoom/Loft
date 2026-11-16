@@ -84,3 +84,78 @@ def test_file_download_by_id(client, cfg):
 def test_web_app_served(client):
     r = client.get("/")
     assert r.status_code == 200 and "<html" in r.text.lower()
+
+
+def first_file(client, title):
+    return client.get(f"/api/books/{book_id(client, title)}").json()["files"][0]["id"]
+
+
+def test_manifest_and_pages(client):
+    fid = first_file(client, "Three Pages")
+    m = client.get(f"/api/files/{fid}/manifest").json()
+    assert m["count"] == 3 and m["format"] == "pdf"
+    r = client.get(f"/api/files/{fid}/pages/0?w=99999")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
+    assert "max-age" in r.headers["cache-control"]
+    from PIL import Image
+    import io
+    assert Image.open(io.BytesIO(r.content)).width == 2400
+    assert client.get(f"/api/files/{fid}/pages/-1").status_code == 404
+    assert client.get(f"/api/files/{fid}/pages/3").status_code == 404
+    assert client.get("/api/files/99999/manifest").status_code == 404
+
+
+def test_unreadable_files(client):
+    r = client.get(f"/api/files/{first_file(client, 'Tale')}/manifest")
+    assert r.status_code == 415 and r.json()["reason"] == "format" and "download" in r.json()["detail"]
+    r = client.get(f"/api/files/{first_file(client, 'Locked')}/manifest")
+    assert r.status_code == 415 and r.json()["reason"] == "protected"
+    assert client.get(f"/api/files/{first_file(client, 'Locked')}/pages/0").status_code == 415
+
+
+def test_progress_round_trip(client):
+    bid, fid = book_id(client, "Three Pages"), first_file(client, "Three Pages")
+    r = client.put(f"/api/books/{bid}/progress", json={"file_id": fid, "page": 1, "pages": 3})
+    assert r.status_code == 200 and r.json()["page"] == 1
+    assert client.get(f"/api/books/{bid}").json()["progress"]["page"] == 1
+    other_fid = first_file(client, "It")
+    assert client.put(f"/api/books/{bid}/progress", json={"file_id": other_fid, "page": 1, "pages": 3}).status_code == 400
+    assert client.put("/api/books/99999/progress", json={"file_id": fid, "page": 1, "pages": 3}).status_code == 404
+
+
+def test_bookmarks_api(client):
+    bid, fid = book_id(client, "Three Pages"), first_file(client, "Three Pages")
+    mark = client.post(f"/api/books/{bid}/bookmarks", json={"file_id": fid, "page": 2, "note": "here"}).json()
+    assert [m["page"] for m in client.get(f"/api/books/{bid}/bookmarks").json()] == [2]
+    client.post("/api/users", json={"username": "sam", "password": "longpassword"})
+    client.post("/api/login", json={"username": "sam", "password": "longpassword"})
+    assert client.get(f"/api/books/{bid}/bookmarks").json() == []
+    assert client.delete(f"/api/bookmarks/{mark['id']}").status_code == 404
+    client.post("/api/login", json={"username": "admin", "password": "longpassword"})
+    assert client.delete(f"/api/bookmarks/{mark['id']}").status_code == 200
+
+
+def test_settings_api(client):
+    assert client.get("/api/settings").json()["reading"]["theme"] == "dark"
+    r = client.patch("/api/settings", json={"reading": {"theme": "sepia"}})
+    assert r.status_code == 200 and r.json()["reading"]["theme"] == "sepia"
+    r = client.patch("/api/settings", json={"reading": {"theme": "pink"}})
+    assert r.status_code == 400 and "reading.theme" in r.json()["detail"]
+
+
+def test_password_change_keeps_this_device(client):
+    old = client.post("/api/login", json={"username": "admin", "password": "longpassword"}).json()["token"]
+    assert client.post("/api/me/password", json={"current": "nope-nope", "new": "brandnewpw"}).status_code == 400
+    r = client.post("/api/me/password", json={"current": "longpassword", "new": "brandnewpw"})
+    assert r.status_code == 200
+    assert client.get("/api/me").status_code == 200  # this device: new cookie
+    client.cookies.clear()
+    assert client.get("/api/me", headers={"Authorization": f"Bearer {old}"}).status_code == 401
+
+
+def test_sign_out_everywhere_keeps_this_device(client):
+    old = client.post("/api/login", json={"username": "admin", "password": "longpassword"}).json()["token"]
+    assert client.post("/api/me/signout-everywhere").status_code == 200
+    assert client.get("/api/me").status_code == 200
+    client.cookies.clear()
+    assert client.get("/api/me", headers={"Authorization": f"Bearer {old}"}).status_code == 401

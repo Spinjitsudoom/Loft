@@ -6,12 +6,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse
+from fastapi import Body, Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, library
+from . import auth, library, pages, reading, settings
 from .auth import User, admin_user, current_user
 from .config import Config
 from .covers import cover_path
@@ -24,6 +24,31 @@ WEB_DIR = Path(__file__).parent / "web"
 class Credentials(BaseModel):
     username: str = ""
     password: str = ""
+
+
+class PasswordChange(BaseModel):
+    current: str = ""
+    new: str = ""
+
+
+class ProgressIn(BaseModel):
+    file_id: int
+    page: int
+    pages: int
+    at: float | None = None
+
+
+class BookmarkIn(BaseModel):
+    file_id: int
+    page: int
+    note: str = ""
+
+
+UNREADABLE = {
+    "format": "This kind of book can’t be read here yet; download it instead.",
+    "protected": "This book is protected and can’t be opened here.",
+    "damaged": "This file is damaged and can’t be opened.",
+}
 
 
 def _signed_in(cfg: Config, response: Response, user: User) -> dict:
@@ -44,6 +69,10 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     app = FastAPI(title="Alcove", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.cfg = cfg
     app.state.scanner = scanner
+
+    @app.exception_handler(pages.Unreadable)
+    def unreadable(request: Request, e: pages.Unreadable):
+        return JSONResponse({"detail": UNREADABLE[e.kind], "reason": e.kind}, status_code=415)
 
     # ---------- signing in ----------
 
@@ -77,6 +106,29 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     @app.get("/api/me")
     def me(user: User = Depends(current_user)):
         return user.json()
+
+    @app.post("/api/me/password")
+    def change_password(body: PasswordChange, response: Response, user: User = Depends(current_user)):
+        try:
+            updated = auth.change_password(cfg, user.id, body.current, body.new)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return _signed_in(cfg, response, updated)
+
+    @app.post("/api/me/signout-everywhere")
+    def signout_everywhere(response: Response, user: User = Depends(current_user)):
+        return _signed_in(cfg, response, auth.sign_out_everywhere(cfg, user.id))
+
+    @app.get("/api/settings")
+    def read_settings(user: User = Depends(current_user)):
+        return settings.get_settings(cfg, user.id)
+
+    @app.patch("/api/settings")
+    def change_settings(patch: dict = Body(...), user: User = Depends(current_user)):
+        try:
+            return settings.update_settings(cfg, user.id, patch)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
     # ---------- admin ----------
 
@@ -124,8 +176,8 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             raise HTTPException(400, str(e))
 
     @app.get("/api/books/{book_id}")
-    def book(book_id: int, _: User = Depends(current_user)):
-        b = library.get_book(cfg, book_id)
+    def book(book_id: int, user: User = Depends(current_user)):
+        b = library.get_book(cfg, book_id, user)
         if b is None:
             raise HTTPException(404, "No such book")
         return b
@@ -151,6 +203,55 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         fallback = path.name.encode("ascii", "replace").decode().replace('"', "'")
         disposition = f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(path.name)}"
         return FileResponse(path, headers={"Content-Disposition": disposition})
+
+    # ---------- reading ----------
+
+    def _book_file(book_id: int, file_id: int) -> None:
+        with session(cfg.db_path) as con:
+            if not con.execute("SELECT 1 FROM books WHERE id = ?", (book_id,)).fetchone():
+                raise HTTPException(404, "No such book")
+            if not con.execute("SELECT 1 FROM book_files WHERE id = ? AND book_id = ?", (file_id, book_id)).fetchone():
+                raise HTTPException(400, "That file isn’t part of this book")
+
+    def _manifest(file_id: int) -> dict:
+        try:
+            return pages.manifest(cfg, file_id)
+        except LookupError:
+            raise HTTPException(404, "No such file")
+
+    @app.get("/api/files/{file_id}/manifest")
+    def file_manifest(file_id: int, _: User = Depends(current_user)):
+        return _manifest(file_id)
+
+    @app.get("/api/files/{file_id}/pages/{index}")
+    def file_page(file_id: int, index: int, w: int = 1200, _: User = Depends(current_user)):
+        _manifest(file_id)
+        try:
+            path = pages.render_page(cfg, file_id, index, min(max(w, 600), 2400))
+        except IndexError:
+            raise HTTPException(404, "No such page")
+        return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=604800"})
+
+    @app.put("/api/books/{book_id}/progress")
+    def put_progress(book_id: int, body: ProgressIn, user: User = Depends(current_user)):
+        _book_file(book_id, body.file_id)
+        return reading.save_progress(cfg, user.id, book_id, file_id=body.file_id, page=body.page,
+                                     pages=body.pages, at=body.at)
+
+    @app.get("/api/books/{book_id}/bookmarks")
+    def get_bookmarks(book_id: int, user: User = Depends(current_user)):
+        return reading.list_bookmarks(cfg, user.id, book_id)
+
+    @app.post("/api/books/{book_id}/bookmarks")
+    def post_bookmark(book_id: int, body: BookmarkIn, user: User = Depends(current_user)):
+        _book_file(book_id, body.file_id)
+        return reading.add_bookmark(cfg, user.id, book_id, file_id=body.file_id, page=body.page, note=body.note)
+
+    @app.delete("/api/bookmarks/{bookmark_id}")
+    def remove_bookmark(bookmark_id: int, user: User = Depends(current_user)):
+        if not reading.delete_bookmark(cfg, user.id, bookmark_id):
+            raise HTTPException(404, "No such bookmark")
+        return {"ok": True}
 
     # ---------- the web app ----------
 

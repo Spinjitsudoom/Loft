@@ -193,7 +193,7 @@ def cfg(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def app_lib(cfg, make_calibre_db, make_cbz, make_pdf):
+def app_lib(cfg, make_calibre_db, make_cbz, make_pdf, make_epub):
     """A small scanned library and an app over it (no one signed in yet)."""
     from fastapi.testclient import TestClient
 
@@ -205,6 +205,9 @@ def app_lib(cfg, make_calibre_db, make_cbz, make_pdf):
                             "comment": "<p>Derry.</p><script>alert(1)</script>"}])
     make_cbz(root / "Comics" / "Tide Line.cbz")
     make_pdf(root / "Odd" / "Who's #1? odd.pdf")
+    make_pdf(root / "Reader" / "Three Pages.pdf", title="Three Pages", pages=3)
+    make_pdf(root / "Reader" / "Locked.pdf", title="Locked", encrypt=True)
+    make_epub(root / "Reader" / "Tale.epub", title="Tale", author="A")
     scan(cfg)
     return TestClient(create_app(cfg, scan_on_start=False))
 
