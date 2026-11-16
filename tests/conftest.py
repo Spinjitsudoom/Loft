@@ -237,3 +237,85 @@ def add(cfg):
                         (bid, f"/b/{bid}.pdf", "pdf", 10, 0, "/b"))
         return bid
     return add
+
+
+@pytest.fixture
+def make_rich_epub():
+    """An EPUB with real chapters. chapters: [(href, body_html)] (hrefs relative to OEBPS/);
+    spine: hrefs in reading order (default: chapter order); nav / ncx: [(title, target, level)];
+    images: {href: bytes}; encryption: an algorithm URI for META-INF/encryption.xml."""
+    def make(path: Path, *, chapters, spine=None, nav=None, ncx=None, images=None, encryption=None) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        images = images or {}
+        ids = {href: f"c{i}" for i, (href, _) in enumerate(chapters)}
+        manifest = [f'<item id="{ids[h]}" href="{h}" media-type="application/xhtml+xml"/>' for h, _ in chapters]
+        manifest += [f'<item id="img{i}" href="{h}" media-type="image/{"png" if h.endswith(".png") else "jpeg"}"/>'
+                     for i, h in enumerate(images)]
+        if nav is not None:
+            manifest.append('<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>')
+        if ncx is not None:
+            manifest.append('<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>')
+        spine_items = "".join(f'<itemref idref="{ids[h]}"/>' for h in (spine or [h for h, _ in chapters]))
+        opf = f"""<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Rich</dc:title><dc:creator>A</dc:creator></metadata>
+  <manifest>{"".join(manifest)}</manifest>
+  <spine{' toc="ncx"' if ncx is not None else ''}>{spine_items}</spine>
+</package>"""
+
+        def tree(entries):
+            """[(title, target, level)] → nested [(title, target, children)]."""
+            root, stack = [], [(-1, None)]
+            for title, target, level in entries:
+                node = (title, target, [])
+                while stack[-1][0] >= level:
+                    stack.pop()
+                (stack[-1][1][2] if stack[-1][1] else root).append(node)
+                stack.append((level, node))
+            return root
+
+        def nested(entries):
+            def ol(nodes):
+                return "<ol>" + "".join(f'<li><a href="{t}">{title}</a>{ol(kids) if kids else ""}</li>'
+                                        for title, t, kids in nodes) + "</ol>"
+            return ol(tree(entries))
+
+        with zipfile.ZipFile(path, "w") as z:
+            z.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)
+            z.writestr("META-INF/container.xml", """<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>""")
+            z.writestr("OEBPS/content.opf", opf)
+            for href, body in chapters:
+                z.writestr(f"OEBPS/{href}", f'<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml">'
+                                           f"<head><title>x</title></head><body>{body}</body></html>")
+            for href, data in images.items():
+                z.writestr(f"OEBPS/{href}", data)
+            if nav is not None:
+                z.writestr("OEBPS/nav.xhtml", '<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" '
+                           'xmlns:epub="http://www.idpf.org/2007/ops"><body><nav epub:type="toc">'
+                           f"{nested(nav)}</nav></body></html>")
+            if ncx is not None:
+                points, depth, out = 0, 0, ""
+                for title, target, level in ncx:
+                    while depth > level:
+                        out += "</navPoint>"
+                        depth -= 1
+                    if out and depth == level:
+                        out += "</navPoint>"
+                    points += 1
+                    out += (f'<navPoint id="p{points}"><navLabel><text>{title}</text></navLabel>'
+                            f'<content src="{target}"/>')
+                    depth = level
+                out += "</navPoint>" * (depth + 1)
+                z.writestr("OEBPS/toc.ncx", '<?xml version="1.0"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" '
+                           f'version="2005-1"><navMap>{out}</navMap></ncx>')
+            if encryption:
+                z.writestr("META-INF/encryption.xml", '<?xml version="1.0"?><encryption '
+                           'xmlns="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:enc="http://www.w3.org/2001/04/xmlenc#">'
+                           f'<enc:EncryptedData><enc:EncryptionMethod Algorithm="{encryption}"/>'
+                           '<enc:CipherData><enc:CipherReference URI="OEBPS/Text/one.xhtml"/></enc:CipherData>'
+                           '</enc:EncryptedData></encryption>')
+        return path
+    return make
