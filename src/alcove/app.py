@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
-from . import auth, editing, flowbooks, libsettings, library, openlibrary, pages, reading, settings, shelves, txt, uploads
+from . import auth, check, editing, flowbooks, libsettings, library, openlibrary, pages, reading, settings, shelves, txt, uploads
 from .auth import User, admin_user, current_user
 from .config import Config
 from .covers import cover_path
@@ -51,6 +51,15 @@ class AdminFlag(BaseModel):
 
 class NewPassword(BaseModel):
     password: str = ""
+
+
+class CheckItem(BaseModel):
+    kind: str = ""
+    key: str = ""
+
+
+class MergeIn(BaseModel):
+    other: int
 
 
 class ShelfName(BaseModel):
@@ -425,6 +434,42 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     def unshelve(shelf_id: int, book_id: int, user: User = Depends(current_user)):
         _shelf_call(shelves.remove, user.id, shelf_id, book_id)
         return {"ok": True}
+
+    # ---------- the library check ----------
+
+    @app.get("/api/check")
+    def library_check(_: User = Depends(admin_user)):
+        return check.problems(cfg)
+
+    @app.get("/api/check/ignored")
+    def ignored(_: User = Depends(admin_user)):
+        return check.list_ignored(cfg)
+
+    @app.post("/api/check/ignored")
+    def ignore(body: CheckItem, _: User = Depends(admin_user)):
+        try:
+            check.ignore(cfg, body.kind, body.key)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return {"ok": True}
+
+    @app.delete("/api/check/ignored")
+    def unignore(body: CheckItem, _: User = Depends(admin_user)):
+        try:
+            check.unignore(cfg, body.kind, body.key)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return {"ok": True}
+
+    @app.post("/api/books/{book_id}/merge")
+    def merge(book_id: int, body: MergeIn, user: User = Depends(admin_user)):
+        try:
+            library.merge_books(cfg, book_id, body.other)
+        except LookupError:
+            raise HTTPException(404, "No such book")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return _edited(book_id, user)
 
     @app.get("/api/search")
     def search(q: str = "", _: User = Depends(current_user)):

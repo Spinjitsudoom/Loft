@@ -94,7 +94,7 @@ def _protected(path: Path, unreadable: set[Path]) -> bool:
 
 
 # Columns each editable field covers: when the admin has set a field, scans leave all of them alone.
-LOCK_COLUMNS = {"title": ("title", "sort_title"), "authors": ("authors", "author_sort"),
+LOCK_COLUMNS = {"title": ("title", "sort_title", "title_from_name"), "authors": ("authors", "author_sort"),
                 "series": ("series",), "series_index": ("series_index",), "description": ("description",),
                 "publisher": ("publisher",), "published": ("published",), "language": ("language",),
                 "tags": ("tags",)}
@@ -121,12 +121,13 @@ def index_book(con: sqlite3.Connection, book_id: int) -> None:
 def _write_book(con: sqlite3.Connection, book_id: int | None, *, title: str, authors: list[str], author_sort: str,
                 series: str, series_index: float | None, description: str, publisher: str, published: str,
                 language: str, tags: list[str], calibre_id: int | None, added_at: float,
-                locked: list[str] | None = None) -> int:
+                locked: list[str] | None = None, title_from_name: bool = False) -> int:
     now = time.time()
     values = dict(title=title, sort_title=sort_title(title), authors=json.dumps(authors),
                   author_sort=author_sort or (authors[0] if authors else ""), series=series,
                   series_index=series_index, description=description, publisher=publisher, published=published,
-                  language=language, tags=json.dumps(tags), calibre_id=calibre_id, updated_at=now)
+                  language=language, tags=json.dumps(tags), calibre_id=calibre_id, updated_at=now,
+                  title_from_name=int(title_from_name))
     if book_id is None:
         values["added_at"] = added_at
         values["locked"] = json.dumps(sorted(locked or []))
@@ -199,7 +200,7 @@ def _loose_book(cfg: Config, con: sqlite3.Connection, book_id: int | None, path:
     book_id = _write_book(con, book_id, title=meta.title, authors=meta.authors, author_sort="", series=meta.series,
                           series_index=meta.series_index, description=meta.description, publisher=meta.publisher,
                           published=meta.published, language=meta.language, tags=[], calibre_id=None,
-                          added_at=time.time())
+                          added_at=time.time(), title_from_name=meta.title_from_name)
     _set_cover(cfg, con, book_id, image)
     _upsert_file(con, book_id, path, f, root)
     return outcome
@@ -347,6 +348,8 @@ class Scanner:
             self.running = True
             try:
                 self.last = scan(self.cfg)
+                from .check import check_files
+                check_files(self.cfg)
                 prune_page_cache(self.cfg)
                 from .uploads import prune_drafts
                 prune_drafts(self.cfg)

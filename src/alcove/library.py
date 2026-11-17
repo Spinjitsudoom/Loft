@@ -182,3 +182,35 @@ def search(cfg: Config, q: str, limit: int = 40) -> list[dict]:
         return [book_card(r) for r in con.execute(
             "SELECT books.* FROM books_fts JOIN books ON books.id = books_fts.rowid "
             "WHERE books_fts MATCH ? ORDER BY bm25(books_fts), books.sort_title LIMIT ?", (match, limit))]
+
+
+def merge_books(cfg: Config, into: int, other: int) -> None:
+    """Make one book of two: other's files, shelf places, bookmarks and reading progress move to into
+    (the newer progress wins when someone has both), and other goes. Every detail of into is locked,
+    so a Calibre change can't pull them apart again. The files themselves are untouched."""
+    import time
+
+    from .editing import FIELDS
+    from .scanner import _delete_book
+
+    if into == other:
+        raise ValueError("Pick two different books to merge")
+    with session(cfg.db_path) as con:
+        for book_id in (into, other):
+            if not con.execute("SELECT 1 FROM books WHERE id = ?", (book_id,)).fetchone():
+                raise LookupError(book_id)
+        con.execute("UPDATE book_files SET book_id = ? WHERE book_id = ?", (into, other))
+        con.execute("INSERT OR IGNORE INTO shelf_books(shelf_id, book_id, added_at) "
+                    "SELECT shelf_id, ?, added_at FROM shelf_books WHERE book_id = ?", (into, other))
+        con.execute("UPDATE bookmarks SET book_id = ? WHERE book_id = ?", (into, other))
+        for p in con.execute("SELECT * FROM progress WHERE book_id = ?", (other,)).fetchall():
+            mine = con.execute("SELECT updated_at FROM progress WHERE book_id = ? AND user_id = ?",
+                               (into, p["user_id"])).fetchone()
+            if mine is None or p["updated_at"] > mine["updated_at"]:
+                con.execute("INSERT OR REPLACE INTO progress(user_id, book_id, file_id, page, pages, position, "
+                            "finished, updated_at, locator) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            (p["user_id"], into, p["file_id"], p["page"], p["pages"], p["position"], p["finished"],
+                             p["updated_at"], p["locator"]))
+        _delete_book(cfg, con, other)
+        con.execute("UPDATE books SET locked = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(sorted([*FIELDS, "cover"])), time.time(), into))

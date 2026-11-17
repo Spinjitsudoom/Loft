@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS books (
     has_cover    INTEGER NOT NULL DEFAULT 0,
     added_at     REAL NOT NULL,
     updated_at   REAL NOT NULL,
-    locked       TEXT NOT NULL DEFAULT '[]'    -- JSON list of fields the admin set; scans leave them alone
+    locked       TEXT NOT NULL DEFAULT '[]',   -- JSON list of fields the admin set; scans leave them alone
+    title_from_name INTEGER                    -- 1 when the title was made from the file's name (NULL: not known yet)
 );
 CREATE INDEX IF NOT EXISTS books_added ON books(added_at);
 CREATE INDEX IF NOT EXISTS books_series ON books(series);
@@ -137,6 +138,7 @@ MIGRATIONS = [
     ("progress", "locator", "TEXT"),
     ("bookmarks", "locator", "TEXT"),
     ("books", "locked", "TEXT NOT NULL DEFAULT '[]'"),
+    ("books", "title_from_name", "INTEGER"),
     ("book_files", "layout", "TEXT"),
     ("book_files", "layout_rev", "INTEGER NOT NULL DEFAULT 0"),
 ]

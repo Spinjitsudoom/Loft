@@ -37,6 +37,7 @@ class FileMeta:
     series_index: float | None = None
     encrypted: bool = False
     isbn: str = ""
+    title_from_name: bool = False  # the file had no usable title of its own
 
 
 def valid_isbn(value: str) -> str:
@@ -105,7 +106,7 @@ def _text(html: str) -> str:
 
 
 def read_file_meta(path: Path, fmt: str) -> FileMeta:
-    fallback = FileMeta(title=title_from_filename(path))
+    fallback = FileMeta(title=title_from_filename(path), title_from_name=True)
     try:
         if fmt == "pdf":
             meta = _pdf(path)
@@ -118,6 +119,8 @@ def read_file_meta(path: Path, fmt: str) -> FileMeta:
         return fallback
     meta.title = clean_title(meta.title)
     if is_junk_title(meta.title, path):
+        # A file whose own title is its name agrees with itself; only a missing or junk title is a guess.
+        meta.title_from_name = meta.title.strip() != path.stem
         meta.title = fallback.title
     return meta
 
@@ -132,7 +135,7 @@ def _pdf(path: Path) -> FileMeta:
             info = doc.get_metadata_dict(skip_empty=True)
     except pdfium.PdfiumError as e:
         if "password" in str(e).lower():
-            return FileMeta(title=title_from_filename(path), encrypted=True)
+            return FileMeta(title=title_from_filename(path), encrypted=True, title_from_name=True)
         raise
     return FileMeta(title=info.get("Title", "").strip(), authors=split_authors(info.get("Author", "")))
 
