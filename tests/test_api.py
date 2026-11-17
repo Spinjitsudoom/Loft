@@ -241,3 +241,39 @@ def test_web_app_files_are_revalidated(client):
         r = client.get(path)
         assert r.status_code == 200, path
         assert r.headers.get("cache-control") == "no-cache", path
+
+
+def test_people_admin_and_passwords(client, app_lib):
+    from fastapi.testclient import TestClient
+    sam_id = client.post("/api/users", json={"username": "sam", "password": "samsamsam"}).json()["id"]
+    me = client.get("/api/me").json()
+    sam = TestClient(app_lib.app)
+    sam_token = sam.post("/api/login", json={"username": "sam", "password": "samsamsam"}).json()["token"]
+    for call in (lambda: sam.patch(f"/api/users/{me['id']}", json={"admin": False}),
+                 lambda: sam.post(f"/api/users/{me['id']}/password", json={"password": "hijacked1"}),
+                 lambda: sam.delete(f"/api/users/{me['id']}")):
+        assert call().status_code == 403
+
+    r = client.patch(f"/api/users/{sam_id}", json={"admin": True})
+    assert r.status_code == 200 and r.json()["admin"] is True
+    assert sam.get("/api/users").status_code == 200  # takes effect at once
+    assert client.patch(f"/api/users/{sam_id}", json={"admin": False}).json()["admin"] is False
+    assert sam.get("/api/users").status_code == 403  # and so does taking it away
+
+    r = client.patch(f"/api/users/{me['id']}", json={"admin": False})
+    assert r.status_code == 400 and "at least one admin" in r.json()["detail"]
+    assert client.patch("/api/users/9999", json={"admin": True}).status_code == 404
+
+    assert client.post(f"/api/users/{sam_id}/password", json={"password": "short"}).status_code == 400
+    assert client.post(f"/api/users/{sam_id}/password", json={"password": "newpassword"}).status_code == 200
+    assert sam.get("/api/me", headers={"Authorization": f"Bearer {sam_token}"}).status_code == 401
+    assert sam.post("/api/login", json={"username": "sam", "password": "newpassword"}).status_code == 200
+
+
+def test_giving_up_your_own_admin_keeps_you_signed_in(client):
+    sam_id = client.post("/api/users", json={"username": "sam", "password": "samsamsam"}).json()["id"]
+    client.patch(f"/api/users/{sam_id}", json={"admin": True})
+    me = client.get("/api/me").json()
+    r = client.patch(f"/api/users/{me['id']}", json={"admin": False})
+    assert r.status_code == 200 and r.json()["admin"] is False
+    assert client.get("/api/me").json()["admin"] is False

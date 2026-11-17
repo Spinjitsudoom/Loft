@@ -112,9 +112,32 @@ def list_users(cfg: Config) -> list[User]:
         return [_user(r) for r in con.execute("SELECT * FROM users ORDER BY id")]
 
 
+LAST_ADMIN = "There has to be at least one admin"
+
+
+def _other_admins(con, user_id: int) -> int:
+    return con.execute("SELECT COUNT(*) FROM users WHERE admin = 1 AND id != ?", (user_id,)).fetchone()[0]
+
+
 def delete_user(cfg: Config, user_id: int) -> None:
     with session(cfg.db_path) as con:
+        row = con.execute("SELECT admin FROM users WHERE id = ?", (user_id,)).fetchone()
+        if row and row["admin"] and not _other_admins(con, user_id):
+            raise ValueError(LAST_ADMIN)
         con.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+
+def set_admin(cfg: Config, user_id: int, admin: bool) -> User:
+    """Make someone an admin or a member. Takes effect on their next request (the flag is read each
+    time), so they stay signed in either way."""
+    with session(cfg.db_path) as con:
+        row = con.execute("SELECT admin FROM users WHERE id = ?", (user_id,)).fetchone()
+        if row is None:
+            raise LookupError(user_id)
+        if row["admin"] and not admin and not _other_admins(con, user_id):
+            raise ValueError(LAST_ADMIN)
+        con.execute("UPDATE users SET admin = ? WHERE id = ?", (int(admin), user_id))
+    return get_user(cfg, user_id)
 
 
 def set_password(cfg: Config, user_id: int, password: str) -> None:

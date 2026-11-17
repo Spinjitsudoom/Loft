@@ -76,3 +76,16 @@ def test_sign_out_everywhere(cfg):
     updated = auth.sign_out_everywhere(cfg, u.id)
     assert auth.user_from_token(cfg, token) is None
     assert auth.user_from_token(cfg, auth.make_token(cfg, updated)) == updated
+
+
+def test_admins_can_be_made_and_unmade_but_never_none(cfg):
+    a = auth.create_user(cfg, "Etta", "longpassword", admin=True)
+    s = auth.create_user(cfg, "Sam", "longpassword")
+    assert auth.set_admin(cfg, s.id, True).admin
+    assert not auth.set_admin(cfg, a.id, False).admin
+    with pytest.raises(ValueError, match="at least one admin"):
+        auth.set_admin(cfg, s.id, False)
+    with pytest.raises(ValueError, match="at least one admin"):
+        auth.delete_user(cfg, s.id)
+    auth.delete_user(cfg, a.id)
+    assert [u.username for u in auth.list_users(cfg)] == ["Sam"]

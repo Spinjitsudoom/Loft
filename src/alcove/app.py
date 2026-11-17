@@ -44,6 +44,14 @@ class PasswordChange(BaseModel):
     new: str = ""
 
 
+class AdminFlag(BaseModel):
+    admin: bool
+
+
+class NewPassword(BaseModel):
+    password: str = ""
+
+
 class ProgressIn(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False)
     file_id: int
@@ -170,7 +178,29 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     def remove_user(user_id: int, me: User = Depends(admin_user)):
         if user_id == me.id:
             raise HTTPException(400, "You can’t remove your own account")
-        auth.delete_user(cfg, user_id)
+        try:
+            auth.delete_user(cfg, user_id)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return {"ok": True}
+
+    @app.patch("/api/users/{user_id}")
+    def change_user(user_id: int, body: AdminFlag, _: User = Depends(admin_user)):
+        try:
+            return auth.set_admin(cfg, user_id, body.admin).json()
+        except LookupError:
+            raise HTTPException(404, "No such person")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.post("/api/users/{user_id}/password")
+    def reset_password(user_id: int, body: NewPassword, _: User = Depends(admin_user)):
+        if auth.get_user(cfg, user_id) is None:
+            raise HTTPException(404, "No such person")
+        try:
+            auth.set_password(cfg, user_id, body.password)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
         return {"ok": True}
 
     @app.post("/api/scan", status_code=202)
