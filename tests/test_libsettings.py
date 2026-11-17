@@ -128,3 +128,65 @@ def test_library_routes(client, app_lib):
     client.post("/api/login", json={"username": "sam", "password": "samsamsam"})
     assert client.get("/api/library").status_code == 403
     assert client.patch("/api/library", json={"name": "x"}).status_code == 403
+
+
+@pytest.mark.parametrize("inner", [True, False])
+def test_folders_inside_each_other_are_refused(cfg, inner):
+    root = cfg.books_dirs[0]
+    sub = root / "Comics"
+    sub.mkdir()
+    dirs = [str(root), str(sub)] if inner else [str(sub), str(root)]
+    with pytest.raises(ValueError, match="inside"):
+        libsettings.update_library(cfg, {"books_dirs": dirs})
+
+
+def test_same_folder_by_another_path_is_refused(cfg, tmp_path):
+    link = tmp_path / "alias"
+    link.symlink_to(cfg.books_dirs[0])
+    with pytest.raises(ValueError, match="inside|same"):
+        libsettings.update_library(cfg, {"books_dirs": [str(cfg.books_dirs[0]), str(link)]})
+
+
+def test_nested_folders_from_config_dont_churn(cfg, make_pdf):
+    from alcove import reading, auth
+    root = cfg.books_dirs[0]
+    make_pdf(root / "Comics" / "A.pdf", title="A", pages=3)
+    cfg.books_dirs = [root, root / "Comics"]
+    scan(cfg)
+    with session(cfg.db_path) as con:
+        bid = con.execute("SELECT id FROM books").fetchone()["id"]
+        fid = con.execute("SELECT id FROM book_files").fetchone()["id"]
+    sam = auth.create_user(cfg, "Sam", "longpassword")
+    reading.save_progress(cfg, sam.id, bid, file_id=fid, page=1, pages=3)
+    for _ in range(2):
+        result = scan(cfg)
+        assert (result.added, result.removed) == (0, 0)
+    assert reading.get_progress(cfg, sam.id, bid)["page"] == 1
+
+
+def test_removing_a_folder_during_a_scan_keeps_it_removed(cfg, tmp_path, make_pdf, monkeypatch):
+    import threading
+    import time as _time
+    from alcove import scanner
+    a, b = cfg.books_dirs[0], tmp_path / "b"
+    make_pdf(a / "InA.pdf", title="InA")
+    make_pdf(b / "InB.pdf", title="InB")
+    libsettings.update_library(cfg, {"books_dirs": [str(a), str(b)]})
+    scan(cfg)
+    assert titles(cfg) == ["InA", "InB"]
+    real = scanner._scan_root
+    worker = []
+
+    def slow(cfg_, con, root, txt=False):
+        if root == a and not worker:
+            t = threading.Thread(target=libsettings.update_library, args=(cfg, {"books_dirs": [str(a)]}))
+            worker.append(t)
+            t.start()
+            _time.sleep(0.3)  # the removal is saved and waiting while this folder is scanned
+        return real(cfg_, con, root, txt)
+
+    monkeypatch.setattr(scanner, "_scan_root", slow)
+    scan(cfg)
+    worker[0].join()
+    scan(cfg)
+    assert titles(cfg) == ["InA"]

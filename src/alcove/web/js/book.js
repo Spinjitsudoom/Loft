@@ -85,6 +85,16 @@ function layoutHTML(b) {
   </section>`;
 }
 
+// Only what the admin actually changed is sent: each field sent is locked against later scans.
+function changedDetails(b, now) {
+  const same = (key, a, c) => {
+    if (key === "authors" || key === "tags") return JSON.stringify(a || []) === JSON.stringify(c || []);
+    if (key === "series_index") return (a ?? null) === (c ?? null);
+    return String(a ?? "").replace(/\r\n/g, "\n").trim() === String(c ?? "").replace(/\r\n/g, "\n").trim();
+  };
+  return Object.fromEntries(Object.entries(now).filter(([key, value]) => !same(key, b[key], value)));
+}
+
 function renderEditor(main, b, coversFirst) {
   const back = `#/book/${b.id}`;
   main.innerHTML = `<article class="book-page editing" style="--glow: ${esc(b.color || "#3a2a1e")}">
@@ -124,7 +134,8 @@ function renderEditor(main, b, coversFirst) {
     const button = form.querySelector("[type=submit]");
     button.disabled = true;
     try {
-      await api(`/books/${b.id}`, { method: "PATCH", body: readDetails(form) });
+      const changed = changedDetails(b, readDetails(form));
+      if (Object.keys(changed).length) await api(`/books/${b.id}`, { method: "PATCH", body: changed });
       location.hash = back;
     } catch (err) {
       const left = showError(form, err.message);

@@ -291,7 +291,19 @@ def _scan_root(cfg: Config, con: sqlite3.Connection, root: Path, allow_txt: bool
                        calibre_missing=calibre_missing)
 
 
-_scan_lock = threading.Lock()
+_scan_lock = threading.Lock()  # one scan at a time; library changes that touch book files wait for it
+
+
+def _nested(root: Path, roots: list[Path]) -> bool:
+    """Whether root is inside another listed folder, or is an earlier-listed folder again by another path."""
+    try:
+        real = root.resolve()
+        others = [(i, Path(r).resolve()) for i, r in enumerate(roots)]
+    except OSError:
+        return False
+    mine = next(i for i, r in enumerate(roots) if Path(r) == root)
+    return any(i != mine and (real.is_relative_to(other) and real != other or real == other and i < mine)
+               for i, other in others)
 REPORT_KEY = "last_scan"
 
 
@@ -300,7 +312,13 @@ def scan(cfg: Config) -> ScanResult:
               "calibre_missing": []}
     with _scan_lock:
         txt = libsettings.allow_txt(cfg)
-        for root in libsettings.books_dirs(cfg):
+        roots = libsettings.books_dirs(cfg)
+        for root in roots:
+            if str(root) not in libsettings.get_library(cfg)["books_dirs"]:
+                continue  # taken out of the library while this scan was running
+            if _nested(Path(root), roots):
+                log.warning("Books folder %s is inside another books folder; scanning it once, as part of that one", root)
+                continue
             with session(cfg.db_path) as con:
                 r = _scan_root(cfg, con, Path(root), txt)
             for key in ("added", "updated", "removed"):

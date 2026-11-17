@@ -163,3 +163,33 @@ def test_upload_routes(client, cfg, tmp_path, make_epub):
     client.post("/api/users", json={"username": "sam", "password": "samsamsam"})
     client.post("/api/login", json={"username": "sam", "password": "samsamsam"})
     assert client.put("/api/uploads?name=Fresh.epub", content=data).status_code == 403
+
+
+def test_saving_waits_for_a_running_scan(cfg, tmp_path, make_epub):
+    import threading
+    from alcove import scanner
+    draft = uploads.start(cfg, "Tale.epub", chunks(epub_bytes(tmp_path, make_epub)))
+    done = []
+    with scanner._scan_lock:
+        t = threading.Thread(target=lambda: done.append(uploads.save(cfg, draft["token"], DETAILS)))
+        t.start()
+        t.join(0.4)
+        assert t.is_alive() and not any(cfg.books_dirs[0].rglob("*.epub"))
+    t.join(5)
+    assert done and (cfg.books_dirs[0] / "A" / "Tale" / "Tale.epub").is_file()
+
+
+def test_files_without_a_title_are_named_from_the_uploaded_name(cfg, make_pdf, tmp_path):
+    data = make_pdf(tmp_path / "x.pdf").read_bytes()
+    draft = uploads.start(cfg, "The Name of the Wind.pdf", [data])
+    assert draft["details"]["title"] == "The Name of the Wind"
+
+
+def test_a_cover_that_wont_download_falls_back_to_the_files_own(cfg, tmp_path, make_epub, monkeypatch):
+    from alcove import openlibrary
+    def down(url, limit):
+        raise OSError("no route")
+    monkeypatch.setattr(openlibrary, "_get", down)
+    draft = uploads.start(cfg, "Tale.epub", chunks(epub_bytes(tmp_path, make_epub)))
+    bid = uploads.save(cfg, draft["token"], DETAILS, cover_url="https://covers.openlibrary.org/b/id/1-L.jpg")
+    assert get_book(cfg, bid)["has_cover"]

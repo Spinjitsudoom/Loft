@@ -68,6 +68,15 @@ def _folders(value) -> list[str]:
             raise ValueError(f"books_dirs: Alcove isn’t allowed to read {path}")
         if str(path) not in result:
             result.append(str(path))
+    # A folder inside another (or the same folder by another path) would hold every book twice.
+    real = [(p, Path(p).resolve()) for p in result]
+    for i, (a, ra) in enumerate(real):
+        for b, rb in real[i + 1:]:
+            if ra == rb:
+                raise ValueError(f"books_dirs: {a} and {b} are the same folder")
+            if ra.is_relative_to(rb) or rb.is_relative_to(ra):
+                inner, outer = (a, b) if ra.is_relative_to(rb) else (b, a)
+                raise ValueError(f"books_dirs: {inner} is inside {outer}, which Alcove already looks through")
     return result
 
 
@@ -113,7 +122,9 @@ def update_library(cfg: Config, patch: dict) -> dict:
     if "books_dirs" in clean:
         gone = [d for d in current["books_dirs"] if d not in clean["books_dirs"]]
         if gone:
-            _forget_folders(cfg, gone)
+            from .scanner import _scan_lock
+            with _scan_lock:  # a scan already under way finishes first, and won't scan these again
+                _forget_folders(cfg, gone)
     return get_library(cfg)
 
 

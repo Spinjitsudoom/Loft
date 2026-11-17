@@ -19,7 +19,7 @@ from .config import Config
 from .covers import extract_cover
 from .db import session
 from .editing import FIELDS, clean_details
-from .filemeta import read_file_meta
+from .filemeta import read_file_meta, title_from_filename
 from .formats import format_of
 from .libsettings import allow_txt, get_library
 
@@ -101,7 +101,8 @@ def read_draft(cfg: Config, token: str) -> dict:
         image = extract_cover(path, info["format"])
         if image:
             (folder / "cover.jpg").write_bytes(image)
-    details = {"title": meta.title, "authors": meta.authors, "series": meta.series, "series_index": meta.series_index,
+    title = title_from_filename(Path(info["filename"])) if meta.title_from_name else meta.title
+    details = {"title": title, "authors": meta.authors, "series": meta.series, "series_index": meta.series_index,
                "description": meta.description, "publisher": meta.publisher, "published": meta.published,
                "language": meta.language, "tags": []}
     return {"token": token, "filename": info["filename"], "format": info["format"], "size": path.stat().st_size,
@@ -173,8 +174,8 @@ def _copy_new(source: Path, target: Path) -> Path:
 
 def save(cfg: Config, token: str, details: dict, *, cover_url: str | None = None) -> int:
     """Save a reviewed upload into the books folder and the library. Returns the new book's id."""
-    from .openlibrary import fetch_cover
-    from .scanner import _Found, _set_cover, _upsert_file, _write_book
+    from .openlibrary import LookupFailed, fetch_cover
+    from .scanner import _Found, _scan_lock, _set_cover, _upsert_file, _write_book
 
     folder = _draft(cfg, token)
     clean = clean_details({k: details.get(k) for k in FIELDS if k in details}, require=True)
@@ -184,33 +185,40 @@ def save(cfg: Config, token: str, details: dict, *, cover_url: str | None = None
         full["series_index"] = None
     info = json.loads((folder / "draft.json").read_text())
     source = folder / f"book.{info['format']}"
-    image = fetch_cover(cfg, cover_url) if cover_url else None
+    image = None
+    if cover_url:
+        try:
+            image = fetch_cover(cfg, cover_url)
+        except LookupFailed:
+            image = None  # Open Library didn't send it: the file's own cover will do
     if image is None and (folder / "cover.jpg").is_file():
         image = (folder / "cover.jpg").read_bytes()
 
     upload_dir = Path(get_library(cfg)["upload_dir"] or "")
     if not str(upload_dir) or not upload_dir.is_dir():
         raise ValueError(f"Alcove can’t find the folder uploads go into ({upload_dir}). Check Library settings.")
-    target = _destination(upload_dir, full, info["filename"], info["format"])
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        saved = _copy_new(source, target)
-    except OSError as e:
-        raise ValueError(f"Alcove can’t save into {upload_dir}: {e.strerror or e}. "
-                         "Check that the folder can be written to.") from e
+    # While a scan runs it mustn't meet this file half-copied, or before the book that owns it exists.
+    with _scan_lock:
+        target = _destination(upload_dir, full, info["filename"], info["format"])
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            saved = _copy_new(source, target)
+        except OSError as e:
+            raise ValueError(f"Alcove can’t save into {upload_dir}: {e.strerror or e}. "
+                             "Check that the folder can be written to.") from e
 
-    st = saved.stat()
-    try:
-        with session(cfg.db_path) as con:
-            book_id = _write_book(con, None, title=full["title"], authors=full["authors"], author_sort="",
-                                  series=full["series"], series_index=full["series_index"],
-                                  description=full["description"], publisher=full["publisher"],
-                                  published=full["published"], language=full["language"], tags=full["tags"],
-                                  calibre_id=None, added_at=time.time(), locked=list(FIELDS))
-            _set_cover(cfg, con, book_id, image)
-            _upsert_file(con, book_id, saved, _Found(info["format"], st.st_size, st.st_mtime), upload_dir)
-    except BaseException:
-        saved.unlink(missing_ok=True)
-        raise
+        st = saved.stat()
+        try:
+            with session(cfg.db_path) as con:
+                book_id = _write_book(con, None, title=full["title"], authors=full["authors"], author_sort="",
+                                      series=full["series"], series_index=full["series_index"],
+                                      description=full["description"], publisher=full["publisher"],
+                                      published=full["published"], language=full["language"], tags=full["tags"],
+                                      calibre_id=None, added_at=time.time(), locked=list(FIELDS))
+                _set_cover(cfg, con, book_id, image)
+                _upsert_file(con, book_id, saved, _Found(info["format"], st.st_size, st.st_mtime), upload_dir)
+        except BaseException:
+            saved.unlink(missing_ok=True)
+            raise
     shutil.rmtree(folder, ignore_errors=True)
     return book_id
