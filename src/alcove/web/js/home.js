@@ -1,6 +1,7 @@
 // The cover wall: a lamplit book at the top, then shelves of covers.
 import { api, authorLine, esc, icon, seriesLine } from "./api.js";
 import { coverHTML } from "./cover.js";
+import { state } from "./main.js";
 
 export const canRead = (book) => (book.files || []).some((f) => f.readable);
 
@@ -80,9 +81,11 @@ function heroHTML(home, detail) {
 export async function renderHome(main) {
   const home = await api("/home");
   if (!home.hero) {
-    main.innerHTML = `<div class="empty"><h1>Your shelves are empty</h1>
-      <p>Alcove shows the books in the folders set in <code>config.toml</code>. Add books there, then rescan from library settings.</p>
-      <a class="btn" href="#/admin">Library settings</a></div>`;
+    main.innerHTML = state.me.admin
+      ? `<div class="empty"><h1>The shelves are empty</h1>
+        <p>Add books here, or point Alcove at the folders that hold them in Library settings.</p>
+        <div class="hero-actions"><a class="btn btn-primary" href="#/add">Add books</a><a class="btn" href="#/admin">Library settings</a></div></div>`
+      : `<div class="empty"><h1>The shelves are empty</h1><p>Nothing’s been added yet. Check back soon.</p></div>`;
     return;
   }
   const detail = await api(`/books/${home.hero.id}`).catch(() => null);

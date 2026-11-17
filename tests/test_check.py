@@ -100,7 +100,7 @@ def test_ignore_and_unignore(cfg, add):
     check.ignore(cfg, "no_cover", str(bid))
     assert not any(i["kind"] == "no_cover" and i["key"] == str(bid) for i in items(cfg))
     assert check.problems(cfg)["ignored"] == 1
-    assert check.list_ignored(cfg) == [{"kind": "no_cover", "key": str(bid)}]
+    assert check.list_ignored(cfg) == [{"kind": "no_cover", "key": str(bid), "label": "Plain"}]
     check.unignore(cfg, "no_cover", str(bid))
     assert check.problems(cfg)["ignored"] == 0
     with pytest.raises(ValueError):
@@ -133,7 +133,8 @@ def test_check_routes(client, cfg):
     item = next(i for i in r["items"] if i["kind"] == "protected")
     assert client.post("/api/check/ignored", json={"kind": item["kind"], "key": item["key"]}).status_code == 200
     assert client.get("/api/check").json()["ignored"] == 1
-    assert client.get("/api/check/ignored").json() == [{"kind": item["kind"], "key": item["key"]}]
+    assert client.get("/api/check/ignored").json() == [{"kind": item["kind"], "key": item["key"],
+                                                         "label": item["book"]["title"]}]
     assert client.request("DELETE", "/api/check/ignored", json={"kind": item["kind"], "key": item["key"]}).status_code == 200
     from test_api import book_id
     a, b = book_id(client, "Tale"), book_id(client, "Three Pages")

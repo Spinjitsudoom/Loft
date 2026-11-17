@@ -23,6 +23,18 @@ export async function api(path, { method = "GET", body } = {}) {
   return json;
 }
 
+// Send a file as the request body (covers, uploads). Returns the JSON reply.
+export async function putRaw(path, file) {
+  const r = await fetch("/api" + path, {
+    method: "PUT", credentials: "same-origin", body: file,
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+  });
+  const json = (r.headers.get("content-type") || "").includes("json") ? await r.json() : null;
+  if (r.status === 401) location.hash = "#/login";
+  if (!r.ok) throw new ApiError(json && typeof json.detail === "string" ? json.detail : "That didn’t work; try again", r.status);
+  return json;
+}
+
 const ENTITIES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 export const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ENTITIES[c]);
 

@@ -2,13 +2,13 @@ import { api, esc } from "./api.js";
 import { signedIn } from "./main.js";
 
 export async function renderLogin(app, setup) {
-  if (!setup) {
-    const status = await api("/status").catch(() => ({ setup_needed: false }));
-    if (status.setup_needed) { location.hash = "#/setup"; return; }
-  }
+  const status = await api("/status").catch(() => ({ setup_needed: false, name: "" }));
+  if (!setup && status.setup_needed) { location.hash = "#/setup"; return; }
+  const name = status.name || "";
+  document.title = name || "Alcove";
   app.innerHTML = `<main class="signin">
     <form class="signin-card" novalidate>
-      <h1 class="brand brand-large">Alcove</h1>
+      <h1 class="brand brand-large">${esc(name || "Alcove")}</h1>
       <p class="signin-lede">${setup
         ? "Create the admin account. You’ll use it to add people and look after the library."
         : "Sign in to your library."}</p>

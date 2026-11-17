@@ -3,11 +3,11 @@ import { api, esc, icon } from "./api.js";
 import { ACCENTS, loadPrefs, patchPrefs } from "./prefs.js";
 import { state } from "./main.js";
 
-const ROW_NAMES = { continue: "Continue reading", recent: "Recently added", series: "Series", genres: "Genres" };
+const ROW_NAMES = { continue: "Continue reading", shelves: "Your shelves", recent: "Recently added", series: "Series", genres: "Genres" };
 const ACCENT_NAMES = { brass: "Brass", sage: "Sage", dusk: "Dusk", rose: "Rose", lilac: "Lilac" };
 
 let noteTimer;
-function saved(text = "Saved") {
+export function saved(text = "Saved") {
   let note = document.querySelector(".saved-note");
   if (!note) {
     note = document.createElement("div");

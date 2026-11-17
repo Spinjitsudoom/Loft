@@ -5,24 +5,27 @@ import { renderHome } from "./home.js";
 import { renderGrid } from "./grid.js";
 import { renderBook } from "./book.js";
 import { renderAdmin } from "./admin.js";
+import { renderAdd } from "./add.js";
+import { renderCheck } from "./check.js";
 import { renderReader } from "./reader.js";
 import "./flow.js";
 import { renderSettings } from "./settings.js";
 import { applyLook, loadPrefs } from "./prefs.js";
 
 const app = document.getElementById("app");
-export const state = { me: null };
+export const state = { me: null, libraryName: "" };
 
 function topbar(query = "") {
   return `<header class="topbar">
-    <a class="brand" href="#/">Alcove</a>
+    <a class="brand" href="#/">${esc(state.libraryName || "Alcove")}</a>
     <form class="search" role="search" data-search>
       ${icon("search")}
       <input type="search" name="q" value="${esc(query)}" placeholder="Search books" aria-label="Search the library" autocomplete="off">
     </form>
     <nav class="top-actions">
       <a class="icon-btn" href="#/settings" title="Your settings" aria-label="Your settings">${icon("person")}</a>
-      ${state.me && state.me.admin ? `<a class="icon-btn" href="#/admin" title="Library settings" aria-label="Library settings">${icon("gear")}</a>` : ""}
+      ${state.me && state.me.admin ? `<a class="icon-btn" href="#/add" title="Add books" aria-label="Add books">${icon("plus")}</a>
+      <a class="icon-btn" href="#/admin" title="Library settings" aria-label="Library settings">${icon("gear")}</a>` : ""}
       <button class="icon-btn" type="button" data-signout title="Sign out" aria-label="Sign out">${icon("out")}</button>
     </nav>
   </header>`;
@@ -50,6 +53,8 @@ async function route() {
     try {
       const status = await api("/status");
       if (status.setup_needed) { location.hash = "#/setup"; return; }
+      state.libraryName = status.name || "";
+      document.title = state.libraryName || "Alcove";
       state.me = await api("/me");
       applyLook(await loadPrefs(true));
     } catch {
@@ -77,10 +82,12 @@ async function route() {
 
   try {
     if (!page) await renderHome(main);
-    else if (page === "book" && arg) await renderBook(main, Number(arg));
+    else if (page === "book" && arg) await renderBook(main, Number(arg), params);
     else if (page === "all") await renderGrid(main, { kind: params.get("kind"), value: params.get("value"), title: params.get("title") });
     else if (page === "search") await renderGrid(main, { query });
     else if (page === "admin" && state.me.admin) await renderAdmin(main);
+    else if (page === "add" && state.me.admin) await renderAdd(main);
+    else if (page === "check" && state.me.admin) await renderCheck(main);
     else if (page === "settings") await renderSettings(main);
     else main.innerHTML = `<div class="empty"><p>There’s nothing here.</p><a class="btn" href="#/">Back to the library</a></div>`;
   } catch (e) {

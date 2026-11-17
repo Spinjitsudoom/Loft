@@ -26,12 +26,31 @@ export async function renderGrid(main, { kind, value, title, query }) {
   const base = `/books?sort=${sort}${kind ? `&kind=${encodeURIComponent(kind)}&value=${encodeURIComponent(value || "")}` : ""}`;
   const first = await api(`${base}&offset=0&limit=${PAGE}`);
   const heading = title || "All books";
+  const shelf = kind === "shelf" ? (await api("/shelves")).find((x) => String(x.id) === String(value)) : null;
+  const empty = kind === "shelf" ? "Nothing on this shelf yet. Add books from their pages."
+    : kind === "finished" ? "Books you read to the end show up here." : "";
   main.innerHTML = `<section class="page">
-    <header class="page-head"><h1>${esc(heading)}</h1>
-      <p class="muted">${first.total} ${first.total === 1 ? "book" : "books"}</p></header>
+    <header class="page-head"><h1>${esc(shelf ? shelf.name : heading)}</h1>
+      <p class="muted">${first.total || !empty ? `${first.total} ${first.total === 1 ? "book" : "books"}` : empty}</p>
+      ${shelf && shelf.kind === "own" ? `<div class="head-actions">
+        <button class="btn btn-small" type="button" data-rename>Rename</button>
+        <button class="btn btn-small" type="button" data-delete>Remove shelf</button></div>` : ""}</header>
     <ul class="grid">${first.books.map(gridItem).join("")}</ul>
     <div class="grid-more" aria-hidden="true"></div>
   </section>`;
+  main.querySelector("[data-rename]")?.addEventListener("click", async () => {
+    const name = prompt("New name for this shelf", shelf.name);
+    if (!name || name.trim() === shelf.name) return;
+    try {
+      const renamed = await api(`/shelves/${shelf.id}`, { method: "PATCH", body: { name } });
+      location.hash = `#/all?kind=shelf&value=${shelf.id}&title=${encodeURIComponent(renamed.name)}`;
+    } catch (e) { alert(e.message); }
+  });
+  main.querySelector("[data-delete]")?.addEventListener("click", async () => {
+    if (!confirm(`Remove the shelf “${shelf.name}”? The books stay in the library.`)) return;
+    await api(`/shelves/${shelf.id}`, { method: "DELETE" });
+    location.hash = "#/";
+  });
 
   const list = main.querySelector(".grid");
   let loaded = first.books.length;

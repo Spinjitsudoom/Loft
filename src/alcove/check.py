@@ -155,6 +155,21 @@ def unignore(cfg: Config, kind: str, key: str) -> None:
 
 
 def list_ignored(cfg: Config) -> list[dict]:
+    """What's been ignored, each with a label people can read (a book's title rather than its number)."""
     with session(cfg.db_path) as con:
-        return [{"kind": r["kind"], "key": r["key"]} for r in con.execute(
-            "SELECT kind, key FROM check_ignored ORDER BY kind, key")]
+        def title(book_id) -> str:
+            row = con.execute("SELECT title FROM books WHERE id = ?", (book_id,)).fetchone()
+            return row["title"] if row else ""
+
+        def label(kind: str, key: str) -> str:
+            if kind in ("no_cover", "no_author", "filename_title") and key.isdigit():
+                return title(int(key))
+            if kind in ("damaged", "protected") and key.isdigit():
+                row = con.execute("SELECT book_id FROM book_files WHERE id = ?", (int(key),)).fetchone()
+                return title(row["book_id"]) if row else ""
+            if kind == "duplicate":
+                return " and ".join(t for t in (title(int(k)) for k in key.split(",") if k.isdigit()) if t)
+            return key
+
+        return [{"kind": r["kind"], "key": r["key"], "label": label(r["kind"], r["key"]) or r["key"]}
+                for r in con.execute("SELECT kind, key FROM check_ignored ORDER BY kind, key")]
