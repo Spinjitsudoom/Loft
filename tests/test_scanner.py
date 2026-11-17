@@ -172,3 +172,21 @@ def test_others_can_write_while_a_scan_runs(cfg, make_pdf, monkeypatch):
     monkeypatch.setattr(scanner_mod, "extract_cover", cover_and_write)
     scan(cfg)
     assert results == [True, True, True]
+
+
+def test_scans_leave_locked_fields_alone(cfg, make_pdf):
+    import json
+    import os
+    root = cfg.books_dirs[0]
+    pdf = make_pdf(root / "Mine.pdf", title="From File", author="File Author")
+    scan(cfg)
+    with session(cfg.db_path) as con:
+        con.execute("UPDATE books SET title = 'Admin Title', sort_title = 'Admin Title', locked = ?",
+                    (json.dumps(["title"]),))
+    st = pdf.stat()
+    os.utime(pdf, (st.st_atime, st.st_mtime + 10))
+    assert scan(cfg).updated == 1
+    b = books(cfg)["Admin Title"]
+    assert json.loads(b["authors"]) == ["File Author"]
+    with session(cfg.db_path) as con:
+        assert con.execute("SELECT COUNT(*) FROM books_fts WHERE books_fts MATCH 'admin'").fetchone()[0] == 1

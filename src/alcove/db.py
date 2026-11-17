@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS books (
     cover_color  TEXT,
     has_cover    INTEGER NOT NULL DEFAULT 0,
     added_at     REAL NOT NULL,
-    updated_at   REAL NOT NULL
+    updated_at   REAL NOT NULL,
+    locked       TEXT NOT NULL DEFAULT '[]'    -- JSON list of fields the admin set; scans leave them alone
 );
 CREATE INDEX IF NOT EXISTS books_added ON books(added_at);
 CREATE INDEX IF NOT EXISTS books_series ON books(series);
@@ -47,7 +48,9 @@ CREATE TABLE IF NOT EXISTS book_files (
     format  TEXT NOT NULL,
     size    INTEGER NOT NULL,
     mtime   REAL NOT NULL,
-    root    TEXT NOT NULL
+    root    TEXT NOT NULL,
+    layout  TEXT,                              -- JSON {"split", "wraparound"}: true, false or null (automatic)
+    layout_rev INTEGER NOT NULL DEFAULT 0      -- bumped when the layout changes, so page images change too
 );
 CREATE INDEX IF NOT EXISTS book_files_book ON book_files(book_id);
 
@@ -93,6 +96,35 @@ CREATE TABLE IF NOT EXISTS bookmarks (
 );
 CREATE INDEX IF NOT EXISTS bookmarks_user_book ON bookmarks(user_id, book_id);
 
+CREATE TABLE IF NOT EXISTS shelves (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL COLLATE NOCASE,
+    kind       TEXT NOT NULL DEFAULT 'own',  -- 'want' (Want to read) or 'own'
+    created_at REAL NOT NULL,
+    UNIQUE (user_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS shelf_books (
+    shelf_id INTEGER NOT NULL REFERENCES shelves(id) ON DELETE CASCADE,
+    book_id  INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    added_at REAL NOT NULL,
+    PRIMARY KEY (shelf_id, book_id)
+);
+CREATE INDEX IF NOT EXISTS shelf_books_book ON shelf_books(book_id);
+
+CREATE TABLE IF NOT EXISTS check_ignored (
+    kind TEXT NOT NULL,
+    key  TEXT NOT NULL,
+    PRIMARY KEY (kind, key)
+);
+
+CREATE TABLE IF NOT EXISTS file_checks (
+    file_id INTEGER PRIMARY KEY REFERENCES book_files(id) ON DELETE CASCADE,
+    mtime   REAL NOT NULL,
+    status  TEXT NOT NULL  -- 'ok', 'damaged' or 'protected'
+);
+
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -104,6 +136,9 @@ CREATE TABLE IF NOT EXISTS meta (
 MIGRATIONS = [
     ("progress", "locator", "TEXT"),
     ("bookmarks", "locator", "TEXT"),
+    ("books", "locked", "TEXT NOT NULL DEFAULT '[]'"),
+    ("book_files", "layout", "TEXT"),
+    ("book_files", "layout_rev", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

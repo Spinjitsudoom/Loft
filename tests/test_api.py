@@ -3,11 +3,11 @@ def book_id(client, title):
 
 
 def test_setup_flow(app_lib):
-    assert app_lib.get("/api/status").json() == {"setup_needed": True}
+    assert app_lib.get("/api/status").json() == {"setup_needed": True, "name": ""}
     assert app_lib.get("/api/home").status_code == 401
     r = app_lib.post("/api/setup", json={"username": "admin", "password": "longpassword"})
     assert r.status_code == 200 and r.json()["admin"] is True
-    assert app_lib.get("/api/status").json() == {"setup_needed": False}
+    assert app_lib.get("/api/status").json() == {"setup_needed": False, "name": ""}
     assert app_lib.get("/api/me").json()["username"] == "admin"
     assert app_lib.post("/api/setup", json={"username": "x", "password": "longpassword"}).status_code == 409
 
@@ -45,7 +45,7 @@ def test_members_and_admin_routes(client):
 
 def test_scan_route(client):
     assert client.post("/api/scan").status_code == 202
-    assert set(client.get("/api/scan").json()) == {"running", "last"}
+    assert set(client.get("/api/scan").json()) == {"running", "last", "report"}
 
 
 def test_home_and_book(client):

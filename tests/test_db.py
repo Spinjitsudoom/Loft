@@ -52,3 +52,27 @@ def test_old_database_gains_new_columns(tmp_path):
     assert "locator" in {r["name"] for r in con.execute("PRAGMA table_info(bookmarks)")}
     assert con.execute("SELECT page FROM progress").fetchone()["page"] == 4
     con.close()
+
+
+def test_old_library_gains_m4_columns_and_tables(tmp_path):
+    import sqlite3
+    db = tmp_path / "old.db"
+    con = sqlite3.connect(db)
+    con.executescript("""
+        CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT NOT NULL, sort_title TEXT NOT NULL,
+                            series TEXT NOT NULL DEFAULT '', calibre_id INTEGER,
+                            added_at REAL NOT NULL, updated_at REAL NOT NULL);
+        INSERT INTO books(id, title, sort_title, added_at, updated_at) VALUES (1, 'It', 'It', 1, 1);
+        CREATE TABLE book_files (id INTEGER PRIMARY KEY, book_id INTEGER, path TEXT, format TEXT, size INTEGER,
+                                 mtime REAL, root TEXT);
+        INSERT INTO book_files VALUES (1, 1, '/b/It.pdf', 'pdf', 1, 1, '/b');
+    """)
+    con.commit()
+    con.close()
+    con = connect(db)
+    assert con.execute("SELECT locked FROM books").fetchone()["locked"] == "[]"
+    row = con.execute("SELECT layout, layout_rev FROM book_files").fetchone()
+    assert row["layout"] is None and row["layout_rev"] == 0
+    tables = {r["name"] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert {"shelves", "shelf_books", "check_ignored", "file_checks"} <= tables
+    con.close()

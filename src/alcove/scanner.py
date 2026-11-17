@@ -13,7 +13,7 @@ import os
 import sqlite3
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .calibre import CalibreBook, read_calibre
@@ -22,6 +22,7 @@ from .covers import extract_cover, remove_cover, store_cover
 from .db import session
 from .filemeta import FileMeta, read_file_meta
 from .formats import format_of
+from . import libsettings
 from .pages import prune_page_cache
 
 log = logging.getLogger(__name__)
@@ -54,7 +55,7 @@ def sort_title(title: str) -> str:
     return title
 
 
-def _walk(root: Path) -> tuple[dict[Path, _Found], set[Path]]:
+def _walk(root: Path, allow_txt: bool = False) -> tuple[dict[Path, _Found], set[Path]]:
     """Every book file under root, and the folders and files that couldn't be read (their books
     must not be treated as gone). Raises OSError if root itself can't be listed."""
     found: dict[Path, _Found] = {}
@@ -79,7 +80,7 @@ def _walk(root: Path) -> tuple[dict[Path, _Found], set[Path]]:
                 if e.is_dir(follow_symlinks=True):
                     stack.append(Path(e.path))
                 elif e.is_file(follow_symlinks=True):
-                    fmt = format_of(Path(e.name))
+                    fmt = format_of(Path(e.name), allow_txt=allow_txt)
                     if fmt:
                         st = e.stat()
                         found[Path(e.path)] = _Found(fmt, st.st_size, st.st_mtime)
@@ -92,9 +93,35 @@ def _protected(path: Path, unreadable: set[Path]) -> bool:
     return path in unreadable or any(parent in unreadable for parent in path.parents)
 
 
+# Columns each editable field covers: when the admin has set a field, scans leave all of them alone.
+LOCK_COLUMNS = {"title": ("title", "sort_title"), "authors": ("authors", "author_sort"),
+                "series": ("series",), "series_index": ("series_index",), "description": ("description",),
+                "publisher": ("publisher",), "published": ("published",), "language": ("language",),
+                "tags": ("tags",)}
+
+
+def locked_fields(con: sqlite3.Connection, book_id: int) -> set[str]:
+    row = con.execute("SELECT locked FROM books WHERE id = ?", (book_id,)).fetchone()
+    try:
+        return set(json.loads(row["locked"])) if row else set()
+    except (TypeError, ValueError):
+        return set()
+
+
+def index_book(con: sqlite3.Connection, book_id: int) -> None:
+    """Bring the search index up to date with the book's row."""
+    row = con.execute("SELECT title, authors, series, tags FROM books WHERE id = ?", (book_id,)).fetchone()
+    con.execute("DELETE FROM books_fts WHERE rowid = ?", (book_id,))
+    if row:
+        con.execute("INSERT INTO books_fts(rowid, title, authors, series, tags) VALUES (?, ?, ?, ?, ?)",
+                    (book_id, row["title"], " ".join(json.loads(row["authors"] or "[]")), row["series"],
+                     " ".join(json.loads(row["tags"] or "[]"))))
+
+
 def _write_book(con: sqlite3.Connection, book_id: int | None, *, title: str, authors: list[str], author_sort: str,
                 series: str, series_index: float | None, description: str, publisher: str, published: str,
-                language: str, tags: list[str], calibre_id: int | None, added_at: float) -> int:
+                language: str, tags: list[str], calibre_id: int | None, added_at: float,
+                locked: list[str] | None = None) -> int:
     now = time.time()
     values = dict(title=title, sort_title=sort_title(title), authors=json.dumps(authors),
                   author_sort=author_sort or (authors[0] if authors else ""), series=series,
@@ -102,19 +129,23 @@ def _write_book(con: sqlite3.Connection, book_id: int | None, *, title: str, aut
                   language=language, tags=json.dumps(tags), calibre_id=calibre_id, updated_at=now)
     if book_id is None:
         values["added_at"] = added_at
+        values["locked"] = json.dumps(sorted(locked or []))
         cols = ", ".join(values)
         book_id = con.execute(f"INSERT INTO books({cols}) VALUES ({', '.join('?' * len(values))})",
                               tuple(values.values())).lastrowid
     else:
+        for name in locked_fields(con, book_id):
+            for column in LOCK_COLUMNS.get(name, ()):
+                values.pop(column, None)
         sets = ", ".join(f"{k} = ?" for k in values)
         con.execute(f"UPDATE books SET {sets} WHERE id = ?", (*values.values(), book_id))
-    con.execute("DELETE FROM books_fts WHERE rowid = ?", (book_id,))
-    con.execute("INSERT INTO books_fts(rowid, title, authors, series, tags) VALUES (?, ?, ?, ?, ?)",
-                (book_id, title, " ".join(authors), series, " ".join(tags)))
+    index_book(con, book_id)
     return book_id
 
 
 def _set_cover(cfg: Config, con: sqlite3.Connection, book_id: int, image: bytes | None) -> None:
+    if "cover" in locked_fields(con, book_id):
+        return  # the admin chose this book's cover
     colour = None
     if image:
         try:
@@ -180,20 +211,30 @@ def _delete_book(cfg: Config, con: sqlite3.Connection, book_id: int) -> None:
     remove_cover(cfg, book_id)
 
 
-def _scan_root(cfg: Config, con: sqlite3.Connection, root: Path) -> tuple[int, int, int]:
+@dataclass
+class _RootReport:
+    added: int = 0
+    updated: int = 0
+    removed: int = 0
+    unreachable: bool = False
+    unreadable: list[str] = field(default_factory=list)
+    calibre_missing: list[str] = field(default_factory=list)
+
+
+def _scan_root(cfg: Config, con: sqlite3.Connection, root: Path, allow_txt: bool = False) -> _RootReport:
     known = {Path(r["path"]): r for r in con.execute(
         "SELECT id, book_id, path, size, mtime FROM book_files WHERE root = ?", (str(root),))}
     if not root.is_dir():
         log.warning("Books folder %s isn't reachable; leaving its books as they are", root)
-        return 0, 0, 0
+        return _RootReport(unreachable=True)
     try:
-        found, unreadable = _walk(root)
+        found, unreadable = _walk(root, allow_txt)
     except OSError as e:
         log.warning("Couldn't read books folder %s (%s); leaving its books as they are", root, e)
-        return 0, 0, 0
+        return _RootReport(unreachable=True)
     if not found and known:
         log.warning("Books folder %s looks empty; leaving its books as they are (is the share mounted?)", root)
-        return 0, 0, 0
+        return _RootReport(unreachable=True)
 
     db_file = root / "metadata.db"
     cal_mtime = str(db_file.stat().st_mtime) if db_file.is_file() else ""
@@ -205,6 +246,7 @@ def _scan_root(cfg: Config, con: sqlite3.Connection, root: Path) -> tuple[int, i
     if not calibre_ok:  # e.g. Calibre was writing to it; try again next scan
         log.warning("Couldn't read Calibre's library in %s; new books there wait for the next scan", root)
         calibre = {}
+    calibre_missing = sorted(str(p) for p in calibre if p not in found and not _protected(p, unreadable))
 
     added = updated = 0
     done: set[int] = set()  # Calibre books already written this scan (several formats, one book)
@@ -244,22 +286,42 @@ def _scan_root(cfg: Config, con: sqlite3.Connection, root: Path) -> tuple[int, i
                          "(SELECT 1 FROM book_files f WHERE f.book_id = b.id)").fetchall():
         _delete_book(cfg, con, r["id"])
         removed += 1
-    return added, updated, removed
+    return _RootReport(added, updated, removed, unreadable=sorted(str(p) for p in unreadable),
+                       calibre_missing=calibre_missing)
 
 
 _scan_lock = threading.Lock()
+REPORT_KEY = "last_scan"
 
 
 def scan(cfg: Config) -> ScanResult:
-    totals = [0, 0, 0]
+    report = {"at": 0.0, "added": 0, "updated": 0, "removed": 0, "unreachable": [], "unreadable": [],
+              "calibre_missing": []}
     with _scan_lock:
-        for root in cfg.books_dirs:
+        txt = libsettings.allow_txt(cfg)
+        for root in libsettings.books_dirs(cfg):
             with session(cfg.db_path) as con:
-                for i, n in enumerate(_scan_root(cfg, con, Path(root))):
-                    totals[i] += n
-    result = ScanResult(*totals)
-    log.info("Scan finished: %s added, %s updated, %s removed", *totals)
+                r = _scan_root(cfg, con, Path(root), txt)
+            for key in ("added", "updated", "removed"):
+                report[key] += getattr(r, key)
+            if r.unreachable:
+                report["unreachable"].append(str(root))
+            report["unreadable"] += r.unreadable
+            report["calibre_missing"] += r.calibre_missing
+        report["at"] = time.time()
+        with session(cfg.db_path) as con:
+            con.execute("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                        (REPORT_KEY, json.dumps(report)))
+    result = ScanResult(report["added"], report["updated"], report["removed"])
+    log.info("Scan finished: %s added, %s updated, %s removed", result.added, result.updated, result.removed)
     return result
+
+
+def last_report(cfg: Config) -> dict | None:
+    """What the last scan found: counts, and the folders and files it couldn't get to."""
+    with session(cfg.db_path) as con:
+        row = con.execute("SELECT value FROM meta WHERE key = ?", (REPORT_KEY,)).fetchone()
+    return json.loads(row["value"]) if row else None
 
 
 class Scanner:
@@ -290,5 +352,9 @@ class Scanner:
                 log.exception("Scan failed")
             finally:
                 self.running = False
-            self._wake.wait(timeout=max(1, self.cfg.scan_interval_minutes) * 60)
+            try:
+                minutes = libsettings.get_library(self.cfg)["scan_interval_minutes"]
+            except Exception:
+                minutes = self.cfg.scan_interval_minutes
+            self._wake.wait(timeout=max(1, minutes) * 60)
             self._wake.clear()

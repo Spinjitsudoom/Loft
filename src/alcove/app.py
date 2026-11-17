@@ -13,13 +13,13 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
-from . import auth, flowbooks, library, pages, reading, settings, txt
+from . import auth, flowbooks, libsettings, library, pages, reading, settings, txt
 from .auth import User, admin_user, current_user
 from .config import Config
 from .covers import cover_path
 from .db import session
 from .sanitize import chapter_html
-from .scanner import Scanner
+from .scanner import Scanner, last_report
 
 WEB_DIR = Path(__file__).parent / "web"
 
@@ -101,7 +101,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
 
     @app.get("/api/status")
     def status():
-        return {"setup_needed": not auth.has_users(cfg)}
+        return {"setup_needed": not auth.has_users(cfg), "name": libsettings.get_library(cfg)["name"]}
 
     @app.post("/api/setup")
     def setup(body: Credentials, response: Response):
@@ -181,7 +181,19 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
 
     @app.get("/api/scan")
     def scan_status(_: User = Depends(admin_user)):
-        return {"running": scanner.running, "last": scanner.last.json() if scanner.last else None}
+        return {"running": scanner.running, "last": scanner.last.json() if scanner.last else None,
+                "report": last_report(cfg)}
+
+    @app.get("/api/library")
+    def library_settings(_: User = Depends(admin_user)):
+        return libsettings.get_library(cfg)
+
+    @app.patch("/api/library")
+    def change_library(patch: dict = Body(...), _: User = Depends(admin_user)):
+        try:
+            return libsettings.update_library(cfg, patch)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
     # ---------- the library ----------
 
