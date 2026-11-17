@@ -235,3 +235,55 @@ def test_wraparound_cover_front_first_back_last(cfg):
     assert near(colour(1), blue) and near(colour(2), gold)
     assert near(colour(3), blue) and near(colour(4), gold)
     assert near(colour(5), green)     # the back cover comes last
+
+
+def test_split_plan_switches():
+    single, spread = [80, 120], [160, 120]
+    mostly_single = [single, spread, single, single]
+    assert len(pages.split_plan(mostly_single)) == 4
+    assert pages.split_plan(mostly_single, split=True) == [(0, None), (1, 0), (1, 1), (2, None), (3, None)]
+    assert pages.split_plan([spread, spread], scanned=False, split=True) == [(0, 1), (1, 0), (1, 1), (0, 0)]
+    assert pages.split_plan([single, spread, spread], split=False) == [(0, None), (1, None), (2, None)]
+    assert pages.split_plan([spread, spread, spread], wraparound=False) == [(0, 0), (0, 1), (1, 0), (1, 1), (2, 0), (2, 1)]
+    assert pages.split_plan([spread, spread, spread], wraparound=True) == pages.split_plan([spread, spread, spread])
+
+
+def test_layout_switches_change_the_pages(cfg):
+    import zipfile
+    root = cfg.books_dirs[0]
+    green, red, blue, gold = (30, 200, 30), (200, 30, 30), (30, 30, 200), (220, 180, 30)
+    with zipfile.ZipFile(root / "Wrap.cbz", "w") as z:
+        z.writestr("01.png", two_tone(green, red))
+        z.writestr("02.png", two_tone(blue, gold))
+        z.writestr("03.png", two_tone(blue, gold))
+    scan(cfg)
+    fid = file_id(cfg, "Wrap.cbz")
+    before = pages.manifest(cfg, fid)
+    m = pages.set_layout(cfg, fid, None, False)
+    assert m["version"] != before["version"] and m["count"] == 6
+    first = Image.open(pages.render_page(cfg, fid, 0, 600)).convert("RGB").getpixel((40, 60))
+    assert first[1] > 150  # the scan's left half (green) comes first now
+    m = pages.set_layout(cfg, fid, False, None)
+    assert m["count"] == 3 and pages.manifest(cfg, fid)["count"] == 3
+
+
+def test_layout_only_for_page_books(cfg, make_epub):
+    make_epub(cfg.books_dirs[0] / "Tale.epub", title="Tale", author="A")
+    scan(cfg)
+    with pytest.raises(ValueError):
+        pages.set_layout(cfg, file_id(cfg, "Tale.epub"), True, None)
+
+
+def test_layout_route(client):
+    from test_api import book_id
+    b = client.get(f"/api/books/{book_id(client, 'Tide Line')}").json()
+    f = b["files"][0]
+    assert f["layout"] == {"split": None, "wraparound": None}
+    r = client.patch(f"/api/files/{f['id']}/layout", json={"split": True, "wraparound": None})
+    assert r.status_code == 200 and r.json()["count"] == 3
+    b = client.get(f"/api/books/{b['id']}").json()
+    assert b["files"][0]["layout"] == {"split": True, "wraparound": None}
+    tale = client.get(f"/api/books/{book_id(client, 'Tale')}").json()["files"][0]
+    assert "layout" not in tale
+    assert client.patch(f"/api/files/{tale['id']}/layout", json={"split": True}).status_code == 400
+    assert client.patch("/api/files/9999/layout", json={"split": True}).status_code == 404

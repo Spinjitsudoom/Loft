@@ -40,7 +40,8 @@ class Unreadable(Exception):
 
 def _file(cfg: Config, file_id: int):
     with session(cfg.db_path) as con:
-        row = con.execute("SELECT id, path, format, mtime FROM book_files WHERE id = ?", (file_id,)).fetchone()
+        row = con.execute("SELECT id, path, format, mtime, layout, layout_rev FROM book_files WHERE id = ?",
+                          (file_id,)).fetchone()
     if row is None:
         raise LookupError(file_id)
     return row
@@ -55,19 +56,23 @@ def _is_spread(w: float, h: float) -> bool:
     return w / h > SPREAD_MIN_RATIO and HALF_RATIOS[0] <= (w / 2) / h <= HALF_RATIOS[1]
 
 
-def split_plan(sizes: list[list[float]], scanned: bool = True) -> list[tuple[int, int | None]]:
+def split_plan(sizes: list[list[float]], scanned: bool = True, *, split: bool | None = None,
+               wraparound: bool | None = None) -> list[tuple[int, int | None]]:
     """Which source page (and which half of it) each reader page shows.
 
     Scanned comics often hold two printed pages per image. When at least half of a book's pages
     are such spreads (and they're scans, not text), each one becomes a left and a right page, so
-    the pages turn one at a time like the printed book. Single pages (a cover) stay whole."""
+    the pages turn one at a time like the printed book. Single pages (a cover) stay whole.
+    The admin can override this per book: split (always / never) and wraparound (False keeps a
+    wide first scan in its scanned order)."""
     spreads = [_is_spread(w, h) for w, h in sizes]
-    if not scanned or sum(spreads) * 2 < len(sizes):
+    automatic = scanned and sum(spreads) * 2 >= len(sizes)
+    if not (automatic if split is None else split):
         return [(i, None) for i in range(len(sizes))]
     plan: list[tuple[int, int | None]] = []
     for i, is_spread in enumerate(spreads):
         plan.extend([(i, 0), (i, 1)] if is_spread else [(i, None)])
-    if spreads[0]:
+    if spreads and spreads[0] and wraparound is not False:
         # A wide first scan is a wraparound cover (the inside of a comic never opens on a spread):
         # like the printed comic, the front (right half) comes first and the back (left half) last.
         plan = [(0, 1)] + plan[2:] + [(0, 0)]
@@ -137,7 +142,8 @@ def manifest(cfg: Config, file_id: int) -> dict:
             source, toc, scanned = _pdf_manifest(path)
         else:
             source, toc, scanned = _comic_manifest(path), [], True
-        plan = split_plan(source, scanned)
+        layout = file_layout(f)
+        plan = split_plan(source, scanned, split=layout["split"], wraparound=layout["wraparound"])
         first = {}
         for n, (src, _) in enumerate(plan):
             first.setdefault(src, n)
@@ -158,7 +164,27 @@ def manifest(cfg: Config, file_id: int) -> dict:
             return manifest(cfg, file_id)
         sizes, plan, source, toc = stored["pages"], stored["plan"], stored["source"], json.loads(row["toc"])
     return {"file_id": file_id, "format": f["format"], "count": len(sizes), "sizes": sizes, "toc": toc,
-            "version": int(f["mtime"]), "plan": [list(p) for p in plan], "source": source}
+            "version": int(f["mtime"]) + f["layout_rev"], "plan": [list(p) for p in plan], "source": source}
+
+
+def file_layout(row) -> dict:
+    """The admin's page-layout choices for a file: each True, False or None (automatic)."""
+    try:
+        stored = json.loads(row["layout"] or "{}")
+    except ValueError:
+        stored = {}
+    return {k: stored.get(k) if isinstance(stored.get(k), bool) else None for k in ("split", "wraparound")}
+
+
+def set_layout(cfg: Config, file_id: int, split: bool | None, wraparound: bool | None) -> dict:
+    f = _file(cfg, file_id)
+    if f["format"] not in READABLE:
+        raise ValueError("Only PDFs and comics have page layouts")
+    with session(cfg.db_path) as con:
+        con.execute("UPDATE book_files SET layout = ?, layout_rev = layout_rev + 1 WHERE id = ?",
+                    (json.dumps({"split": split, "wraparound": wraparound}), file_id))
+        con.execute("DELETE FROM page_info WHERE file_id = ?", (file_id,))
+    return manifest(cfg, file_id)
 
 
 def snap_width(width: int) -> int:

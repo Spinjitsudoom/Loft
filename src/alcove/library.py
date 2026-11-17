@@ -8,7 +8,7 @@ import re
 from .config import Config
 from .db import session
 from .flow import READABLE_FLOW
-from .pages import READABLE as PAGE_FORMATS
+from .pages import READABLE as PAGE_FORMATS, file_layout
 from .reading import get_progress, in_progress
 from .settings import DEFAULTS, get_settings
 
@@ -103,9 +103,13 @@ def get_book(cfg: Config, book_id: int, user=None) -> dict | None:
         row = con.execute("SELECT * FROM books WHERE id = ?", (book_id,)).fetchone()
         if row is None:
             return None
-        files = [{"id": f["id"], "format": f["format"], "size": f["size"], "readable": readable(f["format"])}
-                 for f in con.execute(
-            "SELECT id, format, size FROM book_files WHERE book_id = ? ORDER BY format", (book_id,))]
+        files = []
+        for f in con.execute("SELECT id, format, size, layout FROM book_files WHERE book_id = ? ORDER BY format",
+                             (book_id,)):
+            entry = {"id": f["id"], "format": f["format"], "size": f["size"], "readable": readable(f["format"])}
+            if entry["readable"] == "pages":
+                entry["layout"] = file_layout(f)
+            files.append(entry)
         series_books = []
         if row["series"]:
             series_books = [book_card(r) for r in con.execute(

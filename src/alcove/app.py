@@ -53,6 +53,11 @@ class NewPassword(BaseModel):
     password: str = ""
 
 
+class LayoutIn(BaseModel):
+    split: bool | None = None
+    wraparound: bool | None = None
+
+
 class ProgressIn(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False)
     file_id: int
@@ -331,6 +336,15 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     @app.get("/api/files/{file_id}/manifest")
     def file_manifest(file_id: int, _: User = Depends(current_user)):
         return _manifest(file_id)
+
+    @app.patch("/api/files/{file_id}/layout")
+    def file_layout(file_id: int, body: LayoutIn, _: User = Depends(admin_user)):
+        try:
+            return pages.set_layout(cfg, file_id, body.split, body.wraparound)
+        except LookupError:
+            raise HTTPException(404, "No such file")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
     @app.get("/api/files/{file_id}/pages/{index}")
     def file_page(file_id: int, index: int, w: int = 1200, _: User = Depends(current_user)):
