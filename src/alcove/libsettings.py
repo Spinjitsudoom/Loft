@@ -22,6 +22,27 @@ MAX_FOLDERS = 10
 SCAN_MINUTES = range(5, 1441)
 API_KEY = re.compile(r"^[A-Za-z0-9_-]{20,100}$")
 
+# The library's sections (its categories, for the stacks), suggested from the tags books have until
+# the admin saves their own. Order matters: a book stands in the first section whose tags it has.
+SUGGESTED_SECTIONS = [
+    ("Manga", ["Manga", "Manhwa", "Manhua"]),
+    ("Graphic novels", ["Comics & Graphic Novels", "Comics", "Graphic Novels", "Graphic Novel"]),
+    ("Children’s", ["Juvenile Fiction", "Juvenile Nonfiction", "Children's", "Children’s", "Picture Books"]),
+    ("Young adult", ["Young Adult Fiction", "Young Adult Nonfiction", "Young Adult"]),
+    ("Historical", ["Historical Fiction", "Historical", "History"]),
+    ("Fantasy", ["Fantasy", "Epic"]),
+    ("Science fiction", ["Science Fiction", "Sci-Fi", "Dystopian"]),
+    ("Horror", ["Horror"]),
+    ("Thrillers & mystery", ["Thrillers", "Thriller", "Mystery", "Suspense", "Crime", "Mystery & Detective"]),
+    ("Romance", ["Romance"]),
+    ("Art & animation", ["Animation", "Performing Arts", "Art", "Design"]),
+    ("Biography", ["Biography & Autobiography", "Biography", "Memoir"]),
+    ("Science & nature", ["Science", "Nature", "Mathematics", "Technology & Engineering"]),
+    ("Poetry", ["Poetry"]),
+    ("Cooking", ["Cooking"]),
+]
+MAX_SECTIONS, MAX_SECTION_NAME, MAX_SECTION_TAGS = 30, 40, 50
+
 
 def _stored(cfg: Config) -> dict:
     with session(cfg.db_path) as con:
@@ -46,7 +67,44 @@ def get_library(cfg: Config) -> dict:
         "online_lookups": stored.get("online_lookups", True),
         "join_requests": stored.get("join_requests", False),  # people may ask to join from the sign-in page
         "google_books": bool(google_books_key(cfg, stored)),  # whether a key is saved, never the key
+        "sections": stored["sections"] if isinstance(stored.get("sections"), list) else _suggested_sections(cfg),
+        "sections_suggested": not isinstance(stored.get("sections"), list),
     }
+
+
+def _suggested_sections(cfg: Config) -> list[dict]:
+    """The suggested sections the library's books would fill (with only the tags they have)."""
+    with session(cfg.db_path) as con:
+        have = {r[0].casefold(): r[0] for r in con.execute(
+            "SELECT DISTINCT j.value FROM books, json_each(books.tags) j WHERE j.type = 'text'")}
+    out = []
+    for name, tags in SUGGESTED_SECTIONS:
+        found = [have[t.casefold()] for t in tags if t.casefold() in have]
+        if found:
+            out.append({"name": name, "tags": found})
+    return out
+
+
+def _sections(value) -> list[dict] | None:
+    if value is None:
+        return None  # back to the suggestions
+    if not isinstance(value, list) or len(value) > MAX_SECTIONS:
+        raise ValueError(f"sections must be a list of at most {MAX_SECTIONS}")
+    out, names = [], set()
+    for item in value:
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str) or not isinstance(item.get("tags"), list):
+            raise ValueError("sections: each needs a name and a list of tags")
+        name = " ".join(item["name"].split())
+        if not name or len(name) > MAX_SECTION_NAME:
+            raise ValueError(f"sections: a name must be 1 to {MAX_SECTION_NAME} characters")
+        if name.casefold() in names or name.casefold() == "other":
+            raise ValueError(f"sections: there’s already a section called {name}")
+        names.add(name.casefold())
+        tags = list(dict.fromkeys(" ".join(t.split()) for t in item["tags"] if isinstance(t, str) and t.strip()))
+        if len(tags) > MAX_SECTION_TAGS or any(len(t) > 60 for t in tags):
+            raise ValueError(f"sections: at most {MAX_SECTION_TAGS} tags each, of up to 60 characters")
+        out.append({"name": name, "tags": tags})
+    return out
 
 
 def google_books_key(cfg: Config, stored: dict | None = None) -> str:
@@ -108,6 +166,8 @@ def _clean(patch: dict, current: dict) -> dict:
         elif key == "scan_interval_minutes":
             if not isinstance(value, int) or isinstance(value, bool) or value not in SCAN_MINUTES:
                 raise ValueError(f"scan_interval_minutes must be between {SCAN_MINUTES.start} and {SCAN_MINUTES.stop - 1}")
+        elif key == "sections":
+            value = _sections(value)
         elif key == "google_books_key":
             if not isinstance(value, str):
                 raise ValueError("google_books_key must be text")

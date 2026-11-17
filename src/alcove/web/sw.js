@@ -1,11 +1,11 @@
 // Keeps Alcove's own files on this device so the app opens with no connection, to read downloaded
 // books. Browsers only allow this over https (or on this computer). Never touches /api: books,
 // pages and the library always come from the server, or from downloads (offline.js).
-const CACHE = "alcove-shell-v2";
+const CACHE = "alcove-shell-v3";
 const SHELL = ["./", "style.css", "fonts/fonts.css", "fonts/literata.woff2", "fonts/literata-italic.woff2",
   "fonts/instrument-sans.woff2", "vendor/page-flip.browser.js", "manifest.webmanifest", "icons/icon.svg",
   ...["add", "admin", "api", "arrange", "book", "check", "cover", "downloads", "edit", "flow", "grid", "home",
-    "login", "main", "notifications", "offline", "requests", "discussion", "prefs", "reader", "settings", "shelfmenu", "zoom"].map((n) => `js/${n}.js`)];
+    "login", "main", "notifications", "offline", "requests", "discussion", "prefs", "reader", "settings", "shelfmenu", "stacks", "zoom"].map((n) => `js/${n}.js`)];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

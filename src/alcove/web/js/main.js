@@ -14,6 +14,7 @@ import { applyLook, loadPrefs } from "./prefs.js";
 import * as offline from "./offline.js";
 import { needsServer, renderOfflineBook, renderOfflineHome } from "./downloads.js";
 import { refreshBell, renderNotifications } from "./notifications.js";
+import { renderStacks } from "./stacks.js";
 
 const app = document.getElementById("app");
 export const state = { me: null, libraryName: "" };
@@ -34,6 +35,7 @@ function topbar(query = "") {
       <input type="search" name="q" value="${esc(query)}" placeholder="Search books" aria-label="Search the library" autocomplete="off">
     </form>
     <nav class="top-actions">
+      <a class="icon-btn" href="#/stacks" title="The stacks: browse the library" aria-label="Browse the library">${icon("shelf")}</a>
       <a class="icon-btn bell" href="#/notifications" data-bell title="Notifications" aria-label="Notifications">${icon("bell")}<span class="bell-count" hidden></span></a>
       <a class="icon-btn" href="#/settings" title="Your settings" aria-label="Your settings">${icon("person")}</a>
       <a class="icon-btn" href="#/add" title="${state.me && state.me.admin ? "Add books" : "Submit or request books"}" aria-label="${state.me && state.me.admin ? "Add books" : "Submit or request books"}">${icon("plus")}</a>
@@ -125,6 +127,7 @@ async function route() {
     else if (page === "admin" && state.me.admin) await renderAdmin(main);
     else if (page === "add") await renderAdd(main, params);
     else if (page === "notifications") await renderNotifications(main);
+    else if (page === "stacks") await renderStacks(main, params);
     else if (page === "check" && state.me.admin) await renderCheck(main);
     else if (page === "settings") await renderSettings(main);
     else main.innerHTML = `<div class="empty"><p>There’s nothing here.</p><a class="btn" href="#/">Back to the library</a></div>`;

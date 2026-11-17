@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
-from . import auth, check, discussion, editing, flowbooks, joining, libsettings, library, lookups, notifications, openlibrary, book_requests, submissions, pages, reading, settings, shelves, txt, uploads
+from . import auth, browse, check, discussion, editing, flowbooks, joining, libsettings, library, lookups, notifications, openlibrary, book_requests, submissions, pages, reading, settings, shelves, txt, uploads
 from .auth import User, admin_user, current_user
 from .config import Config
 from .covers import cover_path
@@ -569,6 +569,20 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     def decline_request(rid: int, body: ReasonIn, _: User = Depends(admin_user)):
         _request_call(book_requests.decline, rid, body.reason)
         return {"ok": True}
+
+    # ---------- the stacks ----------
+
+    @app.get("/api/stacks")
+    def the_stacks(by: str = "series", status: str = "", section: str = "", author: str = "", format: str = "",
+                   user: User = Depends(current_user)):
+        try:
+            return browse.stacks(cfg, user, by, status or None, section or None, author or None, format or None)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/api/sections")
+    def library_sections(_: User = Depends(admin_user)):
+        return browse.sections_report(cfg)
 
     # ---------- discussion about each book ----------
 

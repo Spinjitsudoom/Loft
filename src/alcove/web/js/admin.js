@@ -24,7 +24,8 @@ function scanText(scan) {
 }
 
 export async function renderAdmin(main) {
-  const [users, scan, lib, check, joining] = await Promise.all([api("/users"), api("/scan"), api("/library"), api("/check"), api("/join-requests")]);
+  const [users, scan, lib, check, joining, sections] = await Promise.all([api("/users"), api("/scan"), api("/library"),
+    api("/check"), api("/join-requests"), api("/sections")]);
   const admins = users.filter((u) => u.admin).length;
   const attention = check.items.length;
   const interval = INTERVALS.some(([m]) => m === lib.scan_interval_minutes) ? INTERVALS
@@ -59,6 +60,23 @@ export async function renderAdmin(main) {
       </form>
       <p class="form-error" data-google-error role="alert" hidden></p>
       <p class="field-hint">Google Books has the editions themselves, such as English manga volumes with their covers and ISBNs. It needs a free key from Google Cloud with the Books API turned on.</p>
+    </section>
+
+    <section class="panel" data-sections-panel>
+      <h2>Sections</h2>
+      <p class="muted">The stacks shelve books by section. A book stands in the first section whose tags it has, so order matters; books with none of them go in Other.
+        ${sections.suggested ? "These are suggested from your books’ tags. Change anything and they’re yours." : ""}</p>
+      <ol class="section-list" data-sections></ol>
+      <div class="section-tools">
+        <button class="btn btn-small" type="button" data-section-add>${icon("plus")}Add a section</button>
+        <button class="btn btn-small btn-primary" type="button" data-section-save>Save sections</button>
+        ${sections.suggested ? "" : `<button class="btn btn-small" type="button" data-section-reset>Use the suggestions again</button>`}
+      </div>
+      <p class="form-error" data-section-error role="alert" hidden></p>
+      ${sections.other.count ? `<h3>Other holds ${sections.other.count} ${sections.other.count === 1 ? "book" : "books"}</h3>
+        <p class="muted section-hint">${sections.other.untagged ? `${sections.other.untagged} of them have no tags; give them some on their pages (or with Look up details) to shelve them. ` : ""}${sections.other.tags.length ? "The rest are tagged as below. Tap a tag to add it to the section you last clicked in." : ""}</p>` : ""}
+      ${sections.other.tags.length ? `
+        <ul class="tag-cloud">${sections.other.tags.map(([t, n]) => `<li><button type="button" class="tag-chip" data-tag="${esc(t)}">${esc(t)} <span>${n}</span></button></li>`).join("")}</ul>` : ""}
     </section>
 
     <section class="panel">
@@ -170,6 +188,67 @@ export async function renderAdmin(main) {
       try { await api(`/join-requests/${id}`, { method: "DELETE" }); renderAdmin(main); }
       catch (e) { fail(main.querySelector("[data-people-error]"), e.message); }
     });
+  });
+
+  // Sections: edited here as a list, saved together.
+  let list = sections.sections.map((s) => ({ name: s.name, tags: s.tags.join(", "), count: s.count }));
+  let lastRow = Math.max(0, list.length - 1);
+  const box = main.querySelector("[data-sections]");
+  const sectionError = main.querySelector("[data-section-error]");
+  const drawSections = () => {
+    box.innerHTML = list.map((s, i) => `<li data-row="${i}">
+      <input class="section-name" data-k="name" value="${esc(s.name)}" maxlength="40" aria-label="Section name" placeholder="Name">
+      <input class="section-tags" data-k="tags" value="${esc(s.tags)}" aria-label="Tags for ${esc(s.name || "this section")}" placeholder="Tags, separated by commas">
+      <span class="muted section-count">${s.count == null ? "" : `${s.count} ${s.count === 1 ? "book" : "books"}`}</span>
+      <span class="section-moves">
+        <button class="icon-btn" type="button" data-move-row="-1" aria-label="Move ${esc(s.name)} up" ${i === 0 ? "disabled" : ""}>${icon("up")}</button>
+        <button class="icon-btn" type="button" data-move-row="1" aria-label="Move ${esc(s.name)} down" ${i === list.length - 1 ? "disabled" : ""}>${icon("down")}</button>
+        <button class="icon-btn" type="button" data-drop-row aria-label="Remove ${esc(s.name)}">×</button>
+      </span></li>`).join("");
+  };
+  drawSections();
+  box.addEventListener("input", (e) => {
+    const row = e.target.closest("[data-row]");
+    if (row) { list[row.dataset.row][e.target.dataset.k] = e.target.value; lastRow = Number(row.dataset.row); }
+  });
+  box.addEventListener("focusin", (e) => { const row = e.target.closest("[data-row]"); if (row) lastRow = Number(row.dataset.row); });
+  box.addEventListener("click", (e) => {
+    const row = e.target.closest("[data-row]");
+    if (!row) return;
+    const i = Number(row.dataset.row);
+    const move = e.target.closest("[data-move-row]");
+    if (move) {
+      const j = i + Number(move.dataset.moveRow);
+      [list[i], list[j]] = [list[j], list[i]];
+      lastRow = j;
+    } else if (e.target.closest("[data-drop-row]")) {
+      list.splice(i, 1);
+      lastRow = Math.max(0, Math.min(lastRow, list.length - 1));
+    } else return;
+    drawSections();
+  });
+  main.querySelector("[data-section-add]").addEventListener("click", () => {
+    list.push({ name: "", tags: "", count: null });
+    lastRow = list.length - 1;
+    drawSections();
+    box.querySelector(`[data-row="${lastRow}"] .section-name`).focus();
+  });
+  main.querySelectorAll("[data-tag]").forEach((chip) => chip.addEventListener("click", () => {
+    if (!list.length) list.push({ name: chip.dataset.tag, tags: "", count: null });
+    const row = list[Math.min(lastRow, list.length - 1)];
+    const tags = row.tags.split(",").map((t) => t.trim()).filter(Boolean);
+    if (!tags.includes(chip.dataset.tag)) row.tags = [...tags, chip.dataset.tag].join(", ");
+    chip.closest("li").remove();
+    drawSections();
+  }));
+  main.querySelector("[data-section-save]").addEventListener("click", async () => {
+    sectionError.hidden = true;
+    const body = list.filter((s) => s.name.trim() || s.tags.trim())
+      .map((s) => ({ name: s.name, tags: s.tags.split(",").map((t) => t.trim()).filter(Boolean) }));
+    if (await patch({ sections: body }, sectionError)) renderAdmin(main);
+  });
+  main.querySelector("[data-section-reset]")?.addEventListener("click", async () => {
+    if (await patch({ sections: null }, sectionError)) renderAdmin(main);
   });
 
   const dirError = main.querySelector("[data-dir-error]");

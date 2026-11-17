@@ -274,6 +274,20 @@ clean sans for the interface), tests.
     replies; edit/remove your own, admins remove any; a removed message with replies leaves a gap.
     New messages every 10 seconds while open.
   - Notifications: a bell with a count (checked every minute), a list page; opening it marks read.
+- **The stacks** (owner's request, 2026-11-18: "organized by category or author ... a real library
+  experience"; chose a mix of a filterable catalogue and bookcases of spines, filters across the top;
+  "surprise me" on categories):
+  - A Browse page: one bar on top (Shelve by Series / Section / Author; filters for reading status,
+    section, author and format; Spines / Covers), folding into a Filters sheet on a phone.
+  - Below, a bookcase per series, section or author with a sign and the count; books stand
+    spine-out in their cover colour, thicker for longer books (pages when known, else file size),
+    heights varying a little as on a real shelf. Tap a spine: the book slides out with its cover,
+    Read and About; tap again to put it back. Covers mode shows the same cases face-out.
+  - Series mode: a case per series in series order, then books in no series on cases by author.
+  - **Sections** are the library's categories: an ordered list, each matching some tags. A book
+    stands in the first section whose tags it has (never two places), else in Other. Until the admin
+    saves their own, Alcove suggests sections from the tags the books have (Manga, Graphic novels,
+    Children's, Fantasy, Historical, ...). Edited in Library settings.
 - Manga reading direction is a per-file switch (on the add card and the Pages section of the edit
   page), not a tag rule (owner's request, 2026-11-17).
 - Demoting or promoting an admin takes effect on their next request without signing them out.
