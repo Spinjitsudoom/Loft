@@ -34,6 +34,7 @@ def book_card(row) -> dict:
         "series_index": row["series_index"],
         "has_cover": bool(row["has_cover"]),
         "color": row["cover_color"],
+        "cover_v": int(row["updated_at"]),  # changes when the cover might have, so browsers fetch it again
     }
 
 

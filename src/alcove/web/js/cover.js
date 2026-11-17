@@ -18,7 +18,7 @@ export function generatedStyle(title) {
 export function coverHTML(book, width = 240, extra = "") {
   const author = (book.authors && book.authors[0]) || "";
   const img = book.has_cover
-    ? `<img src="/api/books/${book.id}/cover?w=${width}" alt="" loading="lazy" decoding="async"
+    ? `<img src="/api/books/${book.id}/cover?w=${width}&v=${book.cover_v || 0}" alt="" loading="lazy" decoding="async"
          onerror="this.remove()">`
     : "";
   return `<div class="book ${extra}" style="${generatedStyle(book.title)}">

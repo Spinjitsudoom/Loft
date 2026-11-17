@@ -8,12 +8,13 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
-from . import auth, flowbooks, libsettings, library, pages, reading, settings, txt
+from . import auth, editing, flowbooks, libsettings, library, pages, reading, settings, txt
 from .auth import User, admin_user, current_user
 from .config import Config
 from .covers import cover_path
@@ -246,6 +247,49 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         if b is None:
             raise HTTPException(404, "No such book")
         return b
+
+    def _edited(book_id: int, user: User) -> dict:
+        b = library.get_book(cfg, book_id, user)
+        if b is None:
+            raise HTTPException(404, "No such book")
+        return b
+
+    @app.patch("/api/books/{book_id}")
+    def edit_book(book_id: int, patch: dict = Body(...), user: User = Depends(admin_user)):
+        try:
+            editing.edit_book(cfg, book_id, patch)
+        except LookupError:
+            raise HTTPException(404, "No such book")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return _edited(book_id, user)
+
+    async def _body(request: Request, limit: int) -> bytes:
+        data = bytearray()
+        async for chunk in request.stream():
+            data += chunk
+            if len(data) > limit:
+                raise HTTPException(413, "That file is too big")
+        return bytes(data)
+
+    @app.put("/api/books/{book_id}/cover")
+    async def put_cover(book_id: int, request: Request, user: User = Depends(admin_user)):
+        image = await _body(request, editing.MAX_COVER_BYTES)
+        try:
+            await run_in_threadpool(editing.set_cover, cfg, book_id, image)
+        except LookupError:
+            raise HTTPException(404, "No such book")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return await run_in_threadpool(_edited, book_id, user)
+
+    @app.delete("/api/books/{book_id}/cover")
+    def delete_cover(book_id: int, user: User = Depends(admin_user)):
+        try:
+            editing.clear_cover(cfg, book_id)
+        except LookupError:
+            raise HTTPException(404, "No such book")
+        return _edited(book_id, user)
 
     @app.get("/api/search")
     def search(q: str = "", _: User = Depends(current_user)):

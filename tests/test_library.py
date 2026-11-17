@@ -36,6 +36,7 @@ def test_home_rows(cfg, add):
 def test_card_shape(cfg, add):
     bid = add("The Long Road", authors=["A. Marlow"], series="Road", index=2)
     card = library.home(cfg, None)["hero"]
+    assert card.pop("cover_v") > 0
     assert card == {"id": bid, "title": "The Long Road", "authors": ["A. Marlow"], "series": "Road",
                     "series_index": 2.0, "has_cover": False, "color": None}
 
