@@ -764,7 +764,10 @@ body.arranging { overflow: hidden; }
 .ask-form { display: grid; gap: 14px; padding: 18px; margin-bottom: 30px; border: 1px solid var(--line); border-radius: 10px; background: var(--raised); }
 .ask-form .btn { justify-self: start; }
 .requests li { display: flex; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--line); }
-.requests.done li { display: block; }
+.requests.done li { align-items: center; }
+.done-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 32px; }
+.done-head h2 { margin: 0; }
+.requests.done { margin-top: 8px; }
 .vote {
   flex: none; display: grid; justify-items: center; align-content: center; width: 52px; height: 58px; gap: 0;
   border: 1px solid var(--line); border-radius: 10px; background: none; color: var(--muted); cursor: pointer; font: inherit;

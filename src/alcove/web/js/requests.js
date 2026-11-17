@@ -56,9 +56,26 @@ async function draw(box) {
       </div></li>`).join("")}</ul>`
     : `<p class="muted">Nobody has asked for anything yet.</p>`}`;
   const closedBox = box.querySelector("[data-closed]");
-  closedBox.innerHTML = closed.length ? `<h2>Lately</h2><ul class="requests done">${closed.map((r) => `<li>
+  // Finished ones can be cleared away: by an admin, or by whoever asked.
+  const removable = (r) => admin || r.mine;
+  closedBox.innerHTML = closed.length ? `<div class="done-head"><h2>Lately</h2>
+      ${admin ? `<button class="btn btn-small" type="button" data-clear-done>Clear the list</button>` : ""}</div>
+    <ul class="requests done">${closed.map((r) => `<li data-done="${r.id}">
       <span class="request-text"><strong>${r.book_id ? `<a href="#/book/${r.book_id}">${esc(r.title)}</a>` : esc(r.title)}</strong>
-      <span class="request-by">${r.status === "added" ? "Added to the library" : `Not added${r.reason ? `: ${esc(r.reason)}` : ""}`}</span></span></li>`).join("")}</ul>` : "";
+      <span class="request-by">${r.status === "added" ? "Added to the library" : `Not added${r.reason ? `: ${esc(r.reason)}` : ""}`}</span></span>
+      ${removable(r) ? `<button class="btn btn-small" type="button" data-remove-done aria-label="Remove ${esc(r.title)} from the list">Remove</button>` : ""}
+    </li>`).join("")}</ul>` : "";
+  closedBox.querySelectorAll("[data-remove-done]").forEach((b) => b.addEventListener("click", async () => {
+    await api(`/requests/${b.closest("[data-done]").dataset.done}`, { method: "DELETE" }).catch(() => {});
+    draw(box);
+  }));
+  closedBox.querySelector("[data-clear-done]")?.addEventListener("click", async (e) => {
+    const b = e.currentTarget;
+    if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "Clear every one?"; return; }
+    b.disabled = true;
+    for (const r of closed) await api(`/requests/${r.id}`, { method: "DELETE" }).catch(() => {});
+    draw(box);
+  });
 
   openBox.querySelectorAll("[data-request]").forEach((li) => {
     const id = li.dataset.request;

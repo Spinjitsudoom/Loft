@@ -79,3 +79,16 @@ def test_request_routes(client, add):
     assert client.post(f"/api/requests/{rid}/fulfil", json={"book_id": book}).status_code == 200
     assert sam.get("/api/requests?closed=true").json()[0]["status"] == "added"
     assert sam.post("/api/requests", json={"title": ""}).status_code == 400
+
+
+def test_finished_requests_can_be_cleared_away(cfg, people, add):
+    admin, sam, bob = people
+    added = requests.ask(cfg, sam, "Gyo")
+    requests.fulfil(cfg, added, add("Gyo"))
+    declined = requests.ask(cfg, sam, "Tomie")
+    requests.decline(cfg, declined, "")
+    with pytest.raises(LookupError):
+        requests.remove(cfg, bob, added)          # not someone else's
+    requests.remove(cfg, sam, declined)           # the asker can
+    requests.remove(cfg, admin, added)            # an admin can
+    assert requests.listing(cfg, sam.id, closed=True) == []
