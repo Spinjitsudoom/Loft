@@ -93,7 +93,8 @@ def test_home_rows_follow_settings(cfg, sam, add):
     for i in range(3):
         add(f"S{i}", series="Saga", index=i + 1, tags=["Horror"])
     order = [{"kind": "genres", "visible": True}, {"kind": "recent", "visible": False},
-             {"kind": "series", "visible": True}, {"kind": "continue", "visible": True}]
+             {"kind": "series", "visible": True}, {"kind": "continue", "visible": True},
+             {"kind": "shelves", "visible": True}]
     update_settings(cfg, sam.id, {"look": {"home_rows": order}})
     assert [r["kind"] for r in library.home(cfg, sam)["rows"]] == ["tag", "series"]
 

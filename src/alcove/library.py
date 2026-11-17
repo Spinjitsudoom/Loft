@@ -11,6 +11,7 @@ from .flow import READABLE_FLOW
 from .pages import READABLE as PAGE_FORMATS, file_layout
 from .reading import get_progress, in_progress
 from .settings import DEFAULTS, get_settings
+from . import shelves as shelf_store
 
 RECENT = 15
 SERIES_ROWS = 8
@@ -42,7 +43,7 @@ def home(cfg: Config, user) -> dict:
     """The home screen for this person: a hero book, then rows in the order they chose."""
     look = get_settings(cfg, user.id)["look"] if user else DEFAULTS["look"]
     reading_now = in_progress(cfg, user.id) if user else []
-    rows_by_kind: dict[str, list[dict]] = {"continue": [], "recent": [], "series": [], "genres": []}
+    rows_by_kind: dict[str, list[dict]] = {"continue": [], "shelves": [], "recent": [], "series": [], "genres": []}
     with session(cfg.db_path) as con:
         recent = [book_card(r) for r in con.execute(
             f"SELECT * FROM books ORDER BY {SORTS['added']} LIMIT ?", (RECENT,))]
@@ -65,6 +66,8 @@ def home(cfg: Config, user) -> dict:
                 f"ORDER BY {SORTS['title']} LIMIT ?", (t["tag"], TAG_ROW_BOOKS))]
             rows_by_kind["genres"].append({"title": t["tag"], "kind": "tag", "value": t["tag"], "books": books})
 
+    if user:
+        rows_by_kind["shelves"] = _shelf_rows(cfg, user)
     if len(reading_now) >= 2:
         rows_by_kind["continue"].append({"title": "Continue reading", "kind": "continue", "value": None,
                                          "books": [{**card, "progress": p} for card, p in reading_now]})
@@ -75,7 +78,35 @@ def home(cfg: Config, user) -> dict:
     return {"hero": recent[0], "hero_kind": "new", "hero_progress": None, "rows": rows}
 
 
-def _filter(kind: str | None, value: str | None) -> tuple[str, tuple]:
+SHELF_ROW_BOOKS = 20
+
+
+def _shelf_rows(cfg: Config, user) -> list[dict]:
+    rows = []
+    with session(cfg.db_path) as con:
+        for shelf in shelf_store.list_shelves(cfg, user.id):
+            if shelf["count"]:
+                books = [book_card(r) for r in con.execute(
+                    "SELECT b.* FROM shelf_books sb JOIN books b ON b.id = sb.book_id WHERE sb.shelf_id = ? "
+                    "ORDER BY sb.added_at DESC LIMIT ?", (shelf["id"], SHELF_ROW_BOOKS))]
+                rows.append({"title": shelf["name"], "kind": "shelf", "value": str(shelf["id"]), "books": books})
+        finished = [book_card(r) for r in con.execute(
+            "SELECT b.* FROM progress p JOIN books b ON b.id = p.book_id WHERE p.user_id = ? AND p.finished = 1 "
+            "ORDER BY p.updated_at DESC LIMIT ?", (user.id, SHELF_ROW_BOOKS))]
+    if finished:
+        rows.append({"title": "Finished", "kind": "finished", "value": "", "books": finished})
+    return rows
+
+
+def _filter(kind: str | None, value: str | None, user=None) -> tuple[str, tuple]:
+    if kind in ("shelf", "finished"):
+        if user is None:
+            raise LookupError(kind)
+        if kind == "finished":
+            return "WHERE id IN (SELECT book_id FROM progress WHERE user_id = ? AND finished = 1)", (user.id,)
+        # Only the person's own shelf: someone else's matches nothing (and list_books says it doesn't exist).
+        return ("WHERE id IN (SELECT sb.book_id FROM shelf_books sb JOIN shelves s ON s.id = sb.shelf_id "
+                "WHERE s.id = ? AND s.user_id = ?)", (value, user.id))
     if not kind or value is None:
         return "", ()
     if kind == "series":
@@ -88,8 +119,12 @@ def _filter(kind: str | None, value: str | None) -> tuple[str, tuple]:
 
 
 def list_books(cfg: Config, *, kind: str | None, value: str | None, sort: str = "title",
-               offset: int = 0, limit: int = 60) -> dict:
-    where, args = _filter(kind, value)
+               offset: int = 0, limit: int = 60, user=None) -> dict:
+    where, args = _filter(kind, value, user)
+    if kind == "shelf":
+        with session(cfg.db_path) as con:
+            if not con.execute("SELECT 1 FROM shelves WHERE id = ? AND user_id = ?", (value, user.id)).fetchone():
+                raise LookupError(value)
     order = SERIES_ORDER if kind == "series" and sort == "title" else SORTS.get(sort, SORTS["title"])
     with session(cfg.db_path) as con:
         total = con.execute(f"SELECT COUNT(*) FROM books {where}", args).fetchone()[0]
@@ -124,6 +159,7 @@ def get_book(cfg: Config, book_id: int, user=None) -> dict | None:
         "files": files,
         "series_books": series_books,
         "progress": get_progress(cfg, user.id, book_id) if user else None,
+        "shelves": shelf_store.for_book(cfg, user.id, book_id) if user else [],
     }
 
 

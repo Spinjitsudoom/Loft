@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
-from . import auth, editing, flowbooks, libsettings, library, openlibrary, pages, reading, settings, txt, uploads
+from . import auth, editing, flowbooks, libsettings, library, openlibrary, pages, reading, settings, shelves, txt, uploads
 from .auth import User, admin_user, current_user
 from .config import Config
 from .covers import cover_path
@@ -51,6 +51,10 @@ class AdminFlag(BaseModel):
 
 class NewPassword(BaseModel):
     password: str = ""
+
+
+class ShelfName(BaseModel):
+    name: str = ""
 
 
 class SaveUpload(BaseModel):
@@ -248,10 +252,12 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
 
     @app.get("/api/books")
     def books(kind: str | None = None, value: str | None = None, sort: str = "title", offset: int = 0,
-              limit: int = 60, _: User = Depends(current_user)):
+              limit: int = 60, user: User = Depends(current_user)):
         try:
             return library.list_books(cfg, kind=kind, value=value, sort=sort, offset=max(0, offset),
-                                      limit=min(max(1, limit), 200))
+                                      limit=min(max(1, limit), 200), user=user)
+        except LookupError:
+            raise HTTPException(404, "No such shelf")
         except ValueError as e:
             raise HTTPException(400, str(e))
 
@@ -381,6 +387,43 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     @app.delete("/api/uploads/{token}")
     def discard_upload(token: str, _: User = Depends(admin_user)):
         _draft_call(uploads.discard, token)
+        return {"ok": True}
+
+    # ---------- shelves ----------
+
+    def _shelf_call(call, *args):
+        try:
+            return call(cfg, *args)
+        except LookupError:
+            raise HTTPException(404, "No such shelf")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/api/shelves")
+    def list_shelves(user: User = Depends(current_user)):
+        return shelves.list_shelves(cfg, user.id)
+
+    @app.post("/api/shelves")
+    def create_shelf(body: ShelfName, user: User = Depends(current_user)):
+        return _shelf_call(shelves.create, user.id, body.name)
+
+    @app.patch("/api/shelves/{shelf_id}")
+    def rename_shelf(shelf_id: int, body: ShelfName, user: User = Depends(current_user)):
+        return _shelf_call(shelves.rename, user.id, shelf_id, body.name)
+
+    @app.delete("/api/shelves/{shelf_id}")
+    def delete_shelf(shelf_id: int, user: User = Depends(current_user)):
+        _shelf_call(shelves.delete, user.id, shelf_id)
+        return {"ok": True}
+
+    @app.put("/api/shelves/{shelf_id}/books/{book_id}")
+    def shelve(shelf_id: int, book_id: int, user: User = Depends(current_user)):
+        _shelf_call(shelves.add, user.id, shelf_id, book_id)
+        return {"ok": True}
+
+    @app.delete("/api/shelves/{shelf_id}/books/{book_id}")
+    def unshelve(shelf_id: int, book_id: int, user: User = Depends(current_user)):
+        _shelf_call(shelves.remove, user.id, shelf_id, book_id)
         return {"ok": True}
 
     @app.get("/api/search")

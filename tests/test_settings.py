@@ -27,7 +27,7 @@ def test_patch_keeps_the_rest(cfg, user):
 
 
 def test_home_rows_reorder(cfg, user):
-    rows = [{"kind": k, "visible": k != "recent"} for k in ("genres", "recent", "series", "continue")]
+    rows = [{"kind": k, "visible": k != "recent"} for k in ("genres", "recent", "series", "shelves", "continue")]
     assert update_settings(cfg, user.id, {"look": {"home_rows": rows}})["look"]["home_rows"] == rows
 
 

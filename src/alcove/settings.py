@@ -12,7 +12,7 @@ import json
 from .config import Config
 from .db import session
 
-HOME_ROW_KINDS = ("continue", "recent", "series", "genres")
+HOME_ROW_KINDS = ("continue", "shelves", "recent", "series", "genres")
 
 DEFAULTS: dict = {
     "reading": {"mode": "pages", "theme": "dark", "turn_speed": "normal", "spread": True, "left_handed": False,
@@ -51,6 +51,14 @@ def _check(section: str, key: str, value) -> None:
         raise ValueError(f"{name} can't be {value!r}")
 
 
+def _complete_rows(rows):
+    """Rows saved before a kind of row existed keep their order; the new kinds go at the end."""
+    if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+        return rows
+    have = {r.get("kind") for r in rows}
+    return rows + [{"kind": k, "visible": True} for k in HOME_ROW_KINDS if k not in have]
+
+
 def _stored(cfg: Config, user_id: int) -> dict:
     with session(cfg.db_path) as con:
         row = con.execute("SELECT data FROM user_settings WHERE user_id = ?", (user_id,)).fetchone()
@@ -63,6 +71,8 @@ def get_settings(cfg: Config, user_id: int) -> dict:
         if section not in result or not isinstance(values, dict):
             continue
         for key, value in values.items():
+            if section == "look" and key == "home_rows":
+                value = _complete_rows(value)
             try:
                 _check(section, key, value)
             except ValueError:
