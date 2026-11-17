@@ -1,5 +1,5 @@
 // A book's details as fields: used in place on the book page (admin) and on each card when adding books.
-// Also the Open Library picker both of them use.
+// Also the online lookup picker both of them use (Google Books with a key, Open Library, AniList for comics).
 import { api, authorLine, esc } from "./api.js";
 
 export const FIELD_LABELS = {
@@ -71,11 +71,12 @@ export function showError(form, message) {
   return null;
 }
 
-// Open Library candidates for a title/author/ISBN, shown in `box`. onPick(candidate) when one is chosen.
-export async function showLookup(box, { title = "", author = "", isbn = "" }, onPick, { covers = false } = {}) {
+// Matches for a title/author/ISBN, shown in `box`. onPick(candidate) when one is chosen.
+// `comic` (a book shown page by page) asks AniList as well as Open Library.
+export async function showLookup(box, { title = "", author = "", isbn = "", comic = false }, onPick, { covers = false } = {}) {
   box.hidden = false;
-  box.innerHTML = `<p class="lookup-note">Asking Open Library…</p>`;
-  const q = new URLSearchParams({ title, author, isbn });
+  box.innerHTML = `<p class="lookup-note">Looking it up…</p>`;
+  const q = new URLSearchParams({ title, author, isbn, comic });
   let found;
   try {
     found = await api(`/lookup?${q}`);
@@ -85,20 +86,21 @@ export async function showLookup(box, { title = "", author = "", isbn = "" }, on
   }
   if (covers) found = found.filter((c) => c.cover_url);
   if (!found.length) {
-    box.innerHTML = `<p class="lookup-note">Open Library doesn’t know this one${covers ? " by a cover" : ""}. ${covers ? "Upload a picture instead." : "Fill the details in by hand."}</p>`;
+    box.innerHTML = `<p class="lookup-note">${covers ? "No cover for this one online. Upload a picture instead."
+      : "Nothing online knows this one. Fill the details in by hand."}</p>`;
     return;
   }
   box.innerHTML = covers
-    ? `<p class="lookup-note">Pick a cover</p><ul class="cover-picks">${found.map((c, i) => `<li><button type="button" data-pick="${i}" aria-label="${esc(c.title)}${c.published ? `, ${esc(c.published)}` : ""}">
-        <img src="${esc(c.cover_url.replace("-L.jpg", "-M.jpg"))}" alt="" loading="lazy" onerror="this.closest('li').remove()"></button></li>`).join("")}</ul>`
+    ? `<p class="lookup-note">Pick a cover</p><ul class="cover-picks">${found.map((c, i) => `<li><button type="button" data-pick="${i}" aria-label="${esc(c.title)}${c.published ? `, ${esc(c.published)}` : ""}, from ${esc(c.source)}">
+        <img src="${esc(c.thumb_url || c.cover_url.replace("-L.jpg", "-M.jpg"))}" alt="" loading="lazy" onerror="this.closest('li').remove()"></button></li>`).join("")}</ul>`
     : `<p class="lookup-note">Pick the one that matches. Only empty fields are filled.</p><ul class="lookup-list">${found.map((c, i) => `<li><button type="button" data-pick="${i}">
-        <span class="lookup-cover">${c.cover_url ? `<img src="${esc(c.cover_url.replace("-L.jpg", "-S.jpg"))}" alt="" loading="lazy" onerror="this.remove()">` : ""}</span>
-        <span class="lookup-text"><strong>${esc(c.title)}</strong><span>${esc(authorLine(c.authors))}${c.published ? ` · ${esc(c.published)}` : ""}</span></span>
+        <span class="lookup-cover">${c.cover_url ? `<img src="${esc(c.thumb_url || c.cover_url.replace("-L.jpg", "-S.jpg"))}" alt="" loading="lazy" onerror="this.remove()">` : ""}</span>
+        <span class="lookup-text"><strong>${esc(c.title)}</strong><span>${esc(authorLine(c.authors))}${c.published ? ` · ${esc(c.published)}` : ""}</span><span class="lookup-source">From ${esc(c.source)}</span></span>
       </button></li>`).join("")}</ul>`;
   box.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => onPick(found[Number(b.dataset.pick)])));
 }
 
-// Fill only the empty fields from a candidate; fetch its description if that's empty too.
+// Fill only the empty fields from a candidate; its description comes with it (AniList) or is fetched (Open Library).
 export async function fillEmpty(form, c) {
   const set = (name, value) => {
     const el = form.elements[name];
@@ -110,6 +112,7 @@ export async function fillEmpty(form, c) {
   set("published", c.published);
   set("language", c.language);
   set("tags", list(c.tags));
+  set("description", c.description);
   if (!form.elements.description.value.trim() && c.key) {
     try {
       const { description } = await api(`/lookup/description?key=${encodeURIComponent(c.key)}`);

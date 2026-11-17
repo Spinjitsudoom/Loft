@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
-from . import auth, check, editing, flowbooks, libsettings, library, openlibrary, pages, reading, settings, shelves, txt, uploads
+from . import auth, check, editing, flowbooks, libsettings, library, lookups, openlibrary, pages, reading, settings, shelves, txt, uploads
 from .auth import User, admin_user, current_user
 from .config import Config
 from .covers import cover_path
@@ -69,6 +69,7 @@ class ShelfName(BaseModel):
 class SaveUpload(BaseModel):
     details: dict = {}
     cover_url: str | None = None
+    right_to_left: bool = False
 
 
 class CoverUrl(BaseModel):
@@ -78,6 +79,12 @@ class CoverUrl(BaseModel):
 class LayoutIn(BaseModel):
     split: bool | None = None
     wraparound: bool | None = None
+    rtl: bool | None = None  # None leaves it as it was
+
+
+class ArrangementIn(BaseModel):
+    order: list[list] | None = None  # every page as [source page, half]; None puts the file's order back
+    hidden: list[list] = []
 
 
 class ProgressIn(BaseModel):
@@ -331,8 +338,8 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             raise HTTPException(400, str(e))
 
     @app.get("/api/lookup")
-    def lookup(title: str = "", author: str = "", isbn: str = "", _: User = Depends(admin_user)):
-        return _lookup(openlibrary.search, title=title, author=author, isbn=isbn)
+    def lookup(title: str = "", author: str = "", isbn: str = "", comic: bool = False, _: User = Depends(admin_user)):
+        return _lookup(lookups.search, title=title, author=author, isbn=isbn, comic=comic)
 
     @app.get("/api/lookup/description")
     def lookup_description(key: str = "", _: User = Depends(admin_user)):
@@ -387,7 +394,8 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     @app.post("/api/uploads/{token}/save")
     def save_upload(token: str, body: SaveUpload, _: User = Depends(admin_user)):
         try:
-            return {"book_id": _draft_call(uploads.save, token, body.details, cover_url=body.cover_url or None)}
+            return {"book_id": _draft_call(uploads.save, token, body.details, cover_url=body.cover_url or None,
+                                             right_to_left=body.right_to_left)}
         except openlibrary.LookupFailed as e:
             raise HTTPException(502, str(e))
         except ValueError as e:
@@ -515,11 +523,30 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     @app.patch("/api/files/{file_id}/layout")
     def file_layout(file_id: int, body: LayoutIn, _: User = Depends(admin_user)):
         try:
-            return pages.set_layout(cfg, file_id, body.split, body.wraparound)
+            return pages.set_layout(cfg, file_id, body.split, body.wraparound, body.rtl)
         except LookupError:
             raise HTTPException(404, "No such file")
         except ValueError as e:
             raise HTTPException(400, str(e))
+
+    @app.patch("/api/files/{file_id}/arrangement")
+    def file_arrangement(file_id: int, body: ArrangementIn, _: User = Depends(admin_user)):
+        try:
+            return pages.set_arrangement(cfg, file_id, body.order, body.hidden)
+        except LookupError:
+            raise HTTPException(404, "No such file")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/api/files/{file_id}/piece")
+    def file_piece(file_id: int, src: int, half: int | None = None, w: int = 200, _: User = Depends(admin_user)):
+        """A page (or half of one) of the file, hidden or not, by where it is in the file: for arranging."""
+        _manifest(file_id)
+        try:
+            path = pages.render_piece(cfg, file_id, src, half, min(max(w, 200), 2400))
+        except IndexError:
+            raise HTTPException(404, "No such page")
+        return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=604800"})
 
     @app.get("/api/files/{file_id}/pages/{index}")
     def file_page(file_id: int, index: int, w: int = 1200, _: User = Depends(current_user)):

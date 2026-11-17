@@ -49,8 +49,16 @@ export async function renderAdmin(main) {
         <span>Show plain-text (.txt) files as books</span></label>
       <p class="field-hint indent">Off by default: a notes or passwords file in the books folder would show up for everyone.</p>
       <label class="switch"><input type="checkbox" data-lib="online_lookups" ${lib.online_lookups ? "checked" : ""}>
-        <span>Look up details and covers on Open Library</span></label>
-      <p class="field-hint indent">Sends only titles, authors and ISBNs, and only when you ask for a lookup.</p>
+        <span>Look up details and covers online</span></label>
+      <p class="field-hint indent">Only when you ask for a lookup. Open Library and Google Books get the title, author and ISBN; AniList, asked for comics and manga, gets just the title.</p>
+      <form class="inline-form" data-google novalidate>
+        <label>Google Books key<input name="key" type="password" autocomplete="off" spellcheck="false"
+          placeholder="${lib.google_books ? "Saved. Paste a new key to replace it" : "Paste a key to add Google Books"}"></label>
+        <button class="btn" type="submit">Save key</button>
+        ${lib.google_books ? `<button class="btn" type="button" data-google-remove>Remove key</button>` : ""}
+      </form>
+      <p class="form-error" data-google-error role="alert" hidden></p>
+      <p class="field-hint">Google Books has the editions themselves, such as English manga volumes with their covers and ISBNs. It needs a free key from Google Cloud with the Books API turned on.</p>
     </section>
 
     <section class="panel">
@@ -128,6 +136,16 @@ export async function renderAdmin(main) {
       document.title = updated.name || "Alcove";
     }
   });
+  const googleError = main.querySelector("[data-google-error]");
+  const saveKey = async (value) => {
+    googleError.hidden = true;
+    if (await patch({ google_books_key: value }, googleError)) renderAdmin(main);
+  };
+  main.querySelector("[data-google]").addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (e.target.key.value.trim()) saveKey(e.target.key.value);
+  });
+  main.querySelector("[data-google-remove]")?.addEventListener("click", () => saveKey(""));
   main.querySelectorAll("[data-lib]").forEach((c) => c.addEventListener("change", async () => {
     if (!(await patch({ [c.dataset.lib]: c.checked }))) c.checked = !c.checked;
   }));

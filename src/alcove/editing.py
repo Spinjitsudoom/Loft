@@ -8,6 +8,7 @@ as the admin left it.
 from __future__ import annotations
 
 import datetime
+import html
 import io
 import json
 import math
@@ -38,6 +39,13 @@ def _paragraphs(value: str) -> str:
     paras = re.split(r"\n\s*\n", value.replace("\r\n", "\n").replace("\r", "\n"))
     tidy = ["\n".join(_line(line) for line in p.split("\n") if line.strip()) for p in paras]
     return "\n\n".join(p for p in tidy if p)
+
+
+def text_from_html(value: str) -> str:
+    """Plain paragraphs from a description in simple HTML (<p>, <br>, <b>…), as online sources send them."""
+    text = re.sub(r"<br\s*/?>\n?", "\n", value or "", flags=re.I)
+    text = re.sub(r"<p\b[^>]*>|</p\s*>", "\n\n", text, flags=re.I)
+    return _paragraphs(html.unescape(re.sub(r"<[^>]+>", "", text)))
 
 
 def _names(key: str, value, most: int, longest: int) -> list[str]:

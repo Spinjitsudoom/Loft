@@ -99,9 +99,10 @@ function review(li, draft) {
       ${draft.same_as.length ? `<p class="add-same">This looks like ${draft.same_as.map((b) =>
         `<a href="#/book/${b.id}">${esc(b.title)}</a>`).join(", ")}, already in the library. Save it anyway to keep both.</p>` : ""}
       ${detailFields(draft.details, { required: true })}
+      ${draft.has_pages ? `<label class="switch add-rtl"><input type="checkbox" name="right_to_left"><span>Manga: pages read right to left</span></label>` : ""}
       <div class="edit-actions">
         <button class="btn btn-primary" type="submit">Save to the library</button>
-        <button class="btn" type="button" data-fill>Fill from Open Library</button>
+        <button class="btn" type="button" data-fill>Look up details</button>
         <button class="btn" type="button" data-discard>Discard</button>
       </div>
       <p class="form-error" role="alert" hidden></p>
@@ -118,7 +119,9 @@ function review(li, draft) {
     button.disabled = true;
     const details = readDetails(form);
     try {
-      const { book_id } = await api(`/uploads/${draft.token}/save`, { method: "POST", body: { details, cover_url: coverUrl } });
+      const { book_id } = await api(`/uploads/${draft.token}/save`, { method: "POST", body: {
+        details, cover_url: coverUrl, right_to_left: Boolean(form.elements.right_to_left && form.elements.right_to_left.checked),
+      } });
       li.classList.remove("reviewing");
       li.innerHTML = `<div class="add-status"><strong>${esc(details.title)}</strong><span class="muted">Added to the library</span></div>
         <a class="btn btn-small" href="#/book/${book_id}">Open book</a>`;
@@ -130,7 +133,7 @@ function review(li, draft) {
   });
   form.querySelector("[data-fill]").addEventListener("click", () => {
     const d = readDetails(form);
-    showLookup(form.querySelector(".lookup"), { title: d.title, author: d.authors[0] || "", isbn: draft.isbn }, async (c) => {
+    showLookup(form.querySelector(".lookup"), { title: d.title, author: d.authors[0] || "", isbn: draft.isbn, comic: draft.has_pages }, async (c) => {
       await fillEmpty(form, c);
       if (!draft.has_cover && c.cover_url) {
         coverUrl = c.cover_url;

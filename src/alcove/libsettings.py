@@ -1,5 +1,6 @@
 """Library settings, set by the admin in the app: the library's name, the books folders, where
-uploads go, how often to scan, whether plain-text files count as books, and online lookups.
+uploads go, how often to scan, whether plain-text files count as books, and online lookups (with
+an optional Google Books key, which is kept here and never sent back to the app).
 
 Stored in the database (only what the admin changed). Until the admin saves a folder list, the one
 from config.toml (or ALCOVE_BOOKS_DIRS) is used.
@@ -9,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 from .config import Config
@@ -18,6 +20,7 @@ KEY = "library"
 MAX_NAME = 40
 MAX_FOLDERS = 10
 SCAN_MINUTES = range(5, 1441)
+API_KEY = re.compile(r"^[A-Za-z0-9_-]{20,100}$")
 
 
 def _stored(cfg: Config) -> dict:
@@ -41,7 +44,13 @@ def get_library(cfg: Config) -> dict:
         "scan_interval_minutes": stored.get("scan_interval_minutes", cfg.scan_interval_minutes),
         "allow_txt": stored.get("allow_txt", False),
         "online_lookups": stored.get("online_lookups", True),
+        "google_books": bool(google_books_key(cfg, stored)),  # whether a key is saved, never the key
     }
+
+
+def google_books_key(cfg: Config, stored: dict | None = None) -> str:
+    value = (_stored(cfg) if stored is None else stored).get("google_books_key")
+    return value if isinstance(value, str) else ""
 
 
 def books_dirs(cfg: Config) -> list[Path]:
@@ -98,6 +107,12 @@ def _clean(patch: dict, current: dict) -> dict:
         elif key == "scan_interval_minutes":
             if not isinstance(value, int) or isinstance(value, bool) or value not in SCAN_MINUTES:
                 raise ValueError(f"scan_interval_minutes must be between {SCAN_MINUTES.start} and {SCAN_MINUTES.stop - 1}")
+        elif key == "google_books_key":
+            if not isinstance(value, str):
+                raise ValueError("google_books_key must be text")
+            value = value.strip()
+            if value and not API_KEY.match(value):
+                raise ValueError("google_books_key doesn’t look like a Google API key (they start with AIza)")
         elif key in ("allow_txt", "online_lookups"):
             if not isinstance(value, bool):
                 raise ValueError(f"{key} must be on or off")
@@ -115,6 +130,9 @@ def update_library(cfg: Config, patch: dict) -> dict:
         raise ValueError("Library settings must be an object")
     current = get_library(cfg)
     clean = _clean(patch, current)
+    if clean.get("google_books_key") and clean.get("online_lookups", current["online_lookups"]):
+        from .googlebooks import check_key
+        check_key(clean["google_books_key"])
     stored = {**_stored(cfg), **clean}
     with session(cfg.db_path) as con:
         con.execute("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",

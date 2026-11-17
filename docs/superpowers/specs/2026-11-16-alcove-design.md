@@ -231,5 +231,25 @@ clean sans for the interface), tests.
 - Series gaps count from #1 up to the highest number held.
 - "Finished" is the books you read to the end, not a shelf you fill. "Want to read" is always there.
 - Open Library fills publisher and language only when it lists exactly one of each (it lists every
-  edition's otherwise). Covers are downloaded only from covers.openlibrary.org.
+  edition's otherwise). Covers are downloaded only from covers.openlibrary.org, or AniList's image
+  server for AniList matches.
+- Google Books (owner's request, 2026-11-17) is asked first, alongside Open Library, once the admin
+  saves a free API key in Library settings; without one it isn't asked. The key is tried once when
+  saved (unless lookups are off), stored in the database, and never sent back to the app. It is
+  there for the editions themselves: English manga volumes with their own cover, ISBN and date.
+- AniList (owner's request, 2026-11-17) is the second lookup source, for manga. It is asked alongside
+  Open Library for books shown page by page (CBZ, CBR, CB7, PDF), and for any other book only when
+  Open Library finds nothing. It gets just the title; adult-only entries are left out; its genres
+  become tags and its own source notes are cut from descriptions. Its covers are usually the
+  original Japanese edition's.
+- Arranging pages (owner's request, 2026-11-17): "Arrange pages" in the edit page's Pages section,
+  for PDFs and comics. Touch first: tap pages to choose them, then Move to front / Move to end /
+  Move before page N / Hide / Show; dragging and shift-click on a computer; Undo and Reset; saves
+  as it goes. Stored in the database over the pages as split and direction leave them (the file is
+  never changed); if those settings change later, moved pages stay as near as they can. Hidden
+  pages are skipped by the reader and listed under the grid. Progress and bookmarks keep their page
+  number, so a big reshuffle can move them. No rotating for now. Page images are now cached by the
+  piece of the file they show, so moving pages never draws them again.
+- Manga reading direction is a per-file switch (on the add card and the Pages section of the edit
+  page), not a tag rule (owner's request, 2026-11-17).
 - Demoting or promoting an admin takes effect on their next request without signing them out.

@@ -1,7 +1,8 @@
 """Book details and covers from Open Library (openlibrary.org), for the admin to choose from.
 
 Only the title, author and ISBN are sent, and nothing at all while online lookups are off in
-Library settings. Covers are only ever downloaded from covers.openlibrary.org.
+Library settings. Covers are only ever downloaded from covers.openlibrary.org, or from AniList's
+or Google Books' image servers for matches found there (see anilist.py, googlebooks.py).
 """
 
 from __future__ import annotations
@@ -17,6 +18,8 @@ from .libsettings import get_library
 SEARCH = "https://openlibrary.org/search.json"
 WORKS = "https://openlibrary.org"
 COVER_HOST = "covers.openlibrary.org"
+# host: where its covers live
+COVER_HOSTS = {COVER_HOST: "/b/", "s4.anilist.co": "/file/anilistcdn/", "books.google.com": "/books/content"}
 FIELDS = "key,title,author_name,first_publish_year,publisher,language,subject,isbn,cover_i"
 RESULTS = 6
 MAX_TAGS = 8
@@ -124,10 +127,12 @@ def description(cfg: Config, key: str) -> str:
 
 def fetch_cover(cfg: Config, url: str) -> bytes:
     parsed = urlparse(url or "")
-    if parsed.scheme != "https" or parsed.hostname != COVER_HOST or parsed.port not in (None, 443) or parsed.username:
-        raise ValueError("Covers can only come from Open Library")
+    folder = COVER_HOSTS.get(parsed.hostname or "")
+    if (parsed.scheme != "https" or not folder or not parsed.path.startswith(folder)
+            or parsed.port not in (None, 443) or parsed.username):
+        raise ValueError("Covers can only come from Open Library, Google Books or AniList")
     _allowed(cfg)
     try:
         return _get(url, MAX_COVER)
     except Exception as e:
-        raise LookupFailed("Open Library didn’t send that cover; try another") from e
+        raise LookupFailed("That cover didn’t download; try another") from e

@@ -22,6 +22,7 @@ from .editing import FIELDS, clean_details
 from .filemeta import read_file_meta, title_from_filename
 from .formats import format_of
 from .libsettings import allow_txt, get_library
+from . import pages
 
 MAX_UPLOAD = 2 * 1024**3
 DRAFT_DAYS = 2
@@ -107,6 +108,7 @@ def read_draft(cfg: Config, token: str) -> dict:
                "language": meta.language, "tags": []}
     return {"token": token, "filename": info["filename"], "format": info["format"], "size": path.stat().st_size,
             "details": details, "isbn": meta.isbn, "has_cover": (folder / "cover.jpg").is_file(),
+            "has_pages": info["format"] in pages.READABLE,  # shown page by page, so it can read right to left
             "same_as": _same_as(cfg, meta.title, meta.authors)}
 
 
@@ -172,8 +174,10 @@ def _copy_new(source: Path, target: Path) -> Path:
             n += 1
 
 
-def save(cfg: Config, token: str, details: dict, *, cover_url: str | None = None) -> int:
-    """Save a reviewed upload into the books folder and the library. Returns the new book's id."""
+def save(cfg: Config, token: str, details: dict, *, cover_url: str | None = None,
+         right_to_left: bool = False) -> int:
+    """Save a reviewed upload into the books folder and the library. Returns the new book's id.
+    right_to_left marks a manga, whose pages turn the other way."""
     from .openlibrary import LookupFailed, fetch_cover
     from .scanner import _Found, _scan_lock, _set_cover, _upsert_file, _write_book
 
@@ -217,6 +221,9 @@ def save(cfg: Config, token: str, details: dict, *, cover_url: str | None = None
                                       calibre_id=None, added_at=time.time(), locked=list(FIELDS))
                 _set_cover(cfg, con, book_id, image)
                 _upsert_file(con, book_id, saved, _Found(info["format"], st.st_size, st.st_mtime), upload_dir)
+                if right_to_left and info["format"] in pages.READABLE:
+                    con.execute("UPDATE book_files SET layout = ? WHERE path = ?",
+                                (json.dumps({"split": None, "wraparound": None, "rtl": True}), str(saved)))
         except BaseException:
             saved.unlink(missing_ok=True)
             raise

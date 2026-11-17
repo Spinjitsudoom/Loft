@@ -91,7 +91,14 @@ export class Reader {
     this.pageAt = 0;      // when that happened (seconds)
     this.quiet = false;   // moving the book ourselves (opening it), not the reader turning pages
     this.zoomView = null;
+    // Manga read right to left. The page-curl book only turns one way, so its pages are laid out
+    // last to first and it opens at the far end; turning "back" through them reads forwards.
+    this.rtl = Boolean(manifest.rtl);
+    this.leaves = this.count + (this.rtl && this.count % 2 ? 1 : 0);  // a blank keeps the cover on its own
   }
+
+  leafOf(page) { return this.rtl ? this.leaves - 1 - page : page; }
+  pageOf(leaf) { return this.rtl ? Math.min(this.count - 1, this.leaves - 1 - leaf) : leaf; }
 
   src(i, cssWidth) {
     return `/api/files/${this.file.id}/pages/${i}?w=${snap(cssWidth * (devicePixelRatio || 1))}&v=${this.m.version}`;
@@ -114,7 +121,7 @@ export class Reader {
         <button class="icon-btn" type="button" data-panel="prefs" aria-label="Reading settings">${icon("type")}</button>
       </header>
       <footer class="reader-bottom">
-        <input class="scrubber" type="range" min="0" max="${Math.max(0, this.count - 1)}" value="${this.page}" aria-label="Go to page">
+        <input class="scrubber" type="range" min="0" max="${Math.max(0, this.count - 1)}" value="${this.page}" aria-label="Go to page"${this.rtl ? ` dir="rtl"` : ""}>
         <span class="reader-where"></span>
       </footer>
       <aside class="reader-panel" data-for="contents" hidden></aside>
@@ -162,8 +169,11 @@ export class Reader {
     this.spread = this.twoPages();
     const holder = document.createElement("div");
     holder.className = "flip-book";
-    holder.innerHTML = Array.from({ length: this.count },
-      (_, i) => `<div class="leaf" data-density="soft"><img alt="Page ${i + 1}" draggable="false" decoding="async"></div>`).join("");
+    holder.innerHTML = Array.from({ length: this.leaves }, (_, leaf) => {
+      const i = this.rtl ? this.leaves - 1 - leaf : leaf;
+      return i >= this.count ? `<div class="leaf" data-density="soft"></div>`
+        : `<div class="leaf" data-density="soft"><img alt="Page ${i + 1}" data-page="${i}" draggable="false" decoding="async"></div>`;
+    }).join("");
     this.stage.appendChild(holder);
     const stageW = this.stage.clientWidth;
     this.flip = new St.PageFlip(holder, {
@@ -171,10 +181,14 @@ export class Reader {
       minWidth: this.spread ? 60 : stageW + 1, maxWidth: 5000, minHeight: 60, maxHeight: 5000,
       showCover: true, usePortrait: true, drawShadow: true, maxShadowOpacity: 0.5,
       mobileScrollSupport: false, disableFlipByClick: true, showPageCorners: true,
-      flippingTime: SPEEDS[this.reading.turn_speed] || 700, startPage: this.page,
+      flippingTime: SPEEDS[this.reading.turn_speed] || 700, startPage: this.leafOf(this.page),
     });
     this.flip.loadFromHTML(holder.querySelectorAll(".leaf"));
-    this.flip.on("flip", (e) => this.onPage(e.data));
+    this.flip.on("flip", (e) => {
+      // Two pages side by side report their left leaf; a manga's left page is the later one.
+      const pair = this.rtl && this.flip.getOrientation() === "landscape" && e.data % 2 === 1 && e.data < this.leaves - 1;
+      this.onPage(this.pageOf(pair ? e.data + 1 : e.data));
+    });
     this.flip.on("init", () => this.loadNear(this.page));
     this.flip.on("changeOrientation", () => this.loadNear(this.page));
   }
@@ -211,15 +225,17 @@ export class Reader {
 
   loadNear(i) {
     if (!this.flip) return;
-    const imgs = this.stage.querySelectorAll(".leaf img");
+    const imgs = [];
+    this.stage.querySelectorAll(".leaf img").forEach((img) => { imgs[Number(img.dataset.page)] = img; });
     const w = this.pageWidthCss();
     if (!w) return; // the book isn't laid out yet; "init" calls back
     for (let j = Math.max(0, i - NEAR); j <= Math.min(this.count - 1, i + NEAR + 1); j++) {
       const want = this.src(j, w);
-      if (imgs[j] && imgs[j].dataset.want !== want) {
-        imgs[j].dataset.want = want;
-        imgs[j].onerror = retryOnce;
-        imgs[j].src = want;
+      const img = imgs[j];
+      if (img && img.dataset.want !== want) {
+        img.dataset.want = want;
+        img.onerror = retryOnce;
+        img.src = want;
       }
     }
   }
@@ -230,7 +246,7 @@ export class Reader {
     i = Math.max(0, Math.min(this.count - 1, i));
     this.quiet = !save;  // turnToPage fires "flip" straight away; that isn't the reader turning a page
     try {
-      if (this.flip) this.flip.turnToPage(i);
+      if (this.flip) this.flip.turnToPage(this.leafOf(i));
       else if (this.scroller) {
         const el = this.scroller.querySelector(`[data-i="${i}"]`);
         if (el) this.scroller.scrollTop = el.offsetTop - 16;
@@ -248,10 +264,9 @@ export class Reader {
   step(dir) {
     if (this.flip) {
       if (this.reading.turn_speed === "off") {
-        const by = this.flip.getOrientation() === "landscape" ? 2 : 1;
-        const cur = this.flip.getCurrentPageIndex();
-        this.goTo(dir > 0 ? cur + by : Math.max(0, cur - by));
-      } else if (dir > 0) this.flip.flipNext("bottom");
+        const seen = this.visiblePages();
+        this.goTo(dir > 0 ? Math.max(...seen) + 1 : Math.max(0, Math.min(...seen) - 1));
+      } else if ((dir > 0) !== this.rtl) this.flip.flipNext("bottom");
       else this.flipBack();
     } else if (this.scroller) {
       this.scroller.scrollBy({ top: dir * this.scroller.clientHeight * 0.9, behavior: "smooth" });
@@ -332,7 +347,7 @@ export class Reader {
         return;
       }
       if (this.reading.mode === "scroll") return;
-      const forward = (x >= 0.7) !== this.reading.left_handed;
+      const forward = (x >= 0.7) !== this.reading.left_handed !== this.rtl;
       if (e.pointerType === "mouse" && this.flip) {
         // StPageFlip turns the page itself when a corner is clicked (its mouseup comes after ours).
         setTimeout(() => { if (this.flip && this.flip.getState() === "read") this.step(forward ? 1 : -1); }, 0);
@@ -344,8 +359,9 @@ export class Reader {
     this.on(this.stage, "wheel", (e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); this.zoom(); } }, { passive: false });
     this.on(window, "keydown", (e) => {
       if (e.target.closest && e.target.closest("input, textarea, select")) return;
-      if (["ArrowRight", "PageDown", " "].includes(e.key)) { e.preventDefault(); this.step(1); }
-      else if (["ArrowLeft", "PageUp"].includes(e.key)) { e.preventDefault(); this.step(-1); }
+      const [ahead, behind] = this.rtl ? ["ArrowLeft", "ArrowRight"] : ["ArrowRight", "ArrowLeft"];
+      if ([ahead, "PageDown", " "].includes(e.key)) { e.preventDefault(); this.step(1); }
+      else if ([behind, "PageUp"].includes(e.key)) { e.preventDefault(); this.step(-1); }
       else if (e.key === "Escape") {
         if (!this.closePanels()) location.hash = `#/book/${this.book.id}`;
       }
@@ -379,7 +395,7 @@ export class Reader {
     if (this.zoomView) return;
     this.zoomView = openZoom({
       src: (i) => `/api/files/${this.file.id}/pages/${i}?w=2400&v=${this.m.version}`,
-      index: this.page, count: this.count,
+      index: this.page, count: this.count, rtl: this.rtl,
       onClose: (i) => { this.zoomView = null; if (i !== this.page) this.goTo(i); },
     });
   }
@@ -419,9 +435,14 @@ export class Reader {
   }
 
   visiblePages() {
-    if (this.flip && this.flip.getOrientation() === "landscape" && this.page > 0) {
-      const left = this.page % 2 === 1 ? this.page : this.page - 1;
-      return [left, left + 1].filter((p) => p < this.count);
+    if (this.flip && this.flip.getOrientation() === "landscape") {
+      // Leaf 0 is on its own (the cover, or a manga's last page); the rest come in pairs.
+      const leaf = this.leafOf(this.page);
+      if (leaf > 0 && !(this.rtl && leaf === this.leaves - 1)) {
+        const left = leaf % 2 === 1 ? leaf : leaf - 1;
+        return [left, left + 1].map((l) => (this.rtl ? this.leaves - 1 - l : l))
+          .filter((p) => p >= 0 && p < this.count).sort((a, b) => a - b);
+      }
     }
     return [this.page];
   }

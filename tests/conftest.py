@@ -22,6 +22,18 @@ def jpg(colour, size=(60, 90)) -> bytes:
     return buf.getvalue()
 
 
+@pytest.fixture(autouse=True)
+def offline(monkeypatch):
+    """Tests never reach the real Open Library or AniList; a test that needs them fakes them."""
+    from alcove import anilist, openlibrary
+
+    def refuse(url, *args):
+        raise OSError(f"tests are offline ({url})")
+
+    monkeypatch.setattr(openlibrary, "_get", refuse)
+    monkeypatch.setattr(anilist, "_post", refuse)
+
+
 @pytest.fixture
 def make_pdf():
     def make(path: Path, *, title=None, author=None, pages=1, encrypt=False) -> Path:

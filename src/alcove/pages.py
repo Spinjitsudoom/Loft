@@ -1,8 +1,12 @@
 """Pages for the reader: what a book file holds (its manifest) and each page as an image.
 
 PDF pages are rendered with PDFium; comic pages come straight out of the archive. Both are stored
-as JPEGs in the data dir (keyed by the file's version, so a replaced file never shows old pages) and
-pruned when the cache grows past page_cache_mb.
+as JPEGs in the data dir, keyed by the file's modified time and the piece of the file they show (a
+whole page or one half of a two-page scan), so a replaced file never shows old pages and changing
+the layout or the page order never draws a page again. Pruned when the cache grows past page_cache_mb.
+
+The page order is worked out in three steps: the file's own pages; split_plan (two-page scans cut
+in two, wraparound covers, manga direction); then arrange (the admin's own order and hidden pages).
 """
 
 from __future__ import annotations
@@ -25,7 +29,10 @@ from .pdfium import open_pdf
 log = logging.getLogger(__name__)
 
 READABLE = {"pdf", "cbz", "cbr", "cb7"}
-PAGE_WIDTHS = (600, 900, 1200, 1800, 2400)
+PAGE_WIDTHS = (200, 600, 900, 1200, 1800, 2400)  # 200: thumbnails for arranging pages
+MAX_ENTRIES = 20_000
+
+Entry = tuple[int, "int | None"]  # (source page, half: 0 left, 1 right, None whole)
 MAX_PIXELS = 16_000_000
 JPEG_QUALITY = 88
 
@@ -57,25 +64,30 @@ def _is_spread(w: float, h: float) -> bool:
 
 
 def split_plan(sizes: list[list[float]], scanned: bool = True, *, split: bool | None = None,
-               wraparound: bool | None = None) -> list[tuple[int, int | None]]:
+               wraparound: bool | None = None, rtl: bool = False) -> list[tuple[int, int | None]]:
     """Which source page (and which half of it) each reader page shows.
 
     Scanned comics often hold two printed pages per image. When at least half of a book's pages
     are such spreads (and they're scans, not text), each one becomes a left and a right page, so
     the pages turn one at a time like the printed book. Single pages (a cover) stay whole.
     The admin can override this per book: split (always / never) and wraparound (False keeps a
-    wide first scan in its scanned order)."""
+    wide first scan in its scanned order).
+
+    A manga (rtl) is printed the other way round: each scan's right half is the earlier page, and
+    its wraparound cover has the front on the left."""
     spreads = [_is_spread(w, h) for w, h in sizes]
     automatic = scanned and sum(spreads) * 2 >= len(sizes)
     if not (automatic if split is None else split):
         return [(i, None) for i in range(len(sizes))]
     plan: list[tuple[int, int | None]] = []
     for i, is_spread in enumerate(spreads):
-        plan.extend([(i, 0), (i, 1)] if is_spread else [(i, None)])
+        halves = [(i, 1), (i, 0)] if rtl else [(i, 0), (i, 1)]
+        plan.extend(halves if is_spread else [(i, None)])
     if spreads and spreads[0] and wraparound is not False:
         # A wide first scan is a wraparound cover (the inside of a comic never opens on a spread):
-        # like the printed comic, the front (right half) comes first and the back (left half) last.
-        plan = [(0, 1)] + plan[2:] + [(0, 0)]
+        # like the printed comic, the front comes first and the back last.
+        front, back = ((0, 0), (0, 1)) if rtl else ((0, 1), (0, 0))
+        plan = [front] + plan[2:] + [back]
     return plan
 
 
@@ -130,60 +142,187 @@ def _comic_manifest(path: Path) -> list[list[int]]:
     return sizes
 
 
-def manifest(cfg: Config, file_id: int) -> dict:
-    f = _file(cfg, file_id)
-    if f["format"] not in READABLE:
-        raise Unreadable("format")
+def _measured(cfg: Config, f) -> tuple[list[list[float]], list[dict], bool]:
+    """What the file itself says: each page's size, its contents, whether it's a scan. Kept, so a
+    layout or order change only reworks the plan: measuring a big comic on a network share takes seconds."""
     with session(cfg.db_path) as con:
-        row = con.execute("SELECT * FROM page_info WHERE file_id = ?", (file_id,)).fetchone()
-    if row is None or row["mtime"] != f["mtime"]:
-        path = Path(f["path"])
-        if f["format"] == "pdf":
-            source, toc, scanned = _pdf_manifest(path)
-        else:
-            source, toc, scanned = _comic_manifest(path), [], True
-        layout = file_layout(f)
-        plan = split_plan(source, scanned, split=layout["split"], wraparound=layout["wraparound"])
-        first = {}
-        for n, (src, _) in enumerate(plan):
-            first.setdefault(src, n)
-        toc = [{**t, "page": first[t["page"]]} for t in toc]
-        sizes = [[source[src][0] / 2, source[src][1]] if half is not None else source[src] for src, half in plan]
-        sizes = [[round(w), round(h)] for w, h in sizes]
-        with session(cfg.db_path) as con:
-            con.execute("INSERT INTO page_info(file_id, mtime, count, sizes, toc) VALUES (?, ?, ?, ?, ?) "
-                        "ON CONFLICT(file_id) DO UPDATE SET mtime = excluded.mtime, count = excluded.count, "
-                        "sizes = excluded.sizes, toc = excluded.toc",
-                        (file_id, f["mtime"], len(sizes), json.dumps({"pages": sizes, "plan": plan, "source": source}),
-                         json.dumps(toc)))
+        row = con.execute("SELECT * FROM page_info WHERE file_id = ?", (f["id"],)).fetchone()
+    known = json.loads(row["sizes"]) if row is not None and row["mtime"] == f["mtime"] else None
+    if isinstance(known, dict) and "scanned" in known:
+        return known["source"], known["source_toc"], known["scanned"]
+    # Never measured, the file changed, or measured before this was kept.
+    path = Path(f["path"])
+    if f["format"] == "pdf":
+        source, source_toc, scanned = _pdf_manifest(path)
     else:
-        stored = json.loads(row["sizes"])
-        if isinstance(stored, list):  # stored before pages could be split: work it out again
-            with session(cfg.db_path) as con:
-                con.execute("DELETE FROM page_info WHERE file_id = ?", (file_id,))
-            return manifest(cfg, file_id)
-        sizes, plan, source, toc = stored["pages"], stored["plan"], stored["source"], json.loads(row["toc"])
-    return {"file_id": file_id, "format": f["format"], "count": len(sizes), "sizes": sizes, "toc": toc,
-            "version": int(f["mtime"]) + f["layout_rev"], "plan": [list(p) for p in plan], "source": source}
+        source, source_toc, scanned = _comic_manifest(path), [], True
+    with session(cfg.db_path) as con:
+        con.execute("INSERT INTO page_info(file_id, mtime, count, sizes, toc) VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(file_id) DO UPDATE SET mtime = excluded.mtime, count = excluded.count, "
+                    "sizes = excluded.sizes, toc = excluded.toc",
+                    (f["id"], f["mtime"], len(source),
+                     json.dumps({"source": source, "source_toc": source_toc, "scanned": scanned}), "[]"))
+    return source, source_toc, scanned
 
 
-def file_layout(row) -> dict:
-    """The admin's page-layout choices for a file: each True, False or None (automatic)."""
+def _natural(f, source, scanned) -> list[Entry]:
+    layout = file_layout(f)
+    return split_plan(source, scanned, split=layout["split"], wraparound=layout["wraparound"], rtl=layout["rtl"])
+
+
+def arrange(natural: list[Entry], order: list[Entry] | None, hidden: list[Entry]) -> tuple[list[Entry], list[Entry], list[Entry]]:
+    """The admin's page order and hidden pages, laid over the pages there are now.
+    Returns (the pages to show, every page in order, the hidden ones).
+
+    The order was saved against the pages as they were then; if split, wraparound or the file has
+    changed since, each page goes where the admin put it as nearly as can be: a half where its whole
+    page was (or the other way round), a page the order doesn't know right after the page before it."""
+    natural = [tuple(e) for e in natural]
+    order = [tuple(e) for e in order or []]
+    position = {e: i for i, e in enumerate(order)}
+    page_position: dict[int, int] = {}
+    for i, (src, _) in enumerate(order):
+        page_position.setdefault(src, i)
+    keyed, last = [], -1
+    for n, e in enumerate(natural):
+        if e in position:
+            key = (position[e], 0, n)
+        elif e[0] in page_position:
+            key = (page_position[e[0]], 1, n)
+        else:
+            key = (last, 2, n)
+        last = key[0]
+        keyed.append((key, e))
+    every = [e for _, e in sorted(keyed)]
+
+    hide = {tuple(e) for e in hidden or []}
+
+    def is_hidden(e: Entry) -> bool:
+        src, half = e
+        return e in hide or (src, None) in hide or (half is None and (src, 0) in hide and (src, 1) in hide)
+
+    shown = [e for e in every if not is_hidden(e)]
+    if not shown:
+        return every, every, []
+    return shown, every, [e for e in every if is_hidden(e)]
+
+
+def _stored_layout(row) -> dict:
     try:
         stored = json.loads(row["layout"] or "{}")
     except ValueError:
         stored = {}
-    return {k: stored.get(k) if isinstance(stored.get(k), bool) else None for k in ("split", "wraparound")}
+    return stored if isinstance(stored, dict) else {}
 
 
-def set_layout(cfg: Config, file_id: int, split: bool | None, wraparound: bool | None) -> dict:
+def _entries(value) -> list[Entry]:
+    """Pages as the app sends them: [source page, half] with half 0, 1 or null."""
+    if not isinstance(value, list) or len(value) > MAX_ENTRIES:
+        raise ValueError("The pages must be a list")
+    entries = []
+    for item in value:
+        if (not isinstance(item, (list, tuple)) or len(item) != 2 or not isinstance(item[0], int)
+                or isinstance(item[0], bool) or item[0] < 0 or item[1] not in (None, 0, 1) or isinstance(item[1], bool)):
+            raise ValueError("Each page must be a page number and which half of it")
+        entries.append((item[0], item[1]))
+    return entries
+
+
+def _arrangement(row) -> tuple[list[Entry] | None, list[Entry]]:
+    stored = _stored_layout(row)
+    try:
+        order = _entries(stored["order"]) if stored.get("order") is not None else None
+        hidden = _entries(stored.get("hidden") or [])
+    except ValueError:
+        return None, []
+    return order, hidden
+
+
+def is_arranged(row) -> bool:
+    order, hidden = _arrangement(row)
+    return order is not None or bool(hidden)
+
+
+def manifest(cfg: Config, file_id: int) -> dict:
+    f = _file(cfg, file_id)
+    if f["format"] not in READABLE:
+        raise Unreadable("format")
+    source, source_toc, scanned = _measured(cfg, f)
+    natural = _natural(f, source, scanned)
+    plan, every, hidden = arrange(natural, *_arrangement(f))
+
+    # A chapter starts on its page, or the next one shown if that page is hidden.
+    index = {e: i for i, e in enumerate(plan)}
+    first: dict[int, int] = {}
+    for n, (src, _) in enumerate(natural):
+        first.setdefault(src, n)
+    toc = []
+    for t in source_toc:
+        page = next((index[e] for e in natural[first.get(t["page"], len(natural)):] if e in index), None)
+        if page is not None:
+            toc.append({**t, "page": page})
+    sizes = [[source[src][0] / 2, source[src][1]] if half is not None else source[src] for src, half in plan]
+    sizes = [[round(w), round(h)] for w, h in sizes]
+    return {"file_id": file_id, "format": f["format"], "count": len(sizes), "sizes": sizes, "toc": toc,
+            "version": int(f["mtime"]) + f["layout_rev"], "rtl": file_layout(f)["rtl"],
+            "plan": [list(p) for p in plan], "source": source,
+            "arranged": [list(p) for p in every], "hidden": [list(p) for p in hidden],
+            "custom": is_arranged(f), "file_v": int(f["mtime"])}
+
+
+def file_layout(row) -> dict:
+    """The admin's page-layout choices for a file: split and wraparound are True, False or None
+    (automatic); rtl (pages read right to left, as in manga) is True or False."""
+    stored = _stored_layout(row)
+    layout = {k: stored.get(k) if isinstance(stored.get(k), bool) else None for k in ("split", "wraparound")}
+    return {**layout, "rtl": stored.get("rtl") is True}
+
+
+def set_layout(cfg: Config, file_id: int, split: bool | None, wraparound: bool | None,
+               rtl: bool | None = None) -> dict:
+    """Change a file's page layout. rtl None leaves the reading direction as it was.
+    Returns the new manifest; for a file that can't be opened (damaged, protected) the change is
+    still kept, and the reply has no pages (count None)."""
     f = _file(cfg, file_id)
     if f["format"] not in READABLE:
         raise ValueError("Only PDFs and comics have page layouts")
+    if rtl is None:
+        rtl = file_layout(f)["rtl"]
+    _store(cfg, f, {"split": split, "wraparound": wraparound, "rtl": rtl})  # the page order stays
+    try:
+        return manifest(cfg, file_id)
+    except Unreadable:
+        return {"count": None, "rtl": rtl}
+
+
+def _store(cfg: Config, f, changes: dict) -> None:
     with session(cfg.db_path) as con:
         con.execute("UPDATE book_files SET layout = ?, layout_rev = layout_rev + 1 WHERE id = ?",
-                    (json.dumps({"split": split, "wraparound": wraparound}), file_id))
-        con.execute("DELETE FROM page_info WHERE file_id = ?", (file_id,))
+                    (json.dumps({**_stored_layout(f), **changes}), f["id"]))
+
+
+def set_arrangement(cfg: Config, file_id: int, order, hidden) -> dict:
+    """The admin's own page order (every page, hidden ones too, as the app shows them) and the pages
+    to hide. order None (with nothing hidden) puts the file's own order back. Returns the manifest."""
+    f = _file(cfg, file_id)
+    if f["format"] not in READABLE:
+        raise ValueError("Only PDFs and comics have pages to arrange")
+    order = None if order is None else _entries(order)
+    hidden = list(dict.fromkeys(_entries(hidden or [])))
+    source, _, scanned = _measured(cfg, f)
+    natural = _natural(f, source, scanned)
+    known = set(natural)
+    changed = "The pages have changed since this was opened; close it and open it again"
+    if order is not None:
+        if len(order) != len(natural) or set(order) != known:
+            raise ValueError(changed)
+        if order == natural:
+            order = None
+    if any(e not in known for e in hidden):
+        raise ValueError(changed)
+    if len(hidden) >= len(natural):
+        raise ValueError("A book needs at least one page that isn’t hidden")
+    _store(cfg, f, {"order": [list(e) for e in order] if order else None, "hidden": [list(e) for e in hidden]})
     return manifest(cfg, file_id)
 
 
@@ -193,12 +332,26 @@ def snap_width(width: int) -> int:
 
 
 def render_page(cfg: Config, file_id: int, index: int, width: int) -> Path:
+    """Page `index` as the reader shows it."""
     m = manifest(cfg, file_id)
     if not 0 <= index < m["count"]:
         raise IndexError(index)
-    w = snap_width(width)
-    folder = cfg.page_dir / f"{file_id}-{m['version']}-{m['count']}"  # count changes when pages are split
-    target = folder / f"{index}-{w}.jpg"
+    src, half = m["plan"][index]
+    return _render(cfg, file_id, m, src, half, snap_width(width))
+
+
+def render_piece(cfg: Config, file_id: int, src: int, half: int | None, width: int) -> Path:
+    """One piece of the file (a page, or half of one), hidden or not: for arranging pages."""
+    m = manifest(cfg, file_id)
+    if [src, half] not in m["arranged"]:
+        raise IndexError((src, half))
+    return _render(cfg, file_id, m, src, half, snap_width(width))
+
+
+def _render(cfg: Config, file_id: int, m: dict, src: int, half: int | None, w: int) -> Path:
+    row = _file(cfg, file_id)
+    folder = cfg.page_dir / f"{file_id}-{round(row['mtime'] * 1000)}"
+    target = folder / f"{src}-{'p' if half is None else half}-{w}.jpg"
     if target.is_file():
         return target
 
@@ -207,8 +360,7 @@ def render_page(cfg: Config, file_id: int, index: int, width: int) -> Path:
             shutil.rmtree(old, ignore_errors=True)
     folder.mkdir(parents=True, exist_ok=True)
 
-    path = Path(_file(cfg, file_id)["path"])
-    src, half = m["plan"][index]
+    path = Path(row["path"])
     page_w, page_h = m["source"][src]
     full_w = w * 2 if half is not None else w  # a half page is rendered from a source twice as wide
     if m["format"] == "pdf":

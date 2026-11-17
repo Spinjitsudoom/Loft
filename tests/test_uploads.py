@@ -152,7 +152,8 @@ def test_upload_routes(client, cfg, tmp_path, make_epub):
     r = client.post(f"/api/uploads/{draft['token']}/save", json={"details": {**DETAILS, "authors": []}})
     assert r.status_code == 400
     r = client.post(f"/api/uploads/{draft['token']}/save", json={"details": {**DETAILS, "title": "Fresh",
-                                                                            "authors": ["New Writer"]}})
+                                                                            "authors": ["New Writer"]},
+                                                                "right_to_left": False})
     assert r.status_code == 200
     assert client.get(f"/api/books/{r.json()['book_id']}").json()["title"] == "Fresh"
     assert client.post(f"/api/uploads/{draft['token']}/save", json={"details": DETAILS}).status_code == 404
@@ -193,3 +194,22 @@ def test_a_cover_that_wont_download_falls_back_to_the_files_own(cfg, tmp_path, m
     draft = uploads.start(cfg, "Tale.epub", chunks(epub_bytes(tmp_path, make_epub)))
     bid = uploads.save(cfg, draft["token"], DETAILS, cover_url="https://covers.openlibrary.org/b/id/1-L.jpg")
     assert get_book(cfg, bid)["has_cover"]
+
+
+def test_a_manga_can_be_marked_right_to_left_when_added(cfg, tmp_path):
+    import zipfile
+    from alcove import pages
+    from conftest import png
+    comic = tmp_path / "Manga.cbz"
+    with zipfile.ZipFile(comic, "w") as z:
+        z.writestr("01.png", png((90, 90, 90), (80, 120)))
+    draft = uploads.start(cfg, "Manga.cbz", [comic.read_bytes()])
+    assert draft["has_pages"] is True
+    bid = uploads.save(cfg, draft["token"], DETAILS, right_to_left=True)
+    fid = get_book(cfg, bid)["files"][0]["id"]
+    assert pages.manifest(cfg, fid)["rtl"] is True
+
+
+def test_books_without_pages_have_no_direction(cfg, tmp_path, make_epub):
+    draft = uploads.start(cfg, "Tale.epub", chunks(epub_bytes(tmp_path, make_epub)))
+    assert draft["has_pages"] is False

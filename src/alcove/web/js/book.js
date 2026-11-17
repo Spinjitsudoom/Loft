@@ -69,6 +69,9 @@ export async function renderBook(main, id, params = new URLSearchParams()) {
 
 const SPLIT = [[null, "Automatic"], [true, "Split them"], [false, "Don’t split"]];
 const WRAP = [[null, "Automatic"], [true, "Front first"], [false, "As scanned"]];
+const DIRECTION = [[false, "Left to right"], [true, "Right to left (manga)"]];
+
+const arrangedNote = (f) => f.arranged ? "You’ve moved or hidden pages in this book." : "As the file has them.";
 
 function layoutHTML(b) {
   const files = b.files.filter((f) => f.layout);
@@ -77,11 +80,18 @@ function layoutHTML(b) {
     `<button type="button" role="radio" aria-checked="${f.layout[key] === v}" data-file="${f.id}" data-layout="${key}" data-value="${v}">${label}</button>`).join("")}</div>`;
   return `<section class="edit-pages">
     <h2>Pages</h2>
-    <p class="muted">For scanned books, when Alcove guesses the page layout wrong. Changes save at once.</p>
+    <p class="muted">Which way the pages turn, and fixes for when Alcove guesses a scan’s layout wrong. Changes save at once.</p>
     ${files.map((f) => `
       ${files.length > 1 ? `<h3>${esc(f.format.toUpperCase())}</h3>` : ""}
+      <h3>Reading direction</h3>${seg(f, "rtl", DIRECTION)}
       <h3>Two printed pages in one scan</h3>${seg(f, "split", SPLIT)}
-      <h3>Wraparound cover (back and front in one scan)</h3>${seg(f, "wraparound", WRAP)}`).join("")}
+      <h3>Wraparound cover (back and front in one scan)</h3>${seg(f, "wraparound", WRAP)}
+      <h3>Page order</h3>
+      <div class="arrange-row">
+        <span class="muted" data-arranged-note="${f.id}">${arrangedNote(f)}</span>
+        <button class="btn btn-small" type="button" data-arrange="${f.id}">Arrange pages</button>
+      </div>`).join("")}
+    <p class="form-error" data-layout-error role="alert" hidden></p>
   </section>`;
 }
 
@@ -114,7 +124,7 @@ function renderEditor(main, b, coversFirst) {
       <div class="edit-actions">
         <button class="btn btn-primary" type="submit">Save changes</button>
         <a class="btn" href="${back}">Cancel</a>
-        <button class="btn" type="button" data-fill>Fill from Open Library</button>
+        <button class="btn" type="button" data-fill>Look up details</button>
       </div>
       <p class="form-error" data-form-error role="alert" hidden></p>
       <div class="lookup" data-fill-picks hidden></div>
@@ -126,6 +136,7 @@ function renderEditor(main, b, coversFirst) {
   const formError = main.querySelector("[data-form-error]");
   const coverError = main.querySelector("[data-cover-error]");
   const fail = (box, message) => { box.textContent = message; box.hidden = false; };
+  const comic = b.files.some((f) => f.layout);  // shown page by page: worth asking AniList too
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -146,7 +157,7 @@ function renderEditor(main, b, coversFirst) {
 
   main.querySelector("[data-fill]").addEventListener("click", () => {
     const d = readDetails(form);
-    showLookup(main.querySelector("[data-fill-picks]"), { title: d.title, author: d.authors[0] || "" }, async (c) => {
+    showLookup(main.querySelector("[data-fill-picks]"), { title: d.title, author: d.authors[0] || "", comic }, async (c) => {
       await fillEmpty(form, c);
       main.querySelector("[data-fill-picks]").hidden = true;
     });
@@ -166,7 +177,7 @@ function renderEditor(main, b, coversFirst) {
   main.querySelector("[data-cover-find]").addEventListener("click", () => {
     const d = readDetails(form);
     coverError.hidden = true;
-    showLookup(main.querySelector("[data-cover-picks]"), { title: d.title, author: d.authors[0] || "" }, async (c) => {
+    showLookup(main.querySelector("[data-cover-picks]"), { title: d.title, author: d.authors[0] || "", comic }, async (c) => {
       try { showCover(await api(`/books/${b.id}/cover/lookup`, { method: "POST", body: { url: c.cover_url } })); }
       catch (err) { fail(coverError, err.message); }
     }, { covers: true });
@@ -176,15 +187,44 @@ function renderEditor(main, b, coversFirst) {
     catch (err) { fail(coverError, err.message); }
   });
 
-  main.querySelectorAll("[data-layout]").forEach((btn) => btn.addEventListener("click", async () => {
+  // The pressed button lights up at once; saves go one after another, in the order pressed, so a slow
+  // one can't land after a later one and undo it. A save that fails puts the old choice back.
+  let saving = Promise.resolve();
+  const choose = (group, value) => group.querySelectorAll("button").forEach((x) =>
+    x.setAttribute("aria-checked", String(JSON.parse(x.dataset.value) === value)));
+  main.querySelectorAll("[data-layout]").forEach((btn) => btn.addEventListener("click", () => {
+    const layoutError = main.querySelector("[data-layout-error]");
     const f = b.files.find((x) => x.id === Number(btn.dataset.file));
+    const key = btn.dataset.layout;
     const value = JSON.parse(btn.dataset.value);
-    const layout = { ...f.layout, [btn.dataset.layout]: value };
+    const before = f.layout[key];
+    if (value === before) return;
+    layoutError.hidden = true;
+    f.layout = { ...f.layout, [key]: value };
+    choose(btn.parentElement, value);
+    const layout = f.layout;
+    saving = saving.then(() => api(`/files/${f.id}/layout`, { method: "PATCH", body: layout }).catch((err) => {
+      if (f.layout[key] === value) {
+        f.layout = { ...f.layout, [key]: before };
+        choose(btn.parentElement, before);
+      }
+      fail(layoutError, err.message);  // beside the buttons, not off at the top of the page
+    }));
+  }));
+
+  main.querySelectorAll("[data-arrange]").forEach((btn) => btn.addEventListener("click", async () => {
+    const layoutError = main.querySelector("[data-layout-error]");
+    const f = b.files.find((x) => x.id === Number(btn.dataset.arrange));
+    layoutError.hidden = true;
+    btn.disabled = true;
     try {
-      await api(`/files/${f.id}/layout`, { method: "PATCH", body: layout });
-      f.layout = layout;
-      btn.parentElement.querySelectorAll("button").forEach((x) => x.setAttribute("aria-checked", String(x === btn)));
-    } catch (err) { fail(formError, err.message); }
+      const { openArrange } = await import("./arrange.js");
+      await openArrange(f, { onClose: (custom) => {
+        f.arranged = custom;
+        main.querySelector(`[data-arranged-note="${f.id}"]`).textContent = arrangedNote(f);
+      } });
+    } catch (err) { fail(layoutError, err.message); }
+    btn.disabled = false;
   }));
 
   if (coversFirst) main.querySelector("[data-cover-find]").click();

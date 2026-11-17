@@ -4,7 +4,10 @@ import { icon } from "./api.js";
 
 const MAX = 5;
 
-export function openZoom({ src, index, count, onClose }) {
+export function openZoom({ src, index, count, onClose, rtl = false }) {
+  const prev = `<button class="icon-btn" type="button" data-prev aria-label="Previous page">${icon(rtl ? "right" : "left")}</button>`;
+  const next = `<button class="icon-btn" type="button" data-next aria-label="Next page">${icon(rtl ? "left" : "right")}</button>`;
+  const turns = rtl ? next + prev : prev + next;  // a manga's next page is to the left
   const layer = document.createElement("div");
   layer.className = "zoom";
   layer.setAttribute("role", "dialog");
@@ -14,8 +17,7 @@ export function openZoom({ src, index, count, onClose }) {
     <div class="zoom-bar">
       <button class="zoom-btn" type="button" data-close>Back to book</button>
       <span class="zoom-page"></span>
-      <button class="icon-btn" type="button" data-prev aria-label="Previous page">${icon("left")}</button>
-      <button class="icon-btn" type="button" data-next aria-label="Next page">${icon("right")}</button>
+      ${turns}
       <button class="icon-btn" type="button" data-out aria-label="Zoom out">−</button>
       <button class="icon-btn" type="button" data-in aria-label="Zoom in">+</button>
     </div>`;
@@ -53,7 +55,8 @@ export function openZoom({ src, index, count, onClose }) {
   const show = (i, top = false) => {
     page = Math.max(0, Math.min(count - 1, i));
     label.textContent = `Page ${page + 1} of ${count}`;
-    img.onload = () => { if (top) { x = 0; y = 0; } else { const { w, h, vw, vh } = fit(); x = (vw - w * scale) / 2; y = (vh - h * scale) / 2; } draw(); };
+    // A turned-to page starts where reading starts: top left, or top right in a manga.
+    img.onload = () => { if (top) { x = rtl ? -Infinity : 0; y = 0; } else { const { w, h, vw, vh } = fit(); x = (vw - w * scale) / 2; y = (vh - h * scale) / 2; } draw(); };
     img.src = src(page);
   };
   function close(silent = false) {
@@ -105,8 +108,8 @@ export function openZoom({ src, index, count, onClose }) {
   layer.querySelector("[data-out]").addEventListener("click", () => zoomAt(scale / 1.4, innerWidth / 2, innerHeight / 2));
   const onKey = (e) => {
     if (e.key === "Escape") close();
-    else if (e.key === "ArrowRight" || e.key === "PageDown") show(page + 1, true);
-    else if (e.key === "ArrowLeft" || e.key === "PageUp") show(page - 1, true);
+    else if (e.key === (rtl ? "ArrowLeft" : "ArrowRight") || e.key === "PageDown") show(page + 1, true);
+    else if (e.key === (rtl ? "ArrowRight" : "ArrowLeft") || e.key === "PageUp") show(page - 1, true);
     else return;
     e.preventDefault();
     e.stopImmediatePropagation();

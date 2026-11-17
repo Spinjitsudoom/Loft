@@ -8,7 +8,7 @@ import re
 from .config import Config
 from .db import session
 from .flow import READABLE_FLOW
-from .pages import READABLE as PAGE_FORMATS, file_layout
+from .pages import READABLE as PAGE_FORMATS, file_layout, is_arranged
 from .reading import get_progress, in_progress
 from .settings import DEFAULTS, get_settings
 from . import shelves as shelf_store
@@ -144,6 +144,7 @@ def get_book(cfg: Config, book_id: int, user=None) -> dict | None:
             entry = {"id": f["id"], "format": f["format"], "size": f["size"], "readable": readable(f["format"])}
             if entry["readable"] == "pages":
                 entry["layout"] = file_layout(f)
+                entry["arranged"] = is_arranged(f)  # the admin changed its page order or hid pages
             files.append(entry)
         series_books = []
         if row["series"]:
