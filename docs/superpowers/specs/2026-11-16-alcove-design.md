@@ -207,8 +207,8 @@ scanner was considered and left out for now.
 3. **EPUB and the other formats** (done): EPUB pagination and curl, MOBI/AZW3/FB2/TXT conversion, DRM flag.
 4. **Adding and editing books** (done): edit on the book page, uploads, Open Library lookup, shelves,
    **library settings** and the **library check**.
-5. **Members:** sign-up requests, submissions (details required) and the approval queue, requests
-   with upvotes, per-book discussion with spoiler blur, notifications.
+5. **Members** (done): sign-up requests, submissions (details required) and the approval queue, requests
+   with upvotes, per-book discussion with spoiler blur, notifications. Plus downloads (offline reading).
 
 Then: Docker and packaging, desktop apps, Lite, Android.
 
@@ -259,6 +259,21 @@ clean sans for the interface), tests.
   pages are skipped by the reader and listed under the grid. Progress and bookmarks keep their page
   number, so a big reshuffle can move them. No rotating for now. Page images are now cached by the
   piece of the file they show, so moving pages never draws them again.
+- Members (M5), calls made building it:
+  - Asking to join is off until the admin turns it on (Library settings → People). A waiting request
+    keeps only a password hash; at most 20 wait; five asks an hour from one address.
+  - Members get the + button: "Submit a book" (same review card as the admin's uploads, "Send for
+    approval"), "Requests", and for admins "Approvals". Members can use the online lookups too.
+    Submitted files wait in the data dir (never pruned while waiting); only their sender sees them
+    until sent, then admins. A member can take a waiting book back; at most 25 waiting each.
+  - Requests: one vote each, the asker votes by asking; the same title can't be asked twice while
+    open; admins link the book it became (search) or decline with a reason; askers and voters told.
+  - Discussion: on the book page and as a panel in the reader. Messages carry the writer's place
+    ("Page 34", "12%", "Finished"); a message from further on than you is blurred with "Show it
+    anyway". The reader saves your place before you post, so the stamp is right. One level of
+    replies; edit/remove your own, admins remove any; a removed message with replies leaves a gap.
+    New messages every 10 seconds while open.
+  - Notifications: a bell with a count (checked every minute), a list page; opening it marks read.
 - Manga reading direction is a per-file switch (on the add card and the Pages section of the edit
   page), not a tag rule (owner's request, 2026-11-17).
 - Demoting or promoting an admin takes effect on their next request without signing them out.

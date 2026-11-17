@@ -416,11 +416,11 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             raise HTTPException(400, str(e))
 
     @app.get("/api/lookup")
-    def lookup(title: str = "", author: str = "", isbn: str = "", comic: bool = False, _: User = Depends(admin_user)):
+    def lookup(title: str = "", author: str = "", isbn: str = "", comic: bool = False, _: User = Depends(current_user)):
         return _lookup(lookups.search, title=title, author=author, isbn=isbn, comic=comic)
 
     @app.get("/api/lookup/description")
-    def lookup_description(key: str = "", _: User = Depends(admin_user)):
+    def lookup_description(key: str = "", _: User = Depends(current_user)):
         return {"description": _lookup(openlibrary.description, key)}
 
     @app.post("/api/books/{book_id}/cover/lookup")

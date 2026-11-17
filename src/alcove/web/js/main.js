@@ -13,6 +13,7 @@ import { renderSettings } from "./settings.js";
 import { applyLook, loadPrefs } from "./prefs.js";
 import * as offline from "./offline.js";
 import { needsServer, renderOfflineBook, renderOfflineHome } from "./downloads.js";
+import { refreshBell, renderNotifications } from "./notifications.js";
 
 const app = document.getElementById("app");
 export const state = { me: null, libraryName: "" };
@@ -33,9 +34,10 @@ function topbar(query = "") {
       <input type="search" name="q" value="${esc(query)}" placeholder="Search books" aria-label="Search the library" autocomplete="off">
     </form>
     <nav class="top-actions">
+      <a class="icon-btn bell" href="#/notifications" data-bell title="Notifications" aria-label="Notifications">${icon("bell")}<span class="bell-count" hidden></span></a>
       <a class="icon-btn" href="#/settings" title="Your settings" aria-label="Your settings">${icon("person")}</a>
-      ${state.me && state.me.admin ? `<a class="icon-btn" href="#/add" title="Add books" aria-label="Add books">${icon("plus")}</a>
-      <a class="icon-btn" href="#/admin" title="Library settings" aria-label="Library settings">${icon("gear")}</a>` : ""}
+      <a class="icon-btn" href="#/add" title="${state.me && state.me.admin ? "Add books" : "Submit or request books"}" aria-label="${state.me && state.me.admin ? "Add books" : "Submit or request books"}">${icon("plus")}</a>
+      ${state.me && state.me.admin ? `<a class="icon-btn" href="#/admin" title="Library settings" aria-label="Library settings">${icon("gear")}</a>` : ""}
       <button class="icon-btn" type="button" data-signout title="Sign out" aria-label="Sign out">${icon("out")}</button>
     </nav>
   </header>`;
@@ -105,6 +107,7 @@ async function route() {
   app.innerHTML = `${topbar(query)}<main id="main" tabindex="-1"></main>`;
   const main = app.querySelector("#main");
   wireTopbar();
+  refreshBell();
   window.scrollTo(0, 0);
 
   if (offline.isOffline()) {
@@ -120,7 +123,8 @@ async function route() {
     else if (page === "all") await renderGrid(main, { kind: params.get("kind"), value: params.get("value"), title: params.get("title") });
     else if (page === "search") await renderGrid(main, { query });
     else if (page === "admin" && state.me.admin) await renderAdmin(main);
-    else if (page === "add" && state.me.admin) await renderAdd(main);
+    else if (page === "add") await renderAdd(main, params);
+    else if (page === "notifications") await renderNotifications(main);
     else if (page === "check" && state.me.admin) await renderCheck(main);
     else if (page === "settings") await renderSettings(main);
     else main.innerHTML = `<div class="empty"><p>There’s nothing here.</p><a class="btn" href="#/">Back to the library</a></div>`;
@@ -174,6 +178,9 @@ window.addEventListener("offline-changed", (e) => {
   }, 15000);
 });
 window.addEventListener("online", () => { if (offline.isOffline()) window.dispatchEvent(new CustomEvent("offline-changed", { detail: { offline: true } })); });
+
+// New notifications show on the bell within a minute.
+setInterval(() => { if (state.me && !offline.isOffline() && document.visibilityState === "visible") refreshBell(); }, 60000);
 
 // Keep the app's own files for opening offline, where the browser allows it (https, or this computer).
 if ("serviceWorker" in navigator && window.isSecureContext) {

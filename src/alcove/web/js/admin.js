@@ -24,7 +24,7 @@ function scanText(scan) {
 }
 
 export async function renderAdmin(main) {
-  const [users, scan, lib, check] = await Promise.all([api("/users"), api("/scan"), api("/library"), api("/check")]);
+  const [users, scan, lib, check, joining] = await Promise.all([api("/users"), api("/scan"), api("/library"), api("/check"), api("/join-requests")]);
   const admins = users.filter((u) => u.admin).length;
   const attention = check.items.length;
   const interval = INTERVALS.some(([m]) => m === lib.scan_interval_minutes) ? INTERVALS
@@ -102,6 +102,16 @@ export async function renderAdmin(main) {
         </form>
       </li>`).join("")}</ul>
       <p class="form-error" data-people-error role="alert" hidden></p>
+      ${joining.length ? `<h3>Asking to join</h3>
+        <ul class="people joining">${joining.map((j) => `<li data-join="${j.id}">
+          <span class="person">${esc(j.username)}${j.note ? `<span class="muted join-note">${esc(j.note)}</span>` : ""}</span>
+          <span class="person-actions">
+            <button class="btn btn-small btn-primary" type="button" data-join-yes>Let them in</button>
+            <button class="btn btn-small" type="button" data-join-no>Decline</button>
+          </span></li>`).join("")}</ul>` : ""}
+      <label class="switch"><input type="checkbox" data-lib="join_requests" ${lib.join_requests ? "checked" : ""}>
+        <span>Let people ask to join from the sign-in page</span></label>
+      <p class="field-hint indent">You decide who gets in. Anyone who can reach this server can ask.</p>
       <form class="add-person" novalidate>
         <h3>Add a person</h3>
         <div class="row">
@@ -149,6 +159,18 @@ export async function renderAdmin(main) {
   main.querySelectorAll("[data-lib]").forEach((c) => c.addEventListener("change", async () => {
     if (!(await patch({ [c.dataset.lib]: c.checked }))) c.checked = !c.checked;
   }));
+
+  main.querySelectorAll("[data-join]").forEach((li) => {
+    const id = li.dataset.join;
+    li.querySelector("[data-join-yes]").addEventListener("click", async () => {
+      try { await api(`/join-requests/${id}/approve`, { method: "POST" }); renderAdmin(main); }
+      catch (e) { fail(main.querySelector("[data-people-error]"), e.message); }
+    });
+    li.querySelector("[data-join-no]").addEventListener("click", async () => {
+      try { await api(`/join-requests/${id}`, { method: "DELETE" }); renderAdmin(main); }
+      catch (e) { fail(main.querySelector("[data-people-error]"), e.message); }
+    });
+  });
 
   const dirError = main.querySelector("[data-dir-error]");
   main.querySelectorAll("[data-upload-dir]").forEach((b) => b.addEventListener("click", async () => {

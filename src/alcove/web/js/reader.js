@@ -3,6 +3,7 @@
 import { api, esc, icon } from "./api.js";
 import { openZoom } from "./zoom.js";
 import * as offline from "./offline.js";
+import { wireDiscussion } from "./discussion.js";
 import { loadPrefs, patchPrefs } from "./prefs.js";
 
 let FlowReaderClass = null;  // set by flow.js (it extends Reader)
@@ -139,6 +140,7 @@ export class Reader {
         <h1 class="reader-title">${esc(this.book.title)}</h1>
         <button class="icon-btn" type="button" data-panel="contents" aria-label="Contents and bookmarks">${icon("list")}</button>
         <button class="icon-btn" type="button" data-bookmark aria-label="Bookmark this page" aria-pressed="false">${icon("bookmark")}</button>
+        <button class="icon-btn" type="button" data-panel="talk" aria-label="Discussion">${icon("chat")}</button>
         <button class="icon-btn" type="button" data-panel="prefs" aria-label="Reading settings">${icon("type")}</button>
       </header>
       <footer class="reader-bottom">
@@ -147,6 +149,7 @@ export class Reader {
       </footer>
       <aside class="reader-panel" data-for="contents" hidden></aside>
       <aside class="reader-panel" data-for="prefs" hidden></aside>
+      <aside class="reader-panel reader-talk" data-for="talk" hidden><h2>Discussion</h2><div data-talk></div></aside>
     </div>`;
     this.root = this.app.querySelector(".reader");
     this.stage = this.root.querySelector(".reader-stage");
@@ -159,6 +162,7 @@ export class Reader {
 
   close() {
     if (this.zoomView) { this.zoomView.close(true); this.zoomView = null; }
+    if (this.talkStop) this.talkStop();
     this.saveNow(true);
     clearTimeout(this.saveTimer);
     clearTimeout(this.hideTimer);
@@ -323,7 +327,7 @@ export class Reader {
     this.dirty = false;
     // Sent with the time it was read, so a save that arrives late (kept while offline) never
     // overwrites reading done since on another device.
-    offline.send("PUT", `/books/${this.book.id}/progress`, { ...this.progressBody(), at: this.pageAt })
+    return offline.send("PUT", `/books/${this.book.id}/progress`, { ...this.progressBody(), at: this.pageAt })
       .then((r) => { if (r && !r.ok) this.dirty = true; }).catch(() => { this.dirty = true; });
   }
 
@@ -442,7 +446,10 @@ export class Reader {
     this.closePanels();
     if (!opening) return;
     if (name === "contents") this.drawContents(panel);
-    else this.drawPrefs(panel);
+    else if (name === "talk") {
+      // Your place is saved first, so what you write is stamped with where you are.
+      if (!this.talkStop) this.talkStop = wireDiscussion(panel.querySelector("[data-talk]"), this.book.id, { beforePost: () => this.saveNow() });
+    } else this.drawPrefs(panel);
     panel.hidden = false;
   }
 

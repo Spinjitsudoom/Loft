@@ -6,6 +6,7 @@ import { clearErrors, detailFields, fillEmpty, readDetails, showError, showLooku
 import { shelfButtonHTML, wireShelfMenu } from "./shelfmenu.js";
 import { state } from "./main.js";
 import { wireDownload } from "./downloads.js";
+import { wireDiscussion } from "./discussion.js";
 
 function size(bytes) {
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
@@ -65,11 +66,17 @@ export async function renderBook(main, id, params = new URLSearchParams()) {
       ${b.tags.length ? `<ul class="tags">${b.tags.map((t) => `<li>${link("tag", t)}</li>`).join("")}</ul>` : ""}
     </div>
   </article>
+  <section class="book-talk" id="discussion" aria-labelledby="talk-head">
+    <h2 id="talk-head">Discussion</h2>
+    <div data-talk></div>
+  </section>
   ${b.series_books.length ? shelfHTML({ title: `More in ${b.series}`, kind: "series", value: b.series, books: b.series_books }) : ""}`;
   wireShelves(main);
   wireShelfMenu(main, b);
   const slot = main.querySelector("[data-download]");
   if (slot) wireDownload(slot, b);
+  wireDiscussion(main.querySelector("[data-talk]"), b.id);
+  if (params.get("discussion")) main.querySelector("#discussion").scrollIntoView({ block: "start" });
 }
 
 const SPLIT = [[null, "Automatic"], [true, "Split them"], [false, "Don’t split"]];
