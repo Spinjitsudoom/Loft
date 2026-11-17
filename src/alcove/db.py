@@ -130,6 +130,74 @@ CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+
+-- Members (M5): notifications, asking to join, submissions, requests and discussion.
+CREATE TABLE IF NOT EXISTS notifications (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind       TEXT NOT NULL,
+    text       TEXT NOT NULL,
+    link       TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL,
+    read_at    REAL
+);
+CREATE INDEX IF NOT EXISTS notifications_user ON notifications(user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS join_requests (
+    id            INTEGER PRIMARY KEY,
+    username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    password_hash TEXT NOT NULL,
+    note          TEXT NOT NULL DEFAULT '',
+    created_at    REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS submissions (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    token      TEXT NOT NULL UNIQUE,
+    filename   TEXT NOT NULL,
+    format     TEXT NOT NULL,
+    details    TEXT NOT NULL,
+    right_to_left INTEGER NOT NULL DEFAULT 0,
+    cover_url  TEXT,
+    status     TEXT NOT NULL DEFAULT 'waiting',
+    reason     TEXT NOT NULL DEFAULT '',
+    book_id    INTEGER REFERENCES books(id) ON DELETE SET NULL,
+    created_at REAL NOT NULL,
+    decided_at REAL
+);
+
+CREATE TABLE IF NOT EXISTS requests (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    title      TEXT NOT NULL,
+    author     TEXT NOT NULL DEFAULT '',
+    note       TEXT NOT NULL DEFAULT '',
+    status     TEXT NOT NULL DEFAULT 'open',
+    reason     TEXT NOT NULL DEFAULT '',
+    book_id    INTEGER REFERENCES books(id) ON DELETE SET NULL,
+    created_at REAL NOT NULL,
+    decided_at REAL
+);
+CREATE TABLE IF NOT EXISTS request_votes (
+    request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (request_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id         INTEGER PRIMARY KEY,
+    book_id    INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    parent_id  INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+    body       TEXT NOT NULL,
+    position   REAL NOT NULL DEFAULT 0,
+    place      TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL,
+    edited_at  REAL,
+    removed    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS messages_book ON messages(book_id, id);
 """
 
 

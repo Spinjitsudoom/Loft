@@ -16,7 +16,7 @@ def test_defaults_come_from_config(cfg):
     lib = libsettings.get_library(cfg)
     assert lib == {"name": "", "books_dirs": [str(cfg.books_dirs[0])], "upload_dir": str(cfg.books_dirs[0]),
                    "scan_interval_minutes": cfg.scan_interval_minutes, "allow_txt": False, "online_lookups": True,
-                   "google_books": False}
+                   "google_books": False, "join_requests": False}
 
 
 def test_name_round_trips_and_is_tidied(cfg):
@@ -115,7 +115,7 @@ def test_scan_report_names_unreachable_folders(cfg, tmp_path):
 
 def test_status_shows_the_name_before_sign_in(app_lib, cfg):
     libsettings.update_library(cfg, {"name": "The Den"})
-    assert app_lib.get("/api/status").json() == {"setup_needed": True, "name": "The Den"}
+    assert app_lib.get("/api/status").json() == {"setup_needed": True, "name": "The Den", "join_requests": False}
 
 
 def test_library_routes(client, app_lib):

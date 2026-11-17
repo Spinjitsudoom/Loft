@@ -44,6 +44,7 @@ def get_library(cfg: Config) -> dict:
         "scan_interval_minutes": stored.get("scan_interval_minutes", cfg.scan_interval_minutes),
         "allow_txt": stored.get("allow_txt", False),
         "online_lookups": stored.get("online_lookups", True),
+        "join_requests": stored.get("join_requests", False),  # people may ask to join from the sign-in page
         "google_books": bool(google_books_key(cfg, stored)),  # whether a key is saved, never the key
     }
 
@@ -113,7 +114,7 @@ def _clean(patch: dict, current: dict) -> dict:
             value = value.strip()
             if value and not API_KEY.match(value):
                 raise ValueError("google_books_key doesn’t look like a Google API key (they start with AIza)")
-        elif key in ("allow_txt", "online_lookups"):
+        elif key in ("allow_txt", "online_lookups", "join_requests"):
             if not isinstance(value, bool):
                 raise ValueError(f"{key} must be on or off")
         else:

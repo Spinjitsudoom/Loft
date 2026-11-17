@@ -163,7 +163,10 @@ def test_upload_routes(client, cfg, tmp_path, make_epub):
 
     client.post("/api/users", json={"username": "sam", "password": "samsamsam"})
     client.post("/api/login", json={"username": "sam", "password": "samsamsam"})
-    assert client.put("/api/uploads?name=Fresh.epub", content=data).status_code == 403
+    # Members can upload (to send for approval) but can't put a book in the library themselves.
+    mine = client.put("/api/uploads?name=Fresh.epub", content=data)
+    assert mine.status_code == 200
+    assert client.post(f"/api/uploads/{mine.json()['token']}/save", json={"details": DETAILS}).status_code == 403
 
 
 def test_saving_waits_for_a_running_scan(cfg, tmp_path, make_epub):

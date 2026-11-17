@@ -2,7 +2,11 @@
 then it's saved into a books folder as Author/Title/file and is in the library at once.
 
 Drafts live in the data dir (never in a books folder) until they're saved or discarded; ones left
-for two days are cleared away. Saving never overwrites a file: a name that's taken gets " (2)".
+for two days are cleared away, except members' submissions waiting for an admin. Saving never
+overwrites a file: a name that's taken gets " (2)".
+
+Each draft belongs to whoever uploaded it. Only they can see or change it; an admin also can once a
+member has sent it for approval (submissions.py).
 """
 
 from __future__ import annotations
@@ -36,13 +40,30 @@ def _folder(cfg: Config) -> Path:
     return cfg.data_dir / "uploads"
 
 
-def _draft(cfg: Config, token: str) -> Path:
+def _draft(cfg: Config, token: str, user=None) -> Path:
+    """The draft's folder. With `user`, only if they may see it (LookupError otherwise, as if it
+    weren't there: a member never learns another's draft exists)."""
     if not isinstance(token, str) or not TOKEN.match(token):
         raise LookupError(token)
     folder = _folder(cfg) / token
     if not (folder / "draft.json").is_file():
         raise LookupError(token)
+    if user is not None:
+        info = json.loads((folder / "draft.json").read_text())
+        owner = info.get("owner")
+        if not (owner == user.id or (user.admin and (owner is None or info.get("submitted")))):
+            raise LookupError(token)
     return folder
+
+
+def mark_submitted(cfg: Config, token: str) -> None:
+    folder = _draft(cfg, token)
+    info = json.loads((folder / "draft.json").read_text())
+    (folder / "draft.json").write_text(json.dumps({**info, "submitted": True}))
+
+
+def draft_info(cfg: Config, token: str) -> dict:
+    return json.loads((_draft(cfg, token) / "draft.json").read_text())
 
 
 def safe_name(text: str, fallback: str) -> str:
@@ -67,19 +88,23 @@ def check_name(cfg: Config, filename: str) -> str:
     return fmt
 
 
-def new_draft(cfg: Config, filename: str) -> tuple[str, Path]:
+def new_draft(cfg: Config, filename: str, owner: int | None = None) -> tuple[str, Path]:
     """A fresh draft folder for an upload; returns its token and where to write the file."""
     fmt = check_name(cfg, filename)
     token = secrets.token_urlsafe(16)
     folder = _folder(cfg) / token
     folder.mkdir(parents=True)
     original = Path((filename or "").replace("\\", "/")).name
-    (folder / "draft.json").write_text(json.dumps({"filename": original, "format": fmt, "created": time.time()}))
+    (folder / "draft.json").write_text(json.dumps({"filename": original, "format": fmt, "created": time.time(),
+                                                   "owner": owner}))
     return token, folder / f"book.{fmt}"
 
 
-def discard(cfg: Config, token: str) -> None:
-    shutil.rmtree(_draft(cfg, token), ignore_errors=True)
+def discard(cfg: Config, token: str, user=None) -> None:
+    folder = _draft(cfg, token, user)
+    if user is not None and not user.admin and json.loads((folder / "draft.json").read_text()).get("submitted"):
+        raise ValueError("That’s been sent for approval; take the submission back instead")
+    shutil.rmtree(folder, ignore_errors=True)
 
 
 def _same_as(cfg: Config, title: str, authors: list[str]) -> list[dict]:
@@ -92,9 +117,9 @@ def _same_as(cfg: Config, title: str, authors: list[str]) -> list[dict]:
     return [book_card(r) for r in rows if (json.loads(r["authors"] or "[]") or [""])[0].casefold() == first]
 
 
-def read_draft(cfg: Config, token: str) -> dict:
-    """Read an uploaded file's details and cover, for the admin to review."""
-    folder = _draft(cfg, token)
+def read_draft(cfg: Config, token: str, user=None) -> dict:
+    """Read an uploaded file's details and cover, for whoever uploaded it to review."""
+    folder = _draft(cfg, token, user)
     info = json.loads((folder / "draft.json").read_text())
     path = folder / f"book.{info['format']}"
     meta = read_file_meta(path, info["format"])
@@ -112,8 +137,8 @@ def read_draft(cfg: Config, token: str) -> dict:
             "same_as": _same_as(cfg, meta.title, meta.authors)}
 
 
-def start(cfg: Config, filename: str, chunks: Iterable[bytes]) -> dict:
-    token, path = new_draft(cfg, filename)
+def start(cfg: Config, filename: str, chunks: Iterable[bytes], owner: int | None = None) -> dict:
+    token, path = new_draft(cfg, filename, owner)
     try:
         size = 0
         with path.open("wb") as f:
@@ -130,8 +155,8 @@ def start(cfg: Config, filename: str, chunks: Iterable[bytes]) -> dict:
         raise
 
 
-def draft_cover(cfg: Config, token: str) -> Path | None:
-    cover = _draft(cfg, token) / "cover.jpg"
+def draft_cover(cfg: Config, token: str, user=None) -> Path | None:
+    cover = _draft(cfg, token, user) / "cover.jpg"
     return cover if cover.is_file() else None
 
 
@@ -143,8 +168,10 @@ def prune_drafts(cfg: Config, max_age: float = DRAFT_DAYS * 86400) -> None:
     for draft in folder.iterdir():
         try:
             if draft.is_dir() and draft.stat().st_mtime < cutoff:
-                shutil.rmtree(draft, ignore_errors=True)
-        except OSError:
+                info = json.loads((draft / "draft.json").read_text()) if (draft / "draft.json").is_file() else {}
+                if not info.get("submitted"):  # a member's book waiting for an admin stays
+                    shutil.rmtree(draft, ignore_errors=True)
+        except (OSError, ValueError):
             pass
 
 
@@ -175,13 +202,15 @@ def _copy_new(source: Path, target: Path) -> Path:
 
 
 def save(cfg: Config, token: str, details: dict, *, cover_url: str | None = None,
-         right_to_left: bool = False) -> int:
+         right_to_left: bool = False, approving: bool = False) -> int:
     """Save a reviewed upload into the books folder and the library. Returns the new book's id.
     right_to_left marks a manga, whose pages turn the other way."""
     from .openlibrary import LookupFailed, fetch_cover
     from .scanner import _Found, _scan_lock, _set_cover, _upsert_file, _write_book
 
     folder = _draft(cfg, token)
+    if not approving and json.loads((folder / "draft.json").read_text()).get("submitted"):
+        raise ValueError("That was sent for approval; approve or decline it in Approvals")
     clean = clean_details({k: details.get(k) for k in FIELDS if k in details}, require=True)
     full = {"title": "", "authors": [], "series": "", "series_index": None, "description": "", "publisher": "",
             "published": "", "language": "", "tags": [], **clean}

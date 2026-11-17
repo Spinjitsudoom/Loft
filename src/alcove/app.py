@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
-from . import auth, check, editing, flowbooks, libsettings, library, lookups, openlibrary, pages, reading, settings, shelves, txt, uploads
+from . import auth, check, discussion, editing, flowbooks, joining, libsettings, library, lookups, notifications, openlibrary, book_requests, submissions, pages, reading, settings, shelves, txt, uploads
 from .auth import User, admin_user, current_user
 from .config import Config
 from .covers import cover_path
@@ -74,6 +75,35 @@ class SaveUpload(BaseModel):
 
 class CoverUrl(BaseModel):
     url: str = ""
+
+
+class MessageIn(BaseModel):
+    body: str = ""
+    parent_id: int | None = None
+
+
+class RequestIn(BaseModel):
+    title: str = ""
+    author: str = ""
+    note: str = ""
+
+
+class VoteIn(BaseModel):
+    on: bool = True
+
+
+class FulfilIn(BaseModel):
+    book_id: int
+
+
+class ReasonIn(BaseModel):
+    reason: str = ""
+
+
+class JoinIn(BaseModel):
+    username: str
+    password: str
+    note: str = ""
 
 
 class LayoutIn(BaseModel):
@@ -144,7 +174,8 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
 
     @app.get("/api/status")
     def status():
-        return {"setup_needed": not auth.has_users(cfg), "name": libsettings.get_library(cfg)["name"]}
+        lib = libsettings.get_library(cfg)
+        return {"setup_needed": not auth.has_users(cfg), "name": lib["name"], "join_requests": lib["join_requests"]}
 
     @app.post("/api/setup")
     def setup(body: Credentials, response: Response):
@@ -197,6 +228,53 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             raise HTTPException(400, str(e))
 
     # ---------- admin ----------
+
+    # ---------- asking to join, and notifications ----------
+
+    asked: dict[str, list[float]] = {}
+
+    @app.post("/api/join")
+    def join(body: JoinIn, request: Request):
+        ip = request.client.host if request.client else ""
+        recent = [t for t in asked.get(ip, []) if t > time.time() - 3600]
+        if len(recent) >= 5:
+            raise HTTPException(429, "Too many requests from here; try again in an hour")
+        asked[ip] = recent + [time.time()]
+        try:
+            joining.ask(cfg, body.username, body.password, body.note)
+        except ValueError as e:
+            raise HTTPException(403 if "isn’t taking" in str(e) else 400, str(e))
+        return {"ok": True}
+
+    @app.get("/api/join-requests")
+    def join_requests(_: User = Depends(admin_user)):
+        return joining.waiting(cfg)
+
+    @app.post("/api/join-requests/{request_id}/approve")
+    def approve_join(request_id: int, _: User = Depends(admin_user)):
+        try:
+            return joining.approve(cfg, request_id).json()
+        except LookupError:
+            raise HTTPException(404, "No such request")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.delete("/api/join-requests/{request_id}")
+    def decline_join(request_id: int, _: User = Depends(admin_user)):
+        try:
+            joining.decline(cfg, request_id)
+        except LookupError:
+            raise HTTPException(404, "No such request")
+        return {"ok": True}
+
+    @app.get("/api/notifications")
+    def my_notifications(user: User = Depends(current_user)):
+        return notifications.list_for(cfg, user.id)
+
+    @app.post("/api/notifications/read")
+    def read_notifications(user: User = Depends(current_user)):
+        notifications.mark_read(cfg, user.id)
+        return {"ok": True}
 
     @app.get("/api/users")
     def users(_: User = Depends(admin_user)):
@@ -358,9 +436,10 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     # ---------- adding books ----------
 
     @app.put("/api/uploads")
-    async def upload(request: Request, name: str = "", _: User = Depends(admin_user)):
+    async def upload(request: Request, name: str = "", user: User = Depends(current_user)):
+        """Admins add books; members send them for approval (submissions). Either way a draft first."""
         try:
-            token, path = await run_in_threadpool(uploads.new_draft, cfg, name)
+            token, path = await run_in_threadpool(uploads.new_draft, cfg, name, user.id)
         except ValueError as e:
             raise HTTPException(400, str(e))
         size = 0
@@ -385,14 +464,15 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             raise HTTPException(404, "That upload has gone; add the file again")
 
     @app.get("/api/uploads/{token}/cover")
-    def upload_cover(token: str, _: User = Depends(admin_user)):
-        path = _draft_call(uploads.draft_cover, token)
+    def upload_cover(token: str, user: User = Depends(current_user)):
+        path = _draft_call(uploads.draft_cover, token, user=user)
         if path is None:
             raise HTTPException(404, "No cover")
         return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
     @app.post("/api/uploads/{token}/save")
-    def save_upload(token: str, body: SaveUpload, _: User = Depends(admin_user)):
+    def save_upload(token: str, body: SaveUpload, user: User = Depends(admin_user)):
+        _draft_call(uploads.draft_cover, token, user=user)  # theirs to save
         try:
             return {"book_id": _draft_call(uploads.save, token, body.details, cover_url=body.cover_url or None,
                                              right_to_left=body.right_to_left)}
@@ -401,9 +481,120 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         except ValueError as e:
             raise HTTPException(400, str(e))
 
+    @app.post("/api/uploads/{token}/submit")
+    def submit_upload(token: str, body: SaveUpload, user: User = Depends(current_user)):
+        try:
+            return {"id": _draft_call(submissions.submit, user, token, body.details,
+                                      cover_url=body.cover_url or None, right_to_left=body.right_to_left)}
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
     @app.delete("/api/uploads/{token}")
-    def discard_upload(token: str, _: User = Depends(admin_user)):
-        _draft_call(uploads.discard, token)
+    def discard_upload(token: str, user: User = Depends(current_user)):
+        try:
+            _draft_call(uploads.discard, token, user=user)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return {"ok": True}
+
+    # ---------- submissions: members' books waiting for an admin ----------
+
+    def _submission_call(call, *args, **kwargs):
+        try:
+            return call(cfg, *args, **kwargs)
+        except LookupError:
+            raise HTTPException(404, "No such submission")
+        except openlibrary.LookupFailed as e:
+            raise HTTPException(502, str(e))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/api/submissions/mine")
+    def my_submissions(user: User = Depends(current_user)):
+        return submissions.mine(cfg, user.id)
+
+    @app.get("/api/submissions")
+    def waiting_submissions(_: User = Depends(admin_user)):
+        return submissions.waiting(cfg)
+
+    @app.post("/api/submissions/{sub_id}/approve")
+    def approve_submission(sub_id: int, body: SaveUpload, _: User = Depends(admin_user)):
+        return {"book_id": _submission_call(submissions.approve, sub_id, body.details or None,
+                                            cover_url=body.cover_url, right_to_left=body.right_to_left)}
+
+    @app.post("/api/submissions/{sub_id}/decline")
+    def decline_submission(sub_id: int, body: ReasonIn, _: User = Depends(admin_user)):
+        _submission_call(submissions.decline, sub_id, body.reason)
+        return {"ok": True}
+
+    @app.delete("/api/submissions/{sub_id}")
+    def withdraw_submission(sub_id: int, user: User = Depends(current_user)):
+        _submission_call(submissions.withdraw, user, sub_id)
+        return {"ok": True}
+
+    # ---------- requests: books people would like ----------
+
+    def _request_call(call, *args, **kwargs):
+        try:
+            return call(cfg, *args, **kwargs)
+        except LookupError:
+            raise HTTPException(404, "No such request")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/api/requests")
+    def list_requests(closed: bool = False, user: User = Depends(current_user)):
+        return book_requests.listing(cfg, user.id, closed)
+
+    @app.post("/api/requests")
+    def ask_for_book(body: RequestIn, user: User = Depends(current_user)):
+        return {"id": _request_call(book_requests.ask, user, body.title, body.author, body.note)}
+
+    @app.post("/api/requests/{rid}/vote")
+    def vote_request(rid: int, body: VoteIn, user: User = Depends(current_user)):
+        _request_call(book_requests.vote, user.id, rid, body.on)
+        return {"ok": True}
+
+    @app.delete("/api/requests/{rid}")
+    def remove_request(rid: int, user: User = Depends(current_user)):
+        _request_call(book_requests.remove, user, rid)
+        return {"ok": True}
+
+    @app.post("/api/requests/{rid}/fulfil")
+    def fulfil_request(rid: int, body: FulfilIn, _: User = Depends(admin_user)):
+        _request_call(book_requests.fulfil, rid, body.book_id)
+        return {"ok": True}
+
+    @app.post("/api/requests/{rid}/decline")
+    def decline_request(rid: int, body: ReasonIn, _: User = Depends(admin_user)):
+        _request_call(book_requests.decline, rid, body.reason)
+        return {"ok": True}
+
+    # ---------- discussion about each book ----------
+
+    def _talk_call(call, *args, **kwargs):
+        try:
+            return call(cfg, *args, **kwargs)
+        except LookupError:
+            raise HTTPException(404, "No such message or book")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/api/books/{book_id}/discussion")
+    def book_discussion(book_id: int, after: int = 0, user: User = Depends(current_user)):
+        return _talk_call(discussion.thread, user, book_id, after)
+
+    @app.post("/api/books/{book_id}/discussion")
+    def post_message(book_id: int, body: MessageIn, user: User = Depends(current_user)):
+        return _talk_call(discussion.post, user, book_id, body.body, body.parent_id)
+
+    @app.patch("/api/messages/{mid}")
+    def edit_message(mid: int, body: MessageIn, user: User = Depends(current_user)):
+        return _talk_call(discussion.edit, user, mid, body.body)
+
+    @app.delete("/api/messages/{mid}")
+    def remove_message(mid: int, user: User = Depends(current_user)):
+        _talk_call(discussion.remove, user, mid)
         return {"ok": True}
 
     # ---------- shelves ----------
