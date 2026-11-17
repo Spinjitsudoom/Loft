@@ -97,6 +97,7 @@ function layoutHTML(b) {
       ${files.length > 1 ? `<h3>${esc(f.format.toUpperCase())}</h3>` : ""}
       <h3>Reading direction</h3>${seg(f, "rtl", DIRECTION)}
       <h3>Two printed pages in one scan</h3>${seg(f, "split", SPLIT)}
+      <p class="muted seg-hint">Split them cuts only the wide scans in two; ordinary pages stay whole.</p>
       <h3>Wraparound cover (back and front in one scan)</h3>${seg(f, "wraparound", WRAP)}
       <h3>Page order</h3>
       <div class="arrange-row">

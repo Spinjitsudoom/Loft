@@ -46,6 +46,7 @@ export async function openArrange(file, { onClose = () => {} } = {}) {
         <label>Before page <input name="n" inputmode="numeric" autocomplete="off"></label>
         <button class="btn" type="submit">Move</button>
       </form>
+      <button class="btn" type="button" data-blank>Blank page before</button>
       <button class="btn" type="button" data-hide>Hide</button>
       <button class="btn" type="button" data-show>Show</button>
       <button class="btn" type="button" data-clear>Clear</button>
@@ -61,13 +62,15 @@ export async function openArrange(file, { onClose = () => {} } = {}) {
 
   const shown = () => order.filter((e) => !hidden.has(key(e)));
   const thumb = (e) => `/api/files/${file.id}/piece?src=${e[0]}${e[1] == null ? "" : `&half=${e[1]}`}&w=200&v=${m.file_v}`;
+  const isBlank = (e) => e[0] < 0;
   const aspect = (e) => {
-    const [w, h] = m.source[e[0]] || [2, 3];
+    const [w, h] = m.source[isBlank(e) ? 0 : e[0]] || [2, 3];
     return `${e[1] == null ? w : w / 2} / ${h}`;
   };
   const tile = (e, label) => `<li><button type="button" class="arrange-page${selected.has(key(e)) ? " is-selected" : ""}"
       data-key="${key(e)}" aria-pressed="${selected.has(key(e))}" draggable="${!hidden.has(key(e))}" aria-label="${esc(label)}">
-      <img src="${thumb(e)}" alt="" loading="lazy" draggable="false" style="aspect-ratio: ${aspect(e)}">
+      ${isBlank(e) ? `<span class="arrange-blank" style="aspect-ratio: ${aspect(e)}">Blank</span>`
+        : `<img src="${thumb(e)}" alt="" loading="lazy" draggable="false" style="aspect-ratio: ${aspect(e)}">`}
       <span class="arrange-num">${esc(label)}</span></button></li>`;
 
   function render() {
@@ -82,7 +85,9 @@ export async function openArrange(file, { onClose = () => {} } = {}) {
     $("[data-bar]").hidden = !chosen.length;
     $("[data-count]").textContent = `${chosen.length} chosen`;
     // Only what applies to the pages chosen: moving and hiding shown pages, showing hidden ones.
-    layer.querySelectorAll("[data-move], [data-before], [data-hide]").forEach((b) => { b.hidden = !anyShown; });
+    layer.querySelectorAll("[data-move], [data-before], [data-hide], [data-blank]").forEach((b) => { b.hidden = !anyShown; });
+    // A blank is taken out rather than hidden.
+    $("[data-hide]").textContent = chosen.some((e) => !hidden.has(key(e)) && !isBlank(e)) ? "Hide" : "Remove";
     $("[data-show]").hidden = !anyHidden;
     $("[data-before] input").placeholder = String(visible.length);
     $("[data-undo]").disabled = !undo.length;
@@ -166,13 +171,24 @@ export async function openArrange(file, { onClose = () => {} } = {}) {
   });
   $("[data-hide]").addEventListener("click", () => {
     const next = new Set(hidden);
-    order.forEach((e) => { if (selected.has(key(e))) next.add(key(e)); });
-    if (order.every((e) => next.has(key(e)))) {
+    order.forEach((e) => { if (selected.has(key(e)) && !isBlank(e)) next.add(key(e)); });
+    const kept = order.filter((e) => !(isBlank(e) && selected.has(key(e))));
+    if (kept.every((e) => next.has(key(e)) || isBlank(e))) {
       fail("A book needs at least one page that isn’t hidden");
       return;
     }
     selected = new Set();
-    change({ order, hidden: next });
+    change({ order: kept, hidden: next });
+  });
+  // A blank page in front of the first page chosen: behind a cover, it keeps two-page spreads on
+  // their pairs, as in the printed book.
+  $("[data-blank]").addEventListener("click", () => {
+    const first = order.find((e) => selected.has(key(e)) && !hidden.has(key(e)));
+    if (!first) return;
+    const blank = [Math.min(0, ...order.filter(isBlank).map((e) => e[0])) - 1, null];
+    const at = order.indexOf(first);
+    selected = new Set();
+    change({ order: [...order.slice(0, at), blank, ...order.slice(at)], hidden });
   });
   $("[data-show]").addEventListener("click", () => {
     const next = new Set(hidden);

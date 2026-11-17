@@ -833,3 +833,9 @@ body.arranging { overflow: hidden; }
 .talk-empty { font-size: 15px; }
 .reader-talk .talk-form textarea { background: transparent; border-color: var(--r-line); color: inherit; }
 .reader-talk .msg, .reader-talk .msg-replies { border-color: var(--r-line); }
+.arrange-blank {
+  display: grid; place-items: center; width: 100%; background: #f4f1ea; color: #8a8178; border-radius: 3px;
+  font-size: 13px; box-shadow: 0 2px 10px rgb(0 0 0 / .4); outline: 3px solid transparent; outline-offset: 2px;
+}
+.arrange-page.is-selected .arrange-blank { outline-color: var(--brass); }
+.seg-hint { margin: 8px 0 0; font-size: 13px; }

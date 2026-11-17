@@ -463,3 +463,32 @@ def test_arrangement_routes(client, cfg):
     client.post("/api/login", json={"username": "sam", "password": "samsamsam"})
     assert client.patch(f"/api/files/{fid}/arrangement", json={"order": None, "hidden": []}).status_code == 403
     assert client.get(f"/api/files/{fid}/piece?src=1&w=200").status_code == 403
+
+
+def test_blank_pages(cfg):
+    # A blank behind a cover keeps the two-page spreads that follow on their pairs, as in print.
+    fid = five_page_comic(cfg)
+    order = [[4, None], [-1, None]] + [[i, None] for i in range(4)]
+    m = pages.set_arrangement(cfg, fid, order, [])
+    assert m["plan"] == order and m["count"] == 6
+    assert m["sizes"][1] == m["sizes"][0]                       # as big as the page before it
+    blank = Image.open(pages.render_page(cfg, fid, 1, 600)).convert("RGB")
+    assert blank.getpixel((20, 20)) == (255, 255, 255) and blank.size == (600, 900)  # the page shape, 2:3
+    assert Image.open(pages.render_piece(cfg, fid, -1, None, 200)).width == 200
+    # Blanks stay where they were put when other settings change.
+    assert pages.set_layout(cfg, fid, None, None, rtl=True)["plan"] == order
+    with pytest.raises(ValueError):
+        pages.set_arrangement(cfg, fid, order, [[-1, None]])    # a blank is removed, not hidden
+    with pytest.raises(ValueError):
+        pages.set_arrangement(cfg, fid, order + [[-1, None]], [])
+    with pytest.raises(ValueError):
+        pages.set_arrangement(cfg, fid, [[i, None] for i in range(5)] + [[-2, 0]], [])  # blanks are whole pages
+    assert pages.set_arrangement(cfg, fid, None, [])["count"] == 5
+
+
+def test_arrange_keeps_blanks_in_place():
+    whole = [(0, None), (1, None), (2, None)]
+    order = [(0, None), (-1, None), (1, None), (2, None)]
+    assert pages.arrange(whole, order, [])[0] == order
+    split = [(0, None), (1, 0), (1, 1), (2, None)]
+    assert pages.arrange(split, order, [])[0] == [(0, None), (-1, None), (1, 0), (1, 1), (2, None)]

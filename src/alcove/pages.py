@@ -32,7 +32,8 @@ READABLE = {"pdf", "cbz", "cbr", "cb7"}
 PAGE_WIDTHS = (200, 600, 900, 1200, 1800, 2400)  # 200: thumbnails for arranging pages
 MAX_ENTRIES = 20_000
 
-Entry = tuple[int, "int | None"]  # (source page, half: 0 left, 1 right, None whole)
+Entry = tuple[int, "int | None"]  # (source page, half: 0 left, 1 right, None whole); a negative page is a blank
+MAX_BLANKS = 100
 MAX_PIXELS = 16_000_000
 JPEG_QUALITY = 88
 
@@ -193,6 +194,8 @@ def arrange(natural: list[Entry], order: list[Entry] | None, hidden: list[Entry]
             key = (last, 2, n)
         last = key[0]
         keyed.append((key, e))
+    # Blank pages the admin put in (negative page numbers) stay exactly where they were put.
+    keyed += [((position[e], 0, -1), e) for e in order if e[0] < 0]
     every = [e for _, e in sorted(keyed)]
 
     hide = {tuple(e) for e in hidden or []}
@@ -215,14 +218,16 @@ def _stored_layout(row) -> dict:
     return stored if isinstance(stored, dict) else {}
 
 
-def _entries(value) -> list[Entry]:
-    """Pages as the app sends them: [source page, half] with half 0, 1 or null."""
+def _entries(value, blanks: bool = False) -> list[Entry]:
+    """Pages as the app sends them: [source page, half] with half 0, 1 or null. With `blanks`, a
+    negative page number is a blank page (always whole)."""
     if not isinstance(value, list) or len(value) > MAX_ENTRIES:
         raise ValueError("The pages must be a list")
     entries = []
     for item in value:
         if (not isinstance(item, (list, tuple)) or len(item) != 2 or not isinstance(item[0], int)
-                or isinstance(item[0], bool) or item[0] < 0 or item[1] not in (None, 0, 1) or isinstance(item[1], bool)):
+                or isinstance(item[0], bool) or (item[0] < 0 and not (blanks and item[1] is None))
+                or item[1] not in (None, 0, 1) or isinstance(item[1], bool)):
             raise ValueError("Each page must be a page number and which half of it")
         entries.append((item[0], item[1]))
     return entries
@@ -231,7 +236,7 @@ def _entries(value) -> list[Entry]:
 def _arrangement(row) -> tuple[list[Entry] | None, list[Entry]]:
     stored = _stored_layout(row)
     try:
-        order = _entries(stored["order"]) if stored.get("order") is not None else None
+        order = _entries(stored["order"], blanks=True) if stored.get("order") is not None else None
         hidden = _entries(stored.get("hidden") or [])
     except ValueError:
         return None, []
@@ -261,8 +266,14 @@ def manifest(cfg: Config, file_id: int) -> dict:
         page = next((index[e] for e in natural[first.get(t["page"], len(natural)):] if e in index), None)
         if page is not None:
             toc.append({**t, "page": page})
-    sizes = [[source[src][0] / 2, source[src][1]] if half is not None else source[src] for src, half in plan]
-    sizes = [[round(w), round(h)] for w, h in sizes]
+    sizes = []
+    for src, half in plan:
+        if src < 0:  # a blank: as big as the page before it (or the first page)
+            sizes.append(sizes[-1] if sizes else None)
+        else:
+            sizes.append([source[src][0] / 2, source[src][1]] if half is not None else source[src])
+    first_real = next((x for x in sizes if x), source[0])
+    sizes = [[round(w), round(h)] for w, h in (x or first_real for x in sizes)]
     return {"file_id": file_id, "format": f["format"], "count": len(sizes), "sizes": sizes, "toc": toc,
             "version": int(f["mtime"]) + f["layout_rev"], "rtl": file_layout(f)["rtl"],
             "plan": [list(p) for p in plan], "source": source,
@@ -307,15 +318,21 @@ def set_arrangement(cfg: Config, file_id: int, order, hidden) -> dict:
     f = _file(cfg, file_id)
     if f["format"] not in READABLE:
         raise ValueError("Only PDFs and comics have pages to arrange")
-    order = None if order is None else _entries(order)
-    hidden = list(dict.fromkeys(_entries(hidden or [])))
+    order = None if order is None else _entries(order, blanks=True)
+    hidden = list(dict.fromkeys(_entries(hidden or [])))  # a blank is taken out, never hidden
     source, _, scanned = _measured(cfg, f)
     natural = _natural(f, source, scanned)
     known = set(natural)
     changed = "The pages have changed since this was opened; close it and open it again"
     if order is not None:
-        if len(order) != len(natural) or set(order) != known:
+        real = [e for e in order if e[0] >= 0]
+        blanks = [e for e in order if e[0] < 0]
+        if len(real) != len(natural) or set(real) != known:
             raise ValueError(changed)
+        if len(set(blanks)) != len(blanks):
+            raise ValueError("Each blank page must be listed once")
+        if len(blanks) > MAX_BLANKS:
+            raise ValueError(f"A book can have at most {MAX_BLANKS} blank pages")
         if order == natural:
             order = None
     if any(e not in known for e in hidden):
@@ -337,6 +354,8 @@ def render_page(cfg: Config, file_id: int, index: int, width: int) -> Path:
     if not 0 <= index < m["count"]:
         raise IndexError(index)
     src, half = m["plan"][index]
+    if src < 0:
+        return _blank(cfg, file_id, m["sizes"][index], snap_width(width))
     return _render(cfg, file_id, m, src, half, snap_width(width))
 
 
@@ -345,7 +364,29 @@ def render_piece(cfg: Config, file_id: int, src: int, half: int | None, width: i
     m = manifest(cfg, file_id)
     if [src, half] not in m["arranged"]:
         raise IndexError((src, half))
+    if src < 0:
+        size = m["sizes"][m["plan"].index([src, half])] if [src, half] in m["plan"] else m["sizes"][0]
+        return _blank(cfg, file_id, size, snap_width(width))
     return _render(cfg, file_id, m, src, half, snap_width(width))
+
+
+def _blank(cfg: Config, file_id: int, size: list[int], w: int) -> Path:
+    """A plain white page, the shape of the pages around it."""
+    row = _file(cfg, file_id)
+    folder = cfg.page_dir / f"{file_id}-{round(row['mtime'] * 1000)}"
+    h = max(1, round(w * size[1] / max(1, size[0])))
+    target = folder / f"blank-{w}x{h}.jpg"
+    if not target.is_file():
+        folder.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=folder, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                Image.new("RGB", (w, h), (255, 255, 255)).save(f, "JPEG", quality=JPEG_QUALITY)
+            os.replace(tmp, target)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
+    return target
 
 
 def _render(cfg: Config, file_id: int, m: dict, src: int, half: int | None, w: int) -> Path:
