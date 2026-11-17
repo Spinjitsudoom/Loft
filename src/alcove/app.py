@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
-from . import auth, editing, flowbooks, libsettings, library, openlibrary, pages, reading, settings, txt
+from . import auth, editing, flowbooks, libsettings, library, openlibrary, pages, reading, settings, txt, uploads
 from .auth import User, admin_user, current_user
 from .config import Config
 from .covers import cover_path
@@ -51,6 +51,11 @@ class AdminFlag(BaseModel):
 
 class NewPassword(BaseModel):
     password: str = ""
+
+
+class SaveUpload(BaseModel):
+    details: dict = {}
+    cover_url: str | None = None
 
 
 class CoverUrl(BaseModel):
@@ -327,6 +332,56 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         except ValueError as e:
             raise HTTPException(400, str(e))
         return _edited(book_id, user)
+
+    # ---------- adding books ----------
+
+    @app.put("/api/uploads")
+    async def upload(request: Request, name: str = "", _: User = Depends(admin_user)):
+        try:
+            token, path = await run_in_threadpool(uploads.new_draft, cfg, name)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        size = 0
+        try:
+            with path.open("wb") as f:
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > uploads.MAX_UPLOAD:
+                        raise HTTPException(413, "That file is too big (the most is 2 GB)")
+                    f.write(chunk)
+            if size == 0:
+                raise HTTPException(400, "That file is empty")
+            return await run_in_threadpool(uploads.read_draft, cfg, token)
+        except BaseException:
+            await run_in_threadpool(uploads.discard, cfg, token)
+            raise
+
+    def _draft_call(call, *args, **kwargs):
+        try:
+            return call(cfg, *args, **kwargs)
+        except LookupError:
+            raise HTTPException(404, "That upload has gone; add the file again")
+
+    @app.get("/api/uploads/{token}/cover")
+    def upload_cover(token: str, _: User = Depends(admin_user)):
+        path = _draft_call(uploads.draft_cover, token)
+        if path is None:
+            raise HTTPException(404, "No cover")
+        return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/uploads/{token}/save")
+    def save_upload(token: str, body: SaveUpload, _: User = Depends(admin_user)):
+        try:
+            return {"book_id": _draft_call(uploads.save, token, body.details, cover_url=body.cover_url or None)}
+        except openlibrary.LookupFailed as e:
+            raise HTTPException(502, str(e))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.delete("/api/uploads/{token}")
+    def discard_upload(token: str, _: User = Depends(admin_user)):
+        _draft_call(uploads.discard, token)
+        return {"ok": True}
 
     @app.get("/api/search")
     def search(q: str = "", _: User = Depends(current_user)):

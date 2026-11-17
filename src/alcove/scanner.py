@@ -348,6 +348,8 @@ class Scanner:
             try:
                 self.last = scan(self.cfg)
                 prune_page_cache(self.cfg)
+                from .uploads import prune_drafts
+                prune_drafts(self.cfg)
             except Exception:
                 log.exception("Scan failed")
             finally:
