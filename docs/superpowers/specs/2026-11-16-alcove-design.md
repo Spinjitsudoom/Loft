@@ -196,7 +196,7 @@ scanner was considered and left out for now.
 2. **Reader for PDF and comics:** page images, paper curl, zoom, controls, themes, progress,
    bookmarks, "Continue reading" on the home screen, and **your settings** (account, reading, look).
 3. **EPUB and the other formats:** EPUB pagination and curl, MOBI/AZW3/FB2/TXT conversion, DRM flag.
-4. **Adding and editing books:** edit on the book page, uploads, Open Library lookup, shelves,
+4. **Adding and editing books** (done): edit on the book page, uploads, Open Library lookup, shelves,
    **library settings** and the **library check**.
 5. **Members:** sign-up requests, submissions (details required) and the approval queue, requests
    with upvotes, per-book discussion with spoiler blur, notifications.
@@ -219,3 +219,17 @@ clean sans for the interface), tests.
 - PDFs and comics rendered as images on the server; EPUB laid out in the browser.
 - Members can't add books directly — everything they submit goes through the approval queue.
 - Away from home via Tailscale, as Shelf.
+- Edits lock the fields they touch: later scans (a changed file, a changed Calibre library) never
+  overwrite what the admin set. Merging two books locks everything on the one kept.
+- Library settings saved in the app override `config.toml`; until the admin saves a folder list,
+  the config's is used.
+- Removing a folder in Library settings removes its books and everyone's progress in them (after a
+  warning). A folder that merely disappears from `config.toml` or can't be reached removes nothing.
+- Uploads: up to 2 GB per file, saved into the books folder the admin picks ("new books go here"),
+  as `Author/Title/file`, never overwriting (a taken name gets " (2)").
+- Duplicates are merged into one book (both files kept), never deleted: Alcove doesn't delete files.
+- Series gaps count from #1 up to the highest number held.
+- "Finished" is the books you read to the end, not a shelf you fill. "Want to read" is always there.
+- Open Library fills publisher and language only when it lists exactly one of each (it lists every
+  edition's otherwise). Covers are downloaded only from covers.openlibrary.org.
+- Demoting or promoting an admin takes effect on their next request without signing them out.
