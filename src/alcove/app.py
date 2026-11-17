@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
-from . import auth, editing, flowbooks, libsettings, library, pages, reading, settings, txt
+from . import auth, editing, flowbooks, libsettings, library, openlibrary, pages, reading, settings, txt
 from .auth import User, admin_user, current_user
 from .config import Config
 from .covers import cover_path
@@ -51,6 +51,10 @@ class AdminFlag(BaseModel):
 
 class NewPassword(BaseModel):
     password: str = ""
+
+
+class CoverUrl(BaseModel):
+    url: str = ""
 
 
 class LayoutIn(BaseModel):
@@ -294,6 +298,34 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             editing.clear_cover(cfg, book_id)
         except LookupError:
             raise HTTPException(404, "No such book")
+        return _edited(book_id, user)
+
+    def _lookup(call, *args, **kwargs):
+        try:
+            return call(cfg, *args, **kwargs)
+        except openlibrary.LookupsOff as e:
+            raise HTTPException(403, str(e))
+        except openlibrary.LookupFailed as e:
+            raise HTTPException(502, str(e))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/api/lookup")
+    def lookup(title: str = "", author: str = "", isbn: str = "", _: User = Depends(admin_user)):
+        return _lookup(openlibrary.search, title=title, author=author, isbn=isbn)
+
+    @app.get("/api/lookup/description")
+    def lookup_description(key: str = "", _: User = Depends(admin_user)):
+        return {"description": _lookup(openlibrary.description, key)}
+
+    @app.post("/api/books/{book_id}/cover/lookup")
+    def cover_from_lookup(book_id: int, body: CoverUrl, user: User = Depends(admin_user)):
+        _edited(book_id, user)
+        image = _lookup(openlibrary.fetch_cover, body.url)
+        try:
+            editing.set_cover(cfg, book_id, image)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
         return _edited(book_id, user)
 
     @app.get("/api/search")

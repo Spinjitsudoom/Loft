@@ -36,6 +36,20 @@ class FileMeta:
     series: str = ""
     series_index: float | None = None
     encrypted: bool = False
+    isbn: str = ""
+
+
+def valid_isbn(value: str) -> str:
+    """The ISBN in value (digits only, X allowed last in an ISBN-10) if its check digit is right, else ""."""
+    v = re.sub(r"^(urn:)?isbn:?", "", (value or "").strip(), flags=re.I)
+    v = re.sub(r"[\s-]", "", v).upper()
+    if re.fullmatch(r"\d{13}", v):
+        total = sum(int(d) * (1 if i % 2 == 0 else 3) for i, d in enumerate(v))
+        return v if total % 10 == 0 else ""
+    if re.fullmatch(r"\d{9}[\dX]", v):
+        total = sum((10 if d == "X" else int(d)) * (10 - i) for i, d in enumerate(v))
+        return v if total % 11 == 0 else ""
+    return ""
 
 
 def title_from_filename(path: Path) -> str:
@@ -146,6 +160,7 @@ def _epub(path: Path) -> FileMeta:
         language=first("language"),
         published=first("date")[:10],
         publisher=first("publisher"),
+        isbn=next((i for i in (valid_isbn("".join(el.itertext())) for el in md.findall("dc:identifier", NS)) if i), ""),
     )
     metas = {el.get("name"): el.get("content", "") for el in md.findall("opf:meta", NS) if el.get("name")}
     if metas.get("calibre:series"):
