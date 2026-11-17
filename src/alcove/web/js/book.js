@@ -5,6 +5,7 @@ import { canRead, shelfHTML, wireShelves } from "./home.js";
 import { clearErrors, detailFields, fillEmpty, readDetails, showError, showLookup } from "./edit.js";
 import { shelfButtonHTML, wireShelfMenu } from "./shelfmenu.js";
 import { state } from "./main.js";
+import { wireDownload } from "./downloads.js";
 
 function size(bytes) {
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
@@ -52,8 +53,10 @@ export async function renderBook(main, id, params = new URLSearchParams()) {
       ${b.series ? `<p class="book-page-series">${link("series", b.series, seriesLine(b))}</p>` : ""}
       <div class="files">
         ${canRead(b) ? `<a class="btn btn-primary" href="#/read/${b.id}${b.progress && b.progress.finished ? "?page=0" : ""}">${readLabel(b.progress)}</a>` : ""}
-        ${b.files.map((f) => `<a class="btn ${!canRead(b) && f === b.files[0] ? "btn-primary" : ""}" href="/api/files/${f.id}" download>
-          ${icon("download")}Download ${esc(f.format.toUpperCase())}<span class="file-size">${size(f.size)}</span></a>`).join("")}
+        ${canRead(b) ? `<span class="download-slot" data-download></span>` : ""}
+        ${b.files.map((f) => `<a class="btn ${!canRead(b) && f === b.files[0] ? "btn-primary" : ""}" href="/api/files/${f.id}" download
+          title="Save the ${esc(f.format.toUpperCase())} file itself, to read in another app">
+          ${icon("file")}Save ${esc(f.format.toUpperCase())} file<span class="file-size">${size(f.size)}</span></a>`).join("")}
         ${shelfButtonHTML(b)}
         ${state.me.admin ? `<a class="btn" href="#/book/${b.id}?edit=1">${icon("edit")}Edit</a>` : ""}
       </div>
@@ -65,6 +68,8 @@ export async function renderBook(main, id, params = new URLSearchParams()) {
   ${b.series_books.length ? shelfHTML({ title: `More in ${b.series}`, kind: "series", value: b.series, books: b.series_books }) : ""}`;
   wireShelves(main);
   wireShelfMenu(main, b);
+  const slot = main.querySelector("[data-download]");
+  if (slot) wireDownload(slot, b);
 }
 
 const SPLIT = [[null, "Automatic"], [true, "Split them"], [false, "Don’t split"]];

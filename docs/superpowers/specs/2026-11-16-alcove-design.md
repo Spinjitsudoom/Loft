@@ -186,8 +186,17 @@ scanner was considered and left out for now.
 ## Away from home and offline
 
 - Tailscale, as with Shelf. A reverse-proxy mode can come later.
-- Desktop and Android apps download books for offline reading; progress syncs when back online.
-  The browser and Lite read from the server.
+- **Downloads** (owner's request, 2026-11-17, "kept within the app like with Shelf"): built into the
+  web app, so the browser, Lite and desktop all get it. A book's Download button keeps it on that
+  device (IndexedDB): page images for PDFs and comics at one width suited to the screen, chapters and
+  their pictures for flowing books. Downloaded books read from the device even online. "On this
+  device" shelf on the home page; Downloads in Your settings (sizes, remove, remove all, space the
+  browser allows). The original-file button is now "Save … file". Progress and bookmark changes made
+  with no connection are kept and sent when the server answers (progress carries the time it was
+  read, so it never overwrites newer reading). A downloaded book that changes on the server (new
+  file, split, direction, page order) downloads again by itself. With no connection Alcove opens on
+  the books on this device; opening the app itself offline needs https or localhost (service worker),
+  as with Shelf. Downloads belong to the account that made them.
 
 ## Milestones for the first build (server + browser)
 

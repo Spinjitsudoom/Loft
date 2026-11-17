@@ -1,5 +1,6 @@
 // Your settings: account, reading and how the library looks. Each change saves on its own.
 import { api, esc, icon } from "./api.js";
+import { settingsSection, wireSettingsSection } from "./downloads.js";
 import { ACCENTS, loadPrefs, patchPrefs } from "./prefs.js";
 import { state } from "./main.js";
 
@@ -62,6 +63,8 @@ export async function renderSettings(main) {
       </li>`).join("")}</ol>
     </section>
 
+    ${await settingsSection()}
+
     <section class="settings-section">
       <h2>Account</h2>
       <form class="password-form" novalidate>
@@ -77,6 +80,7 @@ export async function renderSettings(main) {
     </section>
   </section>`;
 
+  wireSettingsSection(main);
   const save = async (patch) => {
     try { await patchPrefs(patch); saved(); renderSettings(main); }
     catch (e) { saved(e.message); }

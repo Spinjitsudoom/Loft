@@ -4,6 +4,7 @@
 // so changing the text size or the screen keeps you on the same passage.
 import { openZoom } from "./zoom.js";
 import { Reader, registerFlowReader } from "./reader.js";
+import * as offline from "./offline.js";
 
 const FONTS = {
   literata: '"Literata", Georgia, serif',
@@ -120,10 +121,12 @@ class FlowReader extends Reader {
       return hit;
     }
     const url = `/api/files/${this.file.id}/chapters/${c}?v=${this.m.version}`;
-    const p = fetch(url, { credentials: "same-origin" }).then((r) => {
+    // A downloaded book's chapters come from this device, their pictures too.
+    const kept = this.stored ? offline.chapterText(this.book.id, this.file.id, c) : Promise.resolve(null);
+    const p = kept.then((text) => text ?? fetch(url, { credentials: "same-origin" }).then((r) => {
       if (!r.ok) throw new Error(`chapter ${c}: ${r.status}`);
       return r.text();
-    });
+    }));
     // A failed fetch is forgotten, so the next try asks the server again.
     p.catch(() => { if (this.texts.get(c) === p) this.texts.delete(c); });
     this.texts.set(c, p);

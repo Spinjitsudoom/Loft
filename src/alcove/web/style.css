@@ -714,3 +714,25 @@ body.arranging { overflow: hidden; }
   .arrange-head h2 { flex-basis: 100%; }
   .arrange-status { margin-right: auto; }
 }
+
+/* Downloads: the button on a book's page, the list in Your settings, and being offline. */
+.download-slot { display: contents; }
+.download-busy { position: relative; overflow: hidden; }
+.download-busy::before {
+  content: ""; position: absolute; inset: 0; width: var(--done, 0%); background: color-mix(in srgb, var(--brass) 22%, transparent);
+  transition: width .4s ease; pointer-events: none;
+}
+.download-busy > * { position: relative; }
+.download-done { color: var(--brass); }
+.download-done .icon { color: var(--brass); }
+.download-remove { border-color: #8a4a3a; color: #f0b4a4; }
+.download-note { flex-basis: 100%; font-size: 14px; color: #f0b4a4; }
+.download-list { list-style: none; margin: 14px 0 10px; padding: 0; }
+.download-list li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.download-list a { flex: 1; min-width: 0; color: inherit; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.download-list a:hover { color: var(--brass); }
+.download-list .muted { font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.download-total { margin: 12px 0; font-size: 14px; color: var(--muted); }
+.offline-note { margin: 0 0 0 auto; font-size: 14px; color: var(--muted); }
+.offline-note::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: #b98a4f; vertical-align: 1px; }
+@media (max-width: 560px) { .offline-more { display: none; } }

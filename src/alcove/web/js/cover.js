@@ -17,8 +17,10 @@ export function generatedStyle(title) {
 
 export function coverHTML(book, width = 240, extra = "") {
   const author = (book.authors && book.authors[0]) || "";
+  // cover_src: a downloaded book's cover kept on this device, for when the server can't be reached.
+  const src = book.cover_src || `/api/books/${book.id}/cover?w=${width}&v=${book.cover_v || 0}`;
   const img = book.has_cover
-    ? `<img src="/api/books/${book.id}/cover?w=${width}&v=${book.cover_v || 0}" alt="" loading="lazy" decoding="async"
+    ? `<img src="${src}" alt="" loading="lazy" decoding="async"
          onerror="this.remove()">`
     : "";
   return `<div class="book ${extra}" style="${generatedStyle(book.title)}">

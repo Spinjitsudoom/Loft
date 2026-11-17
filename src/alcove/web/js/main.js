@@ -11,11 +11,21 @@ import { renderReader } from "./reader.js";
 import "./flow.js";
 import { renderSettings } from "./settings.js";
 import { applyLook, loadPrefs } from "./prefs.js";
+import * as offline from "./offline.js";
+import { needsServer, renderOfflineBook, renderOfflineHome } from "./downloads.js";
 
 const app = document.getElementById("app");
 export const state = { me: null, libraryName: "" };
 
+const ME = "alcove-me";  // who was signed in here last: downloaded books open for them offline
+
 function topbar(query = "") {
+  if (offline.isOffline()) {
+    return `<header class="topbar">
+      <a class="brand" href="#/">${esc(state.libraryName || "Alcove")}</a>
+      <p class="offline-note" role="status">Offline<span class="offline-more">: showing the books on this device</span></p>
+    </header>`;
+  }
   return `<header class="topbar">
     <a class="brand" href="#/">${esc(state.libraryName || "Alcove")}</a>
     <form class="search" role="search" data-search>
@@ -56,10 +66,27 @@ async function route() {
       state.libraryName = status.name || "";
       document.title = state.libraryName || "Alcove";
       state.me = await api("/me");
+      offline.setOffline(false);
+      try { localStorage.setItem(ME, JSON.stringify({ ...state.me, libraryName: state.libraryName })); } catch { /* private window */ }
       applyLook(await loadPrefs(true));
-    } catch {
-      location.hash = "#/login";
-      return;
+      offline.setUser(state.me.id);
+      offline.flush().then(() => offline.resume());
+    } catch (e) {
+      // The server can't be reached: whoever was signed in here last can still read what they downloaded.
+      let kept = null;
+      try { kept = JSON.parse(localStorage.getItem(ME) || "null"); } catch { /* none */ }
+      if (!offline.unreachable(e) || !kept) {
+        if (offline.unreachable(e)) {
+          app.innerHTML = `<main class="reader-message"><div><p>Alcove can’t reach its server just now.</p>
+            <button class="btn" type="button" onclick="location.reload()">Try again</button></div></main>`;
+        } else location.hash = "#/login";
+        return;
+      }
+      state.me = kept;
+      state.libraryName = kept.libraryName || "";
+      offline.setUser(kept.id);
+      offline.setOffline(true);
+      loadPrefs().then(applyLook).catch(() => {});
     }
   }
   if (token !== renderToken) return;
@@ -80,6 +107,13 @@ async function route() {
   wireTopbar();
   window.scrollTo(0, 0);
 
+  if (offline.isOffline()) {
+    if (!page) await renderOfflineHome(main);
+    else if (page === "book" && arg) await renderOfflineBook(main, Number(arg));
+    else needsServer(main);
+    return;
+  }
+
   try {
     if (!page) await renderHome(main);
     else if (page === "book" && arg) await renderBook(main, Number(arg), params);
@@ -92,12 +126,18 @@ async function route() {
     else main.innerHTML = `<div class="empty"><p>There’s nothing here.</p><a class="btn" href="#/">Back to the library</a></div>`;
   } catch (e) {
     if (e.status === 401) return;
+    if (offline.unreachable(e) && token === renderToken) {
+      offline.setOffline(true);
+      route();
+      return;
+    }
     main.innerHTML = `<div class="empty"><p>${esc(e.message)}</p><button class="btn" type="button" onclick="location.reload()">Try again</button></div>`;
   }
 }
 
 function wireTopbar() {
   const form = app.querySelector("[data-search]");
+  if (!form) return;  // offline: the top bar has no search or sign-out
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const q = form.q.value.trim();
@@ -113,6 +153,31 @@ function wireTopbar() {
 export function signedIn(user) {
   state.me = null;  // the router loads you and your settings afresh
   location.hash = "#/";
+}
+
+// While the server can't be reached, look for it now and then; when it's back, send what was kept
+// meanwhile, pick up downloads, and redraw (except in the reader, which carries on as it is).
+let looking = null;
+window.addEventListener("offline-changed", (e) => {
+  clearInterval(looking);
+  if (!e.detail.offline) return;
+  looking = setInterval(async () => {
+    try {
+      const r = await fetch("/api/status", { credentials: "same-origin" });
+      if (!r.ok) return;
+    } catch { return; }
+    clearInterval(looking);
+    offline.setOffline(false);
+    await offline.flush();
+    if (parse().parts[0] !== "read") { state.me = null; route(); }
+    offline.resume();
+  }, 15000);
+});
+window.addEventListener("online", () => { if (offline.isOffline()) window.dispatchEvent(new CustomEvent("offline-changed", { detail: { offline: true } })); });
+
+// Keep the app's own files for opening offline, where the browser allows it (https, or this computer).
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 
 window.addEventListener("hashchange", route);

@@ -30,7 +30,7 @@ export function shelfHTML(row) {
   return `<section class="shelf" aria-label="${esc(row.title)}">
     <header class="shelf-head">
       <h2>${esc(row.title)}</h2>
-      ${row.kind === "continue" ? "" : `<a class="see-all" href="${allLink(row)}">See all</a>`}
+      ${row.kind === "continue" || row.kind === "device" ? "" : `<a class="see-all" href="${allLink(row)}">See all</a>`}
     </header>
     <div class="shelf-frame">
       <button class="shelf-arrow prev" type="button" aria-label="Scroll left" tabindex="-1">${icon("left")}</button>
@@ -89,6 +89,10 @@ export async function renderHome(main) {
     return;
   }
   const detail = await api(`/books/${home.hero.id}`).catch(() => null);
-  main.innerHTML = heroHTML(home, detail) + home.rows.map(shelfHTML).join("");
+  const { deviceBooks } = await import("./downloads.js");
+  const onDevice = (await deviceBooks()).filter((b) => !b.downloading);
+  const rows = [...home.rows];
+  if (onDevice.length) rows.splice(rows[0] && rows[0].kind === "continue" ? 1 : 0, 0, { kind: "device", title: "On this device", books: onDevice });
+  main.innerHTML = heroHTML(home, detail) + rows.map(shelfHTML).join("");
   wireShelves(main);
 }

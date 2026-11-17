@@ -2,6 +2,7 @@
 // Pages are images from the server; only the ones near where you are get loaded.
 import { api, esc, icon } from "./api.js";
 import { openZoom } from "./zoom.js";
+import * as offline from "./offline.js";
 import { loadPrefs, patchPrefs } from "./prefs.js";
 
 let FlowReaderClass = null;  // set by flow.js (it extends Reader)
@@ -45,9 +46,17 @@ function unreadableCard(app, book, message) {
 export async function renderReader(app, bookId, params, isCurrent = () => true) {
   app.innerHTML = `<div class="reader" data-theme="dark"><p class="reader-loading">Opening the book…</p></div>`;
   const stale = () => !isCurrent();
-  const book = await api(`/books/${bookId}`);
+  const kept = await offline.record(bookId);
+  let book;
+  try {
+    book = await api(`/books/${bookId}`);
+  } catch (e) {
+    if (!offline.unreachable(e) || !kept || !kept.complete) throw e;
+    offline.setOffline(true);
+    book = kept.book;
+  }
   if (stale()) return () => {};
-  const wanted = Number(params.get("file")) || (book.progress && book.progress.file_id);
+  const wanted = (offline.isOffline() && kept && kept.fileId) || Number(params.get("file")) || (book.progress && book.progress.file_id);
   const file = book.files.find((f) => f.id === wanted && f.readable)
     || book.files.find((f) => f.readable === "pages") || book.files.find((f) => f.readable);
   if (!file) {
@@ -60,13 +69,24 @@ export async function renderReader(app, bookId, params, isCurrent = () => true) 
   try {
     manifest = await api(flowing ? `/files/${file.id}/flow` : `/files/${file.id}/manifest`);
   } catch (e) {
-    if (!stale()) unreadableCard(app, book, e.message);
-    return () => {};
+    if (offline.unreachable(e) && kept && kept.complete && kept.fileId === file.id) {
+      offline.setOffline(true);
+      manifest = kept.manifest;
+    } else {
+      if (!stale()) unreadableCard(app, book, e.message);
+      return () => {};
+    }
   }
+  // A downloaded book reads from this device (quicker, and the same with no connection), unless
+  // it has changed on the server since it was downloaded.
+  const stored = kept && kept.complete && kept.fileId === file.id && kept.version === manifest.version ? kept : null;
   const prefs = await loadPrefs();
   if (stale()) return () => {};
   const Cls = flowing ? FlowReaderClass : Reader;
   const r = new Cls(app, book, file, manifest, prefs.reading);
+  r.stored = stored;
+  if (stored && !flowing) r.storedPages = await offline.pageUrls(book.id, file.id, manifest.version);
+  if (stale()) return () => {};
   const fromLink = params.get("page");
   const progress = book.progress && book.progress.file_id === file.id ? book.progress : null;
   r.open(fromLink !== null ? Number(fromLink) : progress ? progress.page : 0, fromLink !== null ? null : progress);
@@ -101,6 +121,7 @@ export class Reader {
   pageOf(leaf) { return this.rtl ? Math.min(this.count - 1, this.leaves - 1 - leaf) : leaf; }
 
   src(i, cssWidth) {
+    if (this.storedPages && this.storedPages[i]) return this.storedPages[i];
     return `/api/files/${this.file.id}/pages/${i}?w=${snap(cssWidth * (devicePixelRatio || 1))}&v=${this.m.version}`;
   }
 
@@ -300,11 +321,10 @@ export class Reader {
     clearTimeout(this.saveTimer);
     if (!this.dirty) return;  // nothing read since the last save: never overwrite another device's place
     this.dirty = false;
-    const body = JSON.stringify({ ...this.progressBody(), at: this.pageAt });
-    fetch(`/api/books/${this.book.id}/progress`, {
-      method: "PUT", body, keepalive: leaving, credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-    }).then((r) => { if (!r.ok) this.dirty = true; }).catch(() => { this.dirty = true; });
+    // Sent with the time it was read, so a save that arrives late (kept while offline) never
+    // overwrites reading done since on another device.
+    offline.send("PUT", `/books/${this.book.id}/progress`, { ...this.progressBody(), at: this.pageAt })
+      .then((r) => { if (r && !r.ok) this.dirty = true; }).catch(() => { this.dirty = true; });
   }
 
   progressBody() {
@@ -394,7 +414,7 @@ export class Reader {
   zoom() {
     if (this.zoomView) return;
     this.zoomView = openZoom({
-      src: (i) => `/api/files/${this.file.id}/pages/${i}?w=2400&v=${this.m.version}`,
+      src: (i) => (offline.isOffline() && this.storedPages ? this.storedPages[i] : `/api/files/${this.file.id}/pages/${i}?w=2400&v=${this.m.version}`),
       index: this.page, count: this.count, rtl: this.rtl,
       onClose: (i) => { this.zoomView = null; if (i !== this.page) this.goTo(i); },
     });
@@ -429,9 +449,40 @@ export class Reader {
   // ---------- contents and bookmarks ----------
 
   async loadBookmarks() {
-    this.bookmarks = (await api(`/books/${this.book.id}/bookmarks`).catch(() => []))
-      .filter((b) => b.file_id === this.file.id);
+    let marks;
+    try {
+      marks = await api(`/books/${this.book.id}/bookmarks`);
+      if (this.stored) offline.refreshBook(this.book, marks);
+    } catch {
+      marks = this.stored ? this.stored.bookmarks || [] : [];
+    }
+    this.bookmarks = marks.filter((b) => b.file_id === this.file.id);
     this.markBookmarkButton();
+  }
+
+  // Add or take away a bookmark; with no connection, kept on this device and sent later.
+  async addBookmark() {
+    const body = this.bookmarkBody();
+    const tag = `local-${Date.now()}`;
+    const r = await offline.send("POST", `/books/${this.book.id}/bookmarks`, body, tag);
+    if (r && !r.ok) throw new Error("That bookmark wasn’t saved");
+    const mark = r ? await r.json() : { ...body, id: tag, note: "", created_at: Date.now() / 1000 };
+    this.bookmarks.push(mark);
+    this.keepBookmarks();
+  }
+
+  async removeBookmark(b) {
+    if (String(b.id).startsWith("local-")) await offline.forget(String(b.id));
+    else {
+      const r = await offline.send("DELETE", `/bookmarks/${b.id}`);
+      if (r && !r.ok && r.status !== 404) throw new Error("That bookmark wasn’t removed");
+    }
+    this.bookmarks = this.bookmarks.filter((m) => m !== b);
+    this.keepBookmarks();
+  }
+
+  keepBookmarks() {
+    if (this.stored) offline.refreshBook(this.book, this.bookmarks);
   }
 
   visiblePages() {
@@ -458,11 +509,9 @@ export class Reader {
   async toggleBookmark() {
     const here = this.bookmarks.filter((b) => this.visiblePages().includes(this.bookmarkPage(b)));
     if (here.length) {
-      await Promise.all(here.map((b) => api(`/bookmarks/${b.id}`, { method: "DELETE" })));
-      this.bookmarks = this.bookmarks.filter((b) => !here.includes(b));
+      for (const b of here) await this.removeBookmark(b);
     } else {
-      const mark = await api(`/books/${this.book.id}/bookmarks`, { method: "POST", body: this.bookmarkBody() });
-      this.bookmarks.push(mark);
+      await this.addBookmark();
       this.bookmarks.sort((a, b) => this.bookmarkPage(a) - this.bookmarkPage(b));
     }
     this.markBookmarkButton();
@@ -487,8 +536,8 @@ export class Reader {
       this.closePanels();
     }));
     panel.querySelectorAll("[data-unmark]").forEach((b) => b.addEventListener("click", async () => {
-      await api(`/bookmarks/${b.dataset.unmark}`, { method: "DELETE" });
-      this.bookmarks = this.bookmarks.filter((m) => String(m.id) !== b.dataset.unmark);
+      const mark = this.bookmarks.find((m) => String(m.id) === b.dataset.unmark);
+      if (mark) await this.removeBookmark(mark);
       this.markBookmarkButton();
       this.drawContents(panel);
     }));

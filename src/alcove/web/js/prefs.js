@@ -2,9 +2,20 @@
 import { api } from "./api.js";
 
 let cache = null;
+const KEPT = "alcove-settings";  // the last settings seen, for opening downloaded books offline
 
 export async function loadPrefs(force = false) {
-  if (!cache || force) cache = await api("/settings");
+  if (!cache || force) {
+    try {
+      cache = await api("/settings");
+      try { localStorage.setItem(KEPT, JSON.stringify(cache)); } catch { /* private window */ }
+    } catch (e) {
+      let kept = null;
+      try { kept = JSON.parse(localStorage.getItem(KEPT) || "null"); } catch { /* none */ }
+      if (!kept || e.status) throw e;  // only stand in when the server couldn't be reached
+      cache = kept;
+    }
+  }
   return cache;
 }
 

@@ -4,7 +4,7 @@ import { coverHTML } from "./cover.js";
 
 const PAGE = 60;
 
-function gridItem(book) {
+export function gridItem(book) {
   return `<li><a href="#/book/${book.id}" class="grid-link">
     ${coverHTML(book, 240)}
     <span class="shelf-title">${esc(book.title)}</span>
