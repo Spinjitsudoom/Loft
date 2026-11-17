@@ -193,9 +193,9 @@ scanner was considered and left out for now.
 
 1. **Library** (done): server, config, accounts, folder scan, Calibre import, covers, cover-wall
    library, book page, search.
-2. **Reader for PDF and comics:** page images, paper curl, zoom, controls, themes, progress,
+2. **Reader for PDF and comics** (done): page images, paper curl, zoom, controls, themes, progress,
    bookmarks, "Continue reading" on the home screen, and **your settings** (account, reading, look).
-3. **EPUB and the other formats:** EPUB pagination and curl, MOBI/AZW3/FB2/TXT conversion, DRM flag.
+3. **EPUB and the other formats** (done): EPUB pagination and curl, MOBI/AZW3/FB2/TXT conversion, DRM flag.
 4. **Adding and editing books** (done): edit on the book page, uploads, Open Library lookup, shelves,
    **library settings** and the **library check**.
 5. **Members:** sign-up requests, submissions (details required) and the approval queue, requests
