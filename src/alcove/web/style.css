@@ -992,3 +992,5 @@ body.arranging { overflow: hidden; }
 @media (max-width: 600px) { .fill-search { grid-template-columns: 1fr; } }
 .check-link + .check-link { margin-top: 8px; }
 .home-more { display: flex; justify-content: center; margin: 32px var(--gutter) 56px; }
+/* On a phone the top bar keeps what's used most; Sign out is in Your settings → Account. */
+@media (max-width: 560px) { .topbar-signout { display: none; } }

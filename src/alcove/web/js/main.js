@@ -41,7 +41,7 @@ function topbar(query = "") {
       <a class="icon-btn" href="#/settings" title="Your settings" aria-label="Your settings">${icon("person")}</a>
       <a class="icon-btn" href="#/add" title="${state.me && state.me.admin ? "Add books" : "Submit or request books"}" aria-label="${state.me && state.me.admin ? "Add books" : "Submit or request books"}">${icon("plus")}</a>
       ${state.me && state.me.admin ? `<a class="icon-btn" href="#/admin" title="Library settings" aria-label="Library settings">${icon("gear")}</a>` : ""}
-      <button class="icon-btn" type="button" data-signout title="Sign out" aria-label="Sign out">${icon("out")}</button>
+      <button class="icon-btn topbar-signout" type="button" data-signout title="Sign out" aria-label="Sign out">${icon("out")}</button>
     </nav>
   </header>`;
 }

@@ -82,10 +82,17 @@ export async function renderSettings(main) {
       <h3>Other devices</h3>
       <p class="muted">Signs you out everywhere except here: useful after using a shared or lost device.</p>
       <button class="btn" type="button" data-signout-others style="margin-top:12px">Sign out on other devices</button>
+      <h3>This device</h3>
+      <button class="btn" type="button" data-signout-here style="margin-top:12px">Sign out</button>
     </section>
   </section>`;
 
   wireSettingsSection(main);
+  main.querySelector("[data-signout-here]").addEventListener("click", async () => {
+    await api("/logout", { method: "POST" }).catch(() => {});
+    state.me = null;
+    location.hash = "#/login";
+  });
   main.querySelector("[data-change-server]")?.addEventListener("click", () => (window.AlcoveAndroid || window.AlcoveDesktop).changeServer());
   const save = async (patch) => {
     try { await patchPrefs(patch); saved(); renderSettings(main); }
