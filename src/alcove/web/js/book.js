@@ -7,6 +7,7 @@ import { shelfButtonHTML, wireShelfMenu } from "./shelfmenu.js";
 import { state } from "./main.js";
 import { wireDownload } from "./downloads.js";
 import { wireDiscussion } from "./discussion.js";
+import { searchTitle } from "./titles.js";
 
 function size(bytes) {
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
@@ -170,7 +171,7 @@ function renderEditor(main, b, coversFirst) {
 
   main.querySelector("[data-fill]").addEventListener("click", () => {
     const d = readDetails(form);
-    showLookup(main.querySelector("[data-fill-picks]"), { title: d.title, author: d.authors[0] || "", comic }, async (c) => {
+    showLookup(main.querySelector("[data-fill-picks]"), { title: searchTitle(d.title), author: d.authors[0] || "", comic }, async (c) => {
       await fillEmpty(form, c);
       main.querySelector("[data-fill-picks]").hidden = true;
     });
@@ -190,7 +191,7 @@ function renderEditor(main, b, coversFirst) {
   main.querySelector("[data-cover-find]").addEventListener("click", () => {
     const d = readDetails(form);
     coverError.hidden = true;
-    showLookup(main.querySelector("[data-cover-picks]"), { title: d.title, author: d.authors[0] || "", comic }, async (c) => {
+    showLookup(main.querySelector("[data-cover-picks]"), { title: searchTitle(d.title), author: d.authors[0] || "", comic }, async (c) => {
       try { showCover(await api(`/books/${b.id}/cover/lookup`, { method: "POST", body: { url: c.cover_url } })); }
       catch (err) { fail(coverError, err.message); }
     }, { covers: true });

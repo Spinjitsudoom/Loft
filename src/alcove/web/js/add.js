@@ -9,6 +9,7 @@ import { coverHTML, generatedStyle } from "./cover.js";
 import { clearErrors, detailFields, fillEmpty, readDetails, showError, showLookup } from "./edit.js";
 import { state } from "./main.js";
 import { renderRequests } from "./requests.js";
+import { searchTitle } from "./titles.js";
 
 const PAGE_FORMATS = ["pdf", "cbz", "cbr", "cb7"];
 
@@ -225,7 +226,7 @@ function review(li, draft, mode, sub = null) {
   });
   form.querySelector("[data-fill]").addEventListener("click", () => {
     const d = readDetails(form);
-    showLookup(form.querySelector(".lookup"), { title: d.title, author: d.authors[0] || "", isbn: draft.isbn, comic: draft.has_pages }, async (c) => {
+    showLookup(form.querySelector(".lookup"), { title: searchTitle(d.title), author: d.authors[0] || "", isbn: draft.isbn, comic: draft.has_pages }, async (c) => {
       await fillEmpty(form, c);
       if (!draft.has_cover && c.cover_url) {
         coverUrl = c.cover_url;

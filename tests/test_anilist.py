@@ -172,3 +172,22 @@ def test_lookup_route_asks_anilist_for_comics(client, cfg, net):
     answers["anilist"] = OSError("down")
     r = client.get("/api/lookup?title=Uzumaki&comic=true")
     assert r.status_code == 502 and "by hand" in r.json()["detail"]
+
+
+def test_matches_in_your_language_with_a_description_come_first(cfg, net, monkeypatch):
+    from alcove import googlebooks
+    monkeypatch.setattr(googlebooks, "key", lambda c: "k")
+    gb = [
+        {"source": "Google Books", "title": "Revelations", "language": "it", "description": ""},
+        {"source": "Google Books", "title": "Revelaciones", "language": "es", "description": "Ezio…"},
+        {"source": "Google Books", "title": "Revelations", "language": "en", "description": ""},
+        {"source": "Google Books", "title": "Book 4", "language": "en", "description": "Ezio…"},
+    ]
+    monkeypatch.setattr(googlebooks, "search", lambda c, **q: [dict(x) for x in gb])
+    _, answers = net
+    answers["openlibrary"] = {"docs": [{"title": "Revelations", "language": ["eng"]}]}
+    found = lookups.search(cfg, title="Revelations", lang="en-GB")
+    assert [(c["source"], c["title"], c["language"]) for c in found] == [
+        ("Google Books", "Book 4", "en"), ("Google Books", "Revelations", "en"),
+        ("Google Books", "Revelaciones", "es"), ("Google Books", "Revelations", "it"),
+        ("Open Library", "Revelations", "en")]   # Open Library's "eng" is said the same way as the others

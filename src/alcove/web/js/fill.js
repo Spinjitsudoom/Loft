@@ -5,11 +5,11 @@ import { api, authorLine, esc } from "./api.js";
 import { coverHTML } from "./cover.js";
 import { showLookup } from "./edit.js";
 import { saved } from "./settings.js";
-import { searchTitle } from "./titles.js";
+import { searchTitle, seriesFromTitle } from "./titles.js";
 
 const KINDS = { no_tags: "Books with no tags", no_cover: "Books with no cover" };
 const FIELD_NAMES = { tags: "tags", description: "description", publisher: "publisher", published: "date",
-  language: "language", authors: "author" };
+  language: "language", authors: "author", series: "series", series_index: "number" };
 
 
 // What a match adds to a book: only the details it doesn't have yet.
@@ -18,6 +18,10 @@ async function additions(b, c) {
   if (!b.tags.length && c.tags && c.tags.length) patch.tags = c.tags;
   if (!b.authors.length && c.authors && c.authors.length) patch.authors = c.authors;
   for (const k of ["publisher", "published", "language"]) if (!b[k] && c[k]) patch[k] = c[k];
+  if (!b.series) {
+    const s = seriesFromTitle(b.title) || seriesFromTitle(c.title);
+    if (s) { patch.series = s.series; patch.series_index = s.index; }
+  }
   if (!b.description) {
     let text = c.description || "";
     if (!text && c.key) text = (await api(`/lookup/description?key=${encodeURIComponent(c.key)}`).catch(() => ({}))).description || "";
