@@ -11,6 +11,7 @@ const GROUPS = {
   calibre_missing: ["Files Calibre lists that aren’t there", "Calibre’s library mentions these files, but they’re missing from the folder."],
   no_cover: ["No cover", "Alcove draws a cover from the title; find a real one or upload a picture."],
   no_author: ["No author", "Add who wrote them, so they shelve and search properly."],
+  no_tags: ["No tags", "Tags put a book in a section of the stacks; without any it stands in Other. Edit, then Look up details, or add a few by hand."],
   filename_title: ["Titles taken from the file name", "These files had no title of their own. Check they read right."],
   duplicate: ["Possibly the same book twice", "Same title and author. Make them one book (both files are kept), or keep both."],
   series_gap: ["Gaps in a series", "Numbers missing from a series you have."],

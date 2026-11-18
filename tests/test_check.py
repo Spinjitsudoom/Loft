@@ -145,3 +145,14 @@ def test_check_routes(client, cfg):
     client.post("/api/login", json={"username": "sam", "password": "samsamsam"})
     assert client.get("/api/check").status_code == 403
     assert client.post(f"/api/books/{a}/merge", json={"other": a}).status_code == 403
+
+
+def test_books_with_no_tags(cfg, add):
+    # Untagged books can't be shelved in a section, so the stacks put them in Other.
+    tagged = add("Tagged", tags=["Fantasy"])
+    bare = add("Bare")
+    no_tags = {i["book"]["id"] for i in items(cfg, "no_tags")}
+    assert bare in no_tags and tagged not in no_tags
+    check.ignore(cfg, "no_tags", str(bare))
+    assert bare not in {i["book"]["id"] for i in items(cfg, "no_tags")}
+    assert [x["label"] for x in check.list_ignored(cfg) if x["kind"] == "no_tags"] == ["Bare"]

@@ -23,7 +23,7 @@ from .scanner import last_report
 log = logging.getLogger(__name__)
 
 KINDS = ("damaged", "protected", "unreachable_folder", "unreadable_folder", "calibre_missing",
-         "no_cover", "no_author", "filename_title", "duplicate", "series_gap")
+         "no_cover", "no_author", "no_tags", "filename_title", "duplicate", "series_gap")
 MAX_MISSING = 50
 ARTICLE = re.compile(r"^(the|a|an)\s+")
 
@@ -105,6 +105,7 @@ def problems(cfg: Config) -> dict:
         for kind, test in (
                 ("no_cover", lambda r: not r["has_cover"]),
                 ("no_author", lambda r: not json.loads(r["authors"] or "[]")),
+                ("no_tags", lambda r: not json.loads(r["tags"] or "[]")),  # they can only stand in Other
                 ("filename_title", lambda r: r["title_from_name"] == 1 and "title" not in json.loads(r["locked"] or "[]"))):
             items += [{"kind": kind, "key": str(card["id"]), "book": card} for card, r in ordered if test(r)]
 
@@ -162,7 +163,7 @@ def list_ignored(cfg: Config) -> list[dict]:
             return row["title"] if row else ""
 
         def label(kind: str, key: str) -> str:
-            if kind in ("no_cover", "no_author", "filename_title") and key.isdigit():
+            if kind in ("no_cover", "no_author", "no_tags", "filename_title") and key.isdigit():
                 return title(int(key))
             if kind in ("damaged", "protected") and key.isdigit():
                 row = con.execute("SELECT book_id FROM book_files WHERE id = ?", (int(key),)).fetchone()
