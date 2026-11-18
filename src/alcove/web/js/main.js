@@ -184,6 +184,17 @@ window.addEventListener("offline-changed", (e) => {
 });
 window.addEventListener("online", () => { if (offline.isOffline()) window.dispatchEvent(new CustomEvent("offline-changed", { detail: { offline: true } })); });
 
+// Covers of books kept on this device get a small mark (on the shelves and in grids).
+async function markKept(root = document) {
+  try {
+    const kept = await offline.keptIds();
+    root.querySelectorAll(".book[data-book]").forEach((el) => el.classList.toggle("is-kept", kept.has(Number(el.dataset.book))));
+  } catch { /* storage unavailable: no marks */ }
+}
+window.addEventListener("downloads-changed", () => markKept());
+new MutationObserver(() => { clearTimeout(markKept.t); markKept.t = setTimeout(() => markKept(), 120); })
+  .observe(app, { childList: true, subtree: true });
+
 // New notifications show on the bell within a minute.
 setInterval(() => { if (state.me && !offline.isOffline() && document.visibilityState === "visible") refreshBell(); }, 60000);
 

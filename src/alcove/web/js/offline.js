@@ -86,6 +86,11 @@ export async function list() {
   } catch { return []; }
 }
 
+// The books downloaded (complete) for this account, for marking their covers.
+export async function keptIds() {
+  return new Set((await list()).filter((r) => r.complete).map((r) => r.bookId));
+}
+
 export async function record(bookId) {
   if (user == null) return null;
   try { return (await get("books", bookKey(bookId))) || null; } catch { return null; }

@@ -23,7 +23,7 @@ export function coverHTML(book, width = 240, extra = "") {
     ? `<img src="${src}" alt="" loading="lazy" decoding="async"
          onerror="this.remove()">`
     : "";
-  return `<div class="book ${extra}" style="${generatedStyle(book.title)}">
+  return `<div class="book ${extra}" data-book="${book.id ?? ""}" style="${generatedStyle(book.title)}">
     <div class="gen" aria-hidden="true"><span class="gen-title">${esc(book.title)}</span><span class="gen-author">${esc(author)}</span></div>
     ${img}
   </div>`;
