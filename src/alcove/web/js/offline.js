@@ -262,6 +262,7 @@ async function fetchAll(bookId) {
     r = await record(bookId);
     if (r) await put("books", { ...r, done, size, complete: true, savedAt: Date.now() });
   } catch (err) {
+    controller.abort();  // one stream failed: stop the others too (the rest is fetched next time)
     if (unreachable(err)) setOffline(true);
     if (!(err && err.name === "AbortError")) {
       window.dispatchEvent(new CustomEvent("download-failed", { detail: { bookId, message: err.message } }));
