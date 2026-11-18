@@ -174,6 +174,18 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
 
     # ---------- signing in ----------
 
+    @app.get("/api/ping")
+    def ping(response: Response):
+        """Says this is an Alcove server: the Android app asks before saving an address. Anyone may ask
+        (from the app's own start page, a different origin), and it says nothing about the library."""
+        from importlib.metadata import PackageNotFoundError, version
+        try:
+            v = version("alcove")
+        except PackageNotFoundError:
+            v = "dev"
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        return {"app": "alcove", "version": v}
+
     @app.get("/api/status")
     def status():
         lib = libsettings.get_library(cfg)

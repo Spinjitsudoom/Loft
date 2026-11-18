@@ -287,3 +287,10 @@ def test_the_sign_in_cookie_is_secure_over_https(app_lib):
     assert "secure" in r.headers["set-cookie"].lower()
     r = app_lib.post("/api/login", json={"username": "admin", "password": "longpassword"})
     assert "secure" not in r.headers["set-cookie"].lower()
+
+
+def test_ping_says_this_is_alcove(app_lib):
+    # The Android app checks the address it's given is an Alcove server before saving it.
+    r = app_lib.get("/api/ping")
+    assert r.status_code == 200 and r.json()["app"] == "alcove" and r.json()["version"]
+    assert r.headers["access-control-allow-origin"] == "*"   # asked from the app's own start page

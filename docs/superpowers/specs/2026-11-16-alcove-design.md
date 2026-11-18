@@ -288,6 +288,12 @@ clean sans for the interface), tests.
     stands in the first section whose tags it has (never two places), else in Other. Until the admin
     saves their own, Alcove suggests sections from the tags the books have (Manga, Graphic novels,
     Children's, Fantasy, Historical, ...). Edited in Library settings.
+- Packaging (2026-11-18, overnight, owner away: "direction is all yours"): Docker image and compose
+  (books folder writable only for adding books in the app; runs as user 1000; unar for CBR),
+  a systemd user service, ALCOVE_CONFIG / ALCOVE_HOST, a secure cookie over https, /api/ping.
+  **Alcove Lite** for Android (android-lite/, built without Gradle like Shelf Lite, package
+  app.alcove.lite): server address screen, the app's files kept for offline opening, file pickers,
+  Save file to Downloads, screen kept on while reading, other sites open in the browser.
 - Manga reading direction is a per-file switch (on the add card and the Pages section of the edit
   page), not a tag rule (owner's request, 2026-11-17).
 - Demoting or promoting an admin takes effect on their next request without signing them out.

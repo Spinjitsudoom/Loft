@@ -17,8 +17,10 @@ export async function renderLogin(app, setup) {
       <p class="form-error" role="alert" hidden></p>
       <button class="btn btn-primary" type="submit">${setup ? "Create admin account" : "Sign in"}</button>
       ${!setup && status.join_requests ? `<p class="signin-join">New here? <button class="link-btn" type="button" data-join>Ask to join</button></p>` : ""}
+      ${window.AlcoveAndroid ? `<p class="signin-join"><button class="link-btn" type="button" data-change-server>Use a different server</button></p>` : ""}
     </form>
   </main>`;
+  app.querySelector("[data-change-server]")?.addEventListener("click", () => window.AlcoveAndroid.changeServer());
   const joinButton = app.querySelector("[data-join]");
   if (joinButton) joinButton.addEventListener("click", () => renderJoin(app, name));
   const form = app.querySelector("form");

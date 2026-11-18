@@ -40,6 +40,15 @@ Then open `http://localhost:4545`. To keep it running and start it with the comp
 **The first person to open a new Alcove makes the admin account.** After that, the admin adds
 people in **Library settings → People**, or lets them ask to join from the sign-in page.
 
+## On Android
+
+**Alcove Lite** (`android-lite/`) is the web app in a small Android shell: it asks once for the
+server's address, then opens straight onto your library. It keeps the app's own files on the phone,
+so with no connection it still opens onto your downloaded books (even over plain http), keeps the
+screen on while you read, lets you pick books from the phone to add or send, and saves files to
+Downloads. Build it with `bash android-lite/build.sh` (needs the Android SDK and a JDK; see the
+script), then install `android-lite/build/alcove-lite.apk`.
+
 ## Away from home
 
 Alcove isn't meant to face the internet. Use [Tailscale](https://tailscale.com): install it on the
