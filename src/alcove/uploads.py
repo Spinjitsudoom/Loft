@@ -29,6 +29,7 @@ from .libsettings import allow_txt, get_library
 from . import pages
 
 MAX_UPLOAD = 2 * 1024**3
+MAX_UNSENT = 20  # a member's uploads not yet sent for approval (admins aren't limited)
 DRAFT_DAYS = 2
 TOKEN = re.compile(r"^[A-Za-z0-9_-]{22}$")
 MAX_NAME = 80
@@ -88,9 +89,12 @@ def check_name(cfg: Config, filename: str) -> str:
     return fmt
 
 
-def new_draft(cfg: Config, filename: str, owner: int | None = None) -> tuple[str, Path]:
-    """A fresh draft folder for an upload; returns its token and where to write the file."""
+def new_draft(cfg: Config, filename: str, owner: int | None = None, limited: bool = False) -> tuple[str, Path]:
+    """A fresh draft folder for an upload; returns its token and where to write the file.
+    `limited`: a member, who can have at most MAX_UNSENT uploads not yet sent."""
     fmt = check_name(cfg, filename)
+    if limited and owner is not None and _unsent(cfg, owner) >= MAX_UNSENT:
+        raise ValueError(f"You have {MAX_UNSENT} uploads not sent yet: send or discard some first")
     token = secrets.token_urlsafe(16)
     folder = _folder(cfg) / token
     folder.mkdir(parents=True)
@@ -101,10 +105,23 @@ def new_draft(cfg: Config, filename: str, owner: int | None = None) -> tuple[str
 
 
 def discard(cfg: Config, token: str, user=None) -> None:
+    """Throw a draft away. Someone's (with `user`) can't be one sent for approval: that goes through
+    Decline or Take back, so its place in the queue goes with it."""
     folder = _draft(cfg, token, user)
-    if user is not None and not user.admin and json.loads((folder / "draft.json").read_text()).get("submitted"):
-        raise ValueError("That’s been sent for approval; take the submission back instead")
+    if user is not None and json.loads((folder / "draft.json").read_text()).get("submitted"):
+        raise ValueError("That’s been sent for approval: decline it, or take it back, instead")
     shutil.rmtree(folder, ignore_errors=True)
+
+
+def _unsent(cfg: Config, owner: int) -> int:
+    count = 0
+    for draft in _folder(cfg).glob("*/draft.json") if _folder(cfg).is_dir() else []:
+        try:
+            info = json.loads(draft.read_text())
+        except (OSError, ValueError):
+            continue
+        count += info.get("owner") == owner and not info.get("submitted")
+    return count
 
 
 def _same_as(cfg: Config, title: str, authors: list[str]) -> list[dict]:
@@ -137,8 +154,8 @@ def read_draft(cfg: Config, token: str, user=None) -> dict:
             "same_as": _same_as(cfg, meta.title, meta.authors)}
 
 
-def start(cfg: Config, filename: str, chunks: Iterable[bytes], owner: int | None = None) -> dict:
-    token, path = new_draft(cfg, filename, owner)
+def start(cfg: Config, filename: str, chunks: Iterable[bytes], owner: int | None = None, limited: bool = False) -> dict:
+    token, path = new_draft(cfg, filename, owner, limited)
     try:
         size = 0
         with path.open("wb") as f:

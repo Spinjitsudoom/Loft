@@ -113,8 +113,15 @@ export async function pageUrls(bookId, fileId, version) {
   const r = await record(bookId);
   if (!r || !r.complete || r.fileId !== fileId || r.version !== version) return null;
   try {
+    // One read for the whole book (a big comic has hundreds of pages), then a URL for each page.
+    const rows = await run("blobs", "readonly", (st) => asPromise(st.getAll(fileRange(fileId))));
+    const byKey = new Map(rows.map((row) => [row.key, row.blob]));
     const urls = [];
-    for (let i = 0; i < r.manifest.count; i += 1) urls.push(await blobUrl(`${fileId}:p${i}`));
+    for (let i = 0; i < r.manifest.count; i += 1) {
+      const key = `${fileId}:p${i}`;
+      if (!urlCache.has(key) && byKey.has(key)) urlCache.set(key, URL.createObjectURL(byKey.get(key)));
+      urls.push(urlCache.get(key) || null);
+    }
     return urls.every(Boolean) ? urls : null;
   } catch { return null; }
 }

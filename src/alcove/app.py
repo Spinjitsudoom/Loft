@@ -439,7 +439,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     async def upload(request: Request, name: str = "", user: User = Depends(current_user)):
         """Admins add books; members send them for approval (submissions). Either way a draft first."""
         try:
-            token, path = await run_in_threadpool(uploads.new_draft, cfg, name, user.id)
+            token, path = await run_in_threadpool(uploads.new_draft, cfg, name, user.id, not user.admin)
         except ValueError as e:
             raise HTTPException(400, str(e))
         size = 0

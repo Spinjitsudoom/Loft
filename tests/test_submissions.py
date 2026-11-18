@@ -126,3 +126,25 @@ def test_submission_routes(client, tmp_path, make_epub):
     assert client.get(f"/api/books/{r.json()['book_id']}").json()["title"] == "Fresh"
     assert sam.get("/api/submissions/mine").json()[0]["status"] == "approved"
     assert client.post(f"/api/submissions/{waiting[0]['id']}/decline", json={"reason": "x"}).status_code == 400
+
+
+def test_a_waiting_submission_is_only_declined_or_taken_back(cfg, tmp_path, make_epub, people):
+    admin, sam = people
+    draft = uploads.start(cfg, "Tale.epub", [epub(tmp_path, make_epub)], owner=sam.id)
+    submissions.submit(cfg, sam, draft["token"], DETAILS)
+    for who in (admin, sam):
+        with pytest.raises(ValueError):
+            uploads.discard(cfg, draft["token"], user=who)
+    assert (cfg.data_dir / "uploads" / draft["token"]).exists()
+
+
+def test_members_have_a_limit_on_unsent_uploads(cfg, tmp_path, make_epub, people, monkeypatch):
+    admin, sam = people
+    monkeypatch.setattr(uploads, "MAX_UNSENT", 2)
+    data = epub(tmp_path, make_epub)
+    uploads.start(cfg, "a.epub", [data], owner=sam.id, limited=True)
+    uploads.start(cfg, "b.epub", [data], owner=sam.id, limited=True)
+    with pytest.raises(ValueError, match="send or discard"):
+        uploads.start(cfg, "c.epub", [data], owner=sam.id, limited=True)
+    for name in ("d.epub", "e.epub", "f.epub"):  # admins adding a pile of books aren't limited
+        uploads.start(cfg, name, [data], owner=admin.id)
