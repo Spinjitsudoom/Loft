@@ -49,6 +49,15 @@ screen on while you read, lets you pick books from the phone to add or send, and
 Downloads. Build it with `bash android-lite/build.sh` (needs the Android SDK and a JDK; see the
 script), then install `android-lite/build/alcove-lite.apk`.
 
+## On a computer
+
+**Alcove for Windows, macOS and Linux** (`desktop/`) is the web app in its own window (Electron),
+like Shelf's. It asks once for the server's address, opens straight onto it after that, and from
+the second start opens with no connection too, onto your downloaded books. **Change server** is
+in its menu (Alt shows it) and in Your settings. To run it: `cd desktop && npm install &&
+node node_modules/electron/install.js && npm start`; to package it: `npm run dist:deb` (or
+`dist:win`, `dist:mac`).
+
 ## Away from home
 
 Alcove isn't meant to face the internet. Use [Tailscale](https://tailscale.com): install it on the

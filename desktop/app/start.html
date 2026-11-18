@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Alcove</title>
+<style>
+  :root { --bg: #14110f; --raised: #1f1a17; --line: #2a2420; --ink: #e8e0d6; --muted: #9a8f84; --brass: #c9a27a; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { min-height: 100%; display: grid; place-items: center; padding: 24px 16px; }
+  form { width: min(380px, 100%); display: flex; flex-direction: column; gap: 10px; }
+  h1 { margin: 10px 0 2px; font: italic 600 40px/1.1 Georgia, "Noto Serif", serif; letter-spacing: -.01em; }
+  .lead { margin: 0 0 14px; color: var(--muted); }
+  label { font-size: 14px; color: var(--muted); }
+  input { height: 52px; padding: 0 14px; border: 1px solid var(--line); border-radius: 10px; outline: none; color: var(--ink);
+    background: var(--raised); font: inherit; font-size: 17px; }
+  input:focus { border-color: var(--brass); }
+  .hint { margin: 0; color: var(--muted); font-size: 14px; }
+  .error { margin: 4px 0 0; color: #f0b4a4; font-size: 14.5px; min-height: 1.4em; }
+  button { height: 52px; border: 0; border-radius: 999px; background: var(--brass); color: #1b140e;
+    font: inherit; font-weight: 600; font-size: 16px; }
+  button:disabled { opacity: .6; }
+</style>
+</head>
+<body>
+<main>
+  <form id="f" novalidate>
+    <img src="icon.svg" alt="" width="60" height="60">
+    <h1>Alcove</h1>
+    <p class="lead">Connect to the Alcove server with your books.</p>
+    <label for="server">Server address</label>
+    <input id="server" type="url" inputmode="url" autocomplete="url" autocapitalize="off" spellcheck="false" placeholder="192.168.1.20:4545">
+    <p class="hint">The address you open Alcove at in a browser, like <b>192.168.1.20:4545</b>.</p>
+    <p class="error" id="error" role="alert"></p>
+    <button type="submit" id="go">Connect</button>
+  </form>
+</main>
+<script>
+  // The desktop app checks the address itself (main.js), so no browser rules get in the way.
+  var input = document.getElementById("server"), error = document.getElementById("error"), go = document.getElementById("go");
+  var q = new URLSearchParams(location.search);
+  input.value = q.get("server") || "";
+  if (q.get("error")) error.textContent = q.get("error");
+  document.getElementById("f").addEventListener("submit", function (e) {
+    e.preventDefault();
+    error.textContent = "";
+    go.disabled = true; go.textContent = "Connecting…";
+    AlcoveDesktop.connect(input.value).then(function (problem) {
+      if (!problem) return;
+      error.textContent = problem;
+      go.disabled = false; go.textContent = "Connect";
+    });
+  });
+  if (!input.value) input.focus();
+</script>
+</body>
+</html>

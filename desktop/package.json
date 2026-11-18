@@ -1,0 +1,35 @@
+{
+  "name": "alcove-desktop",
+  "productName": "Alcove",
+  "version": "0.1.0",
+  "description": "Alcove for Windows, macOS and Linux. Opens your Alcove library.",
+  "license": "AGPL-3.0-or-later",
+  "private": true,
+  "main": "app/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win nsis --publish never",
+    "dist:mac": "electron-builder --mac dmg --publish never",
+    "dist:deb": "electron-builder --linux deb --publish never",
+    "dist:dir": "electron-builder --linux dir --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.9.3",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "app.alcove.desktop",
+    "productName": "Alcove",
+    "executableName": "alcove",
+    "artifactName": "Alcove-${version}-${os}-${arch}.${ext}",
+    "directories": { "output": "dist" },
+    "files": ["app/**", "package.json"],
+    "win": { "target": "nsis", "icon": "app/icon.png" },
+    "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true,
+              "shortcutName": "Alcove", "artifactName": "Alcove-Setup-${version}.${ext}" },
+    "mac": { "category": "public.app-category.books", "icon": "app/icon.png" },
+    "linux": { "icon": "app/icon.png", "category": "Office", "synopsis": "Your Alcove ebook library",
+               "desktop": { "entry": { "Keywords": "books;ebooks;comics;reader;library;", "Categories": "Office;Viewer;" } } },
+    "deb": { "artifactName": "alcove_${version}_${arch}.${ext}" }
+  }
+}

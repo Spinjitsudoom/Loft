@@ -294,6 +294,10 @@ clean sans for the interface), tests.
   **Alcove Lite** for Android (android-lite/, built without Gradle like Shelf Lite, package
   app.alcove.lite): server address screen, the app's files kept for offline opening, file pickers,
   Save file to Downloads, screen kept on while reading, other sites open in the browser.
+- Desktop (same night): desktop/, an Electron window like Shelf's, without the music parts or the
+  updater. Offline opening over plain http: the saved server's address is treated as secure
+  (Chromium's unsafely-treat-insecure-origin-as-secure), so the web app's service worker can keep
+  it, from the second start. Cookies are saved on quit and on a terminate signal.
 - Manga reading direction is a per-file switch (on the add card and the Pages section of the edit
   page), not a tag rule (owner's request, 2026-11-17).
 - Demoting or promoting an admin takes effect on their next request without signing them out.

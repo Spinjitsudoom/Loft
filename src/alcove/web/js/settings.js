@@ -64,9 +64,9 @@ export async function renderSettings(main) {
     </section>
 
     ${await settingsSection()}
-    ${window.AlcoveAndroid ? `<section class="settings-section">
+    ${(window.AlcoveAndroid || window.AlcoveDesktop) ? `<section class="settings-section">
       <h2>This app</h2>
-      <p class="muted">Connected to <code>${esc(window.AlcoveAndroid.getServer().replace(/^https?:\/\//, ""))}</code>.</p>
+      <p class="muted">Connected to <code>${esc((window.AlcoveAndroid || window.AlcoveDesktop).getServer().replace(/^https?:\/\//, ""))}</code>.</p>
       <button class="btn" type="button" data-change-server>Change server</button>
     </section>` : ""}
 
@@ -86,7 +86,7 @@ export async function renderSettings(main) {
   </section>`;
 
   wireSettingsSection(main);
-  main.querySelector("[data-change-server]")?.addEventListener("click", () => window.AlcoveAndroid.changeServer());
+  main.querySelector("[data-change-server]")?.addEventListener("click", () => (window.AlcoveAndroid || window.AlcoveDesktop).changeServer());
   const save = async (patch) => {
     try { await patchPrefs(patch); saved(); renderSettings(main); }
     catch (e) { saved(e.message); }
