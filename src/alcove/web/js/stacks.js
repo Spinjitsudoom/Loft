@@ -3,6 +3,7 @@
 // on a phone its filters fold behind one button. Tap a spine and the book slides out.
 import { api, authorLine, esc, seriesLine } from "./api.js";
 import { coverHTML } from "./cover.js";
+import { spineTitle } from "./titles.js";
 
 const KEPT = "alcove-stacks";
 const BY = [["series", "Series"], ["section", "Sections"], ["author", "Authors"]];
@@ -43,28 +44,6 @@ function thickness(b) {
   return Math.round(Math.min(40, Math.max(14, 14 + Math.log2(Math.max(1, mb)) * 4)));
 }
 
-// Inside a series' case the spine needn't repeat the series: "Assassin's Creed: Brotherhood" → "Brotherhood".
-function spineTitle(b, inSeries) {
-  if (!inSeries || !b.series) return b.title;
-  // Match the series at the start of the title letter by letter, ignoring punctuation and spaces:
-  // "Avatar: The Last Airbender - North and South" starts with "Avatar: The Last Airbender: North and South".
-  const want = b.series.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
-  let i = 0, got = "";
-  const title = b.title;
-  while (i < title.length && got.length < want.length) {
-    const ch = title[i].toLowerCase();
-    if (/[\p{L}\p{N}]/u.test(ch)) {
-      if (ch !== want[got.length]) return b.title;
-      got += ch;
-    }
-    i += 1;
-  }
-  if (got !== want) return b.title;
-  const rest = title.slice(i).replace(/^[\s:.,#–—-]+/, "");
-  // Only a number left: like a numbered volume, the spine shows the series (the number sits below).
-  if (!rest || /^(no\.?\s*|vol(ume)?\.?\s*|#)?\d+(\.\d+)?$/i.test(rest)) return b.series;
-  return rest;
-}
 
 const number = (i) => (i == null ? "" : String(i).replace(/\.0$/, ""));
 

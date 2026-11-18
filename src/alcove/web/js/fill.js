@@ -5,22 +5,12 @@ import { api, authorLine, esc } from "./api.js";
 import { coverHTML } from "./cover.js";
 import { showLookup } from "./edit.js";
 import { saved } from "./settings.js";
+import { searchTitle } from "./titles.js";
 
 const KINDS = { no_tags: "Books with no tags", no_cover: "Books with no cover" };
 const FIELD_NAMES = { tags: "tags", description: "description", publisher: "publisher", published: "date",
   language: "language", authors: "author" };
 
-// A title as files leave it ("#04 Assassin's Creed - Revelations (90)") made fit to search for.
-export function searchTitle(title) {
-  return String(title || "")
-    .replace(/_\s/g, ": ")                             // files can't hold ":", so "Avatar_ The…" was "Avatar: The…"
-    .replace(/_+/g, " ")
-    .replace(/^\s*#?\d+\s*[-.:)]?\s+(?=\D)/, "")   // a leading "#04 " or "12 - "
-    .replace(/\s*[([]\d+[)\]]\s*$/, "")              // a trailing "(90)"
-    .replace(/\s+[-–—]\s+/g, ": ")                    // "Series - Title" reads "Series: Title"
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
 
 // What a match adds to a book: only the details it doesn't have yet.
 async function additions(b, c) {
