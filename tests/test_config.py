@@ -35,3 +35,16 @@ def test_secret_key_persists(tmp_path, monkeypatch):
     a = load_config(tmp_path / "none.toml")
     b = load_config(tmp_path / "none.toml")
     assert a.secret_key and a.secret_key == b.secret_key
+
+
+def test_config_file_and_host_from_the_environment(tmp_path, monkeypatch):
+    # In a container the settings file lives at a fixed path and Alcove must listen on every address.
+    monkeypatch.setenv("ALCOVE_DATA_DIR", str(tmp_path / "data"))
+    f = tmp_path / "elsewhere.toml"
+    f.write_text('books_dirs = ["/books"]\nhost = "127.0.0.1"\nscan_interval_minutes = 30\n')
+    monkeypatch.setenv("ALCOVE_CONFIG", str(f))
+    cfg = load_config()
+    assert cfg.books_dirs == [Path("/books")] and cfg.scan_interval_minutes == 30 and cfg.host == "127.0.0.1"
+    monkeypatch.setenv("ALCOVE_HOST", "0.0.0.0")
+    assert load_config().host == "0.0.0.0"
+    assert load_config(tmp_path / "none.toml").books_dirs == []   # a path given wins over ALCOVE_CONFIG

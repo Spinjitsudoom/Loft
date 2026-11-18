@@ -49,7 +49,8 @@ def _path(value: str) -> Path:
 
 
 def load_config(path: Path | None = None) -> Config:
-    path = Path(path) if path else Path("config.toml")
+    """Settings from `path`, else the file ALCOVE_CONFIG names, else config.toml here."""
+    path = Path(path) if path else Path(os.environ.get("ALCOVE_CONFIG") or "config.toml").expanduser()
     raw: dict = {}
     if path.is_file():
         with path.open("rb") as f:
@@ -74,6 +75,8 @@ def load_config(path: Path | None = None) -> Config:
         cfg.data_dir = _path(env["ALCOVE_DATA_DIR"])
     if env.get("ALCOVE_PORT"):
         cfg.port = int(env["ALCOVE_PORT"])
+    if env.get("ALCOVE_HOST"):
+        cfg.host = env["ALCOVE_HOST"]
 
     if not cfg.secret_key:
         cfg.secret_key = _stored_secret(cfg.data_dir)

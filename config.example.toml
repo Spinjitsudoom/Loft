@@ -1,5 +1,5 @@
-# Copy to config.toml and edit. Environment variables ALCOVE_BOOKS_DIRS, ALCOVE_DATA_DIR and
-# ALCOVE_PORT override these.
+# Copy to config.toml and edit (or point ALCOVE_CONFIG at a file elsewhere). Environment variables
+# ALCOVE_BOOKS_DIRS, ALCOVE_DATA_DIR, ALCOVE_HOST and ALCOVE_PORT override these.
 
 # Folders containing your books. Subfolders are scanned. Alcove only reads them.
 books_dirs = ["/var/mnt/smb-g/EBooks"]

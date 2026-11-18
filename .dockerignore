@@ -1,0 +1,10 @@
+# Only what the image needs: the code, the lock file and the licence.
+.git
+.venv
+.superpowers
+**/__pycache__
+**/*.pyc
+tests
+docs
+config.toml
+*.db

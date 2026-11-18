@@ -277,3 +277,13 @@ def test_giving_up_your_own_admin_keeps_you_signed_in(client):
     r = client.patch(f"/api/users/{me['id']}", json={"admin": False})
     assert r.status_code == 200 and r.json()["admin"] is False
     assert client.get("/api/me").json()["admin"] is False
+
+
+def test_the_sign_in_cookie_is_secure_over_https(app_lib):
+    # Behind https (tailscale serve, a proxy) the cookie is never sent over plain http.
+    from fastapi.testclient import TestClient
+    https = TestClient(app_lib.app, base_url="https://testserver")
+    r = https.post("/api/setup", json={"username": "admin", "password": "longpassword"})
+    assert "secure" in r.headers["set-cookie"].lower()
+    r = app_lib.post("/api/login", json={"username": "admin", "password": "longpassword"})
+    assert "secure" not in r.headers["set-cookie"].lower()

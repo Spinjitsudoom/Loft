@@ -141,9 +141,11 @@ UNREADABLE = {
 }
 
 
-def _signed_in(cfg: Config, response: Response, user: User) -> dict:
+def _signed_in(cfg: Config, request: Request, response: Response, user: User) -> dict:
     token = auth.make_token(cfg, user)
-    response.set_cookie(auth.COOKIE, token, max_age=auth.MAX_AGE, httponly=True, samesite="lax")
+    # Over https (tailscale serve, a proxy) the cookie is marked so it's never sent over plain http.
+    response.set_cookie(auth.COOKIE, token, max_age=auth.MAX_AGE, httponly=True, samesite="lax",
+                        secure=request.url.scheme == "https")
     return {**user.json(), "token": token}
 
 
@@ -178,14 +180,14 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         return {"setup_needed": not auth.has_users(cfg), "name": lib["name"], "join_requests": lib["join_requests"]}
 
     @app.post("/api/setup")
-    def setup(body: Credentials, response: Response):
+    def setup(body: Credentials, request: Request, response: Response):
         if auth.has_users(cfg):
             raise HTTPException(409, "This library already has an admin")
         try:
             user = auth.create_user(cfg, body.username, body.password, admin=True)
         except ValueError as e:
             raise HTTPException(400, str(e))
-        return _signed_in(cfg, response, user)
+        return _signed_in(cfg, request, response, user)
 
     @app.post("/api/login")
     def login(body: Credentials, request: Request, response: Response):
@@ -193,7 +195,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         user = auth.authenticate(cfg, body.username, body.password, ip)
         if user is None:
             raise HTTPException(401, "That name and password don’t match (or there were too many tries; wait 15 minutes)")
-        return _signed_in(cfg, response, user)
+        return _signed_in(cfg, request, response, user)
 
     @app.post("/api/logout")
     def logout(response: Response):
@@ -205,16 +207,16 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         return user.json()
 
     @app.post("/api/me/password")
-    def change_password(body: PasswordChange, response: Response, user: User = Depends(current_user)):
+    def change_password(body: PasswordChange, request: Request, response: Response, user: User = Depends(current_user)):
         try:
             updated = auth.change_password(cfg, user.id, body.current, body.new)
         except ValueError as e:
             raise HTTPException(400, str(e))
-        return _signed_in(cfg, response, updated)
+        return _signed_in(cfg, request, response, updated)
 
     @app.post("/api/me/signout-everywhere")
-    def signout_everywhere(response: Response, user: User = Depends(current_user)):
-        return _signed_in(cfg, response, auth.sign_out_everywhere(cfg, user.id))
+    def signout_everywhere(request: Request, response: Response, user: User = Depends(current_user)):
+        return _signed_in(cfg, request, response, auth.sign_out_everywhere(cfg, user.id))
 
     @app.get("/api/settings")
     def read_settings(user: User = Depends(current_user)):
