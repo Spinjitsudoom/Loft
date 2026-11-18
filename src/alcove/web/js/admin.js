@@ -24,8 +24,8 @@ function scanText(scan) {
 }
 
 export async function renderAdmin(main) {
-  const [users, scan, lib, check, joining, sections] = await Promise.all([api("/users"), api("/scan"), api("/library"),
-    api("/check"), api("/join-requests"), api("/sections")]);
+  const [users, scan, lib, check, joining, sections, waiting, wanted] = await Promise.all([api("/users"), api("/scan"),
+    api("/library"), api("/check"), api("/join-requests"), api("/sections"), api("/submissions"), api("/requests")]);
   const admins = users.filter((u) => u.admin).length;
   const attention = check.items.length;
   const interval = INTERVALS.some(([m]) => m === lib.scan_interval_minutes) ? INTERVALS
@@ -37,6 +37,14 @@ export async function renderAdmin(main) {
     <a class="check-link ${attention ? "" : "quiet"}" href="#/check">
       ${icon("check")}<span><strong>Library check</strong>
       <span class="muted">${attention ? `${attention} ${attention === 1 ? "thing needs" : "things need"} attention` : "Nothing needs attention"}</span></span>
+      ${icon("right")}</a>
+    <a class="check-link ${waiting.length ? "" : "quiet"}" href="#/add?tab=approvals">
+      ${icon("plus")}<span><strong>Approvals</strong>
+      <span class="muted">${waiting.length ? `${waiting.length} ${waiting.length === 1 ? "book" : "books"} sent by members, waiting for you` : "No books waiting"}</span></span>
+      ${icon("right")}</a>
+    <a class="check-link ${wanted.length ? "" : "quiet"}" href="#/add?tab=requests">
+      ${icon("bell")}<span><strong>Requests</strong>
+      <span class="muted">${wanted.length ? `${wanted.length} ${wanted.length === 1 ? "book" : "books"} asked for` : "Nobody is asking for anything"}</span></span>
       ${icon("right")}</a>
 
     <section class="panel">

@@ -45,7 +45,7 @@ function itemHTML(item) {
     const missing = item.missing.map((n) => `#${n}`).join(", ");
     return `<li><a class="check-book" href="#/all?kind=series&value=${encodeURIComponent(item.series)}&title=${encodeURIComponent(item.series)}">
         <span class="check-text"><strong>${esc(item.series)}</strong><span class="muted">${item.books.length} books · missing ${missing}</span></span></a>
-      <span class="check-actions">${ignoreBtn(item)}</span></li>`;
+      <span class="check-actions">${item.missing.slice(0, 3).map((n) => `<button class="btn btn-small" type="button" data-ask-for="${esc(`${item.series} #${n}`)}">Ask for #${n}</button>`).join("")}${ignoreBtn(item)}</span></li>`;
   }
   const fix = k === "no_cover" ? `<a class="btn btn-small" href="#/book/${item.book.id}?edit=cover">Find a cover</a>`
     : `<a class="btn btn-small" href="#/book/${item.book.id}?edit=1">${icon("edit")}Edit</a>`;
@@ -70,6 +70,18 @@ export async function renderCheck(main) {
     <section class="panel" data-ignored hidden></section>
   </section>`;
 
+  // A gap in a series becomes a request: everyone who wants it can vote, and is told when it's added.
+  main.querySelectorAll("[data-ask-for]").forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true;
+    try {
+      await api("/requests", { method: "POST", body: { title: b.dataset.askFor, note: "Missing from the series" } });
+      b.textContent = "Asked";
+      saved(`Asked for ${b.dataset.askFor}: it’s in Requests`);
+    } catch (e) {
+      saved(e.message);
+      b.disabled = false;
+    }
+  }));
   main.querySelectorAll("[data-ignore]").forEach((b) => b.addEventListener("click", async () => {
     await api("/check/ignored", { method: "POST", body: { kind: b.dataset.ignore, key: b.dataset.key } });
     renderCheck(main);

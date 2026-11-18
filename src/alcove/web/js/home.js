@@ -93,6 +93,7 @@ export async function renderHome(main) {
   const onDevice = (await deviceBooks()).filter((b) => !b.downloading);
   const rows = [...home.rows];
   if (onDevice.length) rows.splice(rows[0] && rows[0].kind === "continue" ? 1 : 0, 0, { kind: "device", title: "On this device", books: onDevice });
-  main.innerHTML = heroHTML(home, detail) + rows.map(shelfHTML).join("");
+  main.innerHTML = heroHTML(home, detail) + rows.map(shelfHTML).join("")
+    + `<p class="home-more"><a class="btn" href="#/stacks">${icon("shelf")}Browse the whole library</a></p>`;
   wireShelves(main);
 }
