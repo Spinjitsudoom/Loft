@@ -99,8 +99,10 @@ phone keep the app itself for opening offline), run `sudo tailscale serve --bg 4
 - **+ → Add books**: drop files, check the details (from the file, and from Google Books, Open
   Library or AniList with **Look up details**), save.
 - **Edit** on any book's page: details, cover, and for page books their layout.
-- **Library check** (Library settings): books without covers or authors, damaged or protected
-  files, possible duplicates, gaps in series.
+- **Library check** (Library settings): books without covers, authors or tags, damaged or
+  protected files, possible duplicates, gaps in series. For books with no tags or no cover,
+  **Look them up one by one** goes through them: each is looked up (its title tidied first, and by
+  title alone if the author finds nothing), you pick the match, and only what's missing is filled in.
 - **Google Books** needs a free key (Library settings): it knows the editions themselves, like
   English manga volumes with their covers and ISBNs.
 

@@ -64,6 +64,7 @@ export async function renderCheck(main) {
     ${Object.keys(GROUPS).filter((k) => groups[k]).map((k) => `<section class="panel check-group">
       <h2>${GROUPS[k][0]} <span class="count">${groups[k].length}</span></h2>
       <p class="muted">${GROUPS[k][1]}</p>
+      ${k === "no_tags" || k === "no_cover" ? `<a class="btn btn-small btn-primary check-fill" href="#/fill?kind=${k}">Look them up one by one</a>` : ""}
       <ul class="check-list">${groups[k].map(itemHTML).join("")}</ul>
     </section>`).join("")}
     <section class="panel" data-ignored hidden></section>

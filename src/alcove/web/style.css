@@ -973,3 +973,20 @@ body.arranging { overflow: hidden; }
   .section-tags { grid-column: 1 / -1; }
   .section-count { grid-column: 1; }
 }
+
+/* Look them up (filling in missing details, one book at a time) */
+.check-fill { margin: 4px 0 12px; }
+.fill-book { display: grid; grid-template-columns: 150px 1fr; gap: 24px; align-items: start; }
+.fill-cover .book { width: 150px; }
+.fill-text h2 { margin: 0 0 4px; font: 600 24px/1.2 var(--serif); }
+.fill-text > p { margin: 0 0 6px; }
+.fill-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 16px; }
+@media (max-width: 600px) {
+  .fill-book { grid-template-columns: 96px 1fr; gap: 14px; }
+  .fill-cover .book { width: 96px; }
+  .fill-text h2 { font-size: 19px; }
+}
+.fill-search { display: grid; grid-template-columns: 2fr 1.3fr auto; gap: 8px; align-items: end; margin: 0 0 12px; }
+.fill-search label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.fill-search input { min-height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--raised); color: var(--ink); font: inherit; font-size: 14px; min-width: 0; }
+@media (max-width: 600px) { .fill-search { grid-template-columns: 1fr; } }
