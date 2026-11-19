@@ -301,3 +301,23 @@ clean sans for the interface), tests.
 - Manga reading direction is a per-file switch (on the add card and the Pages section of the edit
   page), not a tag rule (owner's request, 2026-11-17).
 - Demoting or promoting an admin takes effect on their next request without signing them out.
+- New books fill themselves in (2026-11-19, owner's request: "metadata automatically added for books
+  with no proper metadata"). After each scan, a new book missing a description, tags, an author or a
+  cover, or whose title came from its file name, is looked up (autofill.py). **Only a sure match is
+  used**: same title (a letter or two apart; "Rumble in the Jungle (Geronimo Stilton #53)" and
+  "Geronimo Stilton #53: Rumble in the Jungle" count as the same), the same author when the book has
+  one, no clashing volume numbers; with no author the whole title must match, or the match must name
+  the series. Only empty, unlocked fields are filled (and locked like an admin edit); a title from a
+  file name takes the match's title. On by default (Library settings switch, under online lookups).
+  Books already in the library when it first ran are left for the admin ("Look them up too").
+  Admins get a notification; "Filled in automatically" (#/filled) lists what each book got, with
+  Undo, which restores only fields not changed since and never retries that book. Tried on a copy
+  of the owner's library: 40 of 46 filled, all correct; 6 left alone.
+- Hardcover and ISBNdb as lookup sources (2026-11-19, owner's request). Both optional, each with the
+  admin's own token/key in Library settings (checked once on saving, never sent back to the app).
+  Hardcover is asked first: it's the only source that gives a book's series and number, which both
+  the edit page and autofill now take from a match before reading one from titles. ISBNdb (via its
+  API, not by signing in to the website, which its terms don't allow) is tried at each plan's
+  address on saving; when its key stops working (a trial ending), lookups carry on with the others.
+  Its site refuses automated reading, so its v2 API was built from memory; a fake key was refused
+  at all three plan addresses, which confirms the addresses and the header.

@@ -5,7 +5,7 @@ import { saved } from "./settings.js";
 
 const INTERVALS = [[5, "5 minutes"], [10, "10 minutes"], [30, "30 minutes"], [60, "hour"], [360, "6 hours"], [1440, "day"]];
 
-function ago(seconds) {
+export function ago(seconds) {
   const s = Math.max(0, Date.now() / 1000 - seconds);
   if (s < 90) return "just now";
   if (s < 5400) return `${Math.round(s / 60)} minutes ago`;
@@ -23,9 +23,28 @@ function scanText(scan) {
   return `Last scan ${ago(r.at)}: ${counts}.${trouble ? ` ${trouble} ${trouble === 1 ? "folder" : "folders"} couldn’t be read (see the library check).` : ""}`;
 }
 
+// A saved key (or token) is never sent back to the app: only whether there is one.
+const KEY_FIELDS = { google_books: "google_books_key", hardcover: "hardcover_token", isbndb: "isbndb_key" };
+
+function keyForm(name, isSaved, label, placeholder, hint) {
+  return `<div class="key-source"><form class="inline-form" data-key-form="${name}" novalidate>
+        <label>${label}<input name="key" type="password" autocomplete="off" spellcheck="false"
+          placeholder="${isSaved ? "Saved. Paste a new one to replace it" : placeholder}"></label>
+        <button class="btn" type="submit">Save</button>
+        ${isSaved ? `<button class="btn" type="button" data-key-remove>Remove</button>` : ""}
+      </form>
+      <p class="form-error" data-key-error="${name}" role="alert" hidden></p>
+      <p class="field-hint">${hint}</p></div>`;
+}
+
 export async function renderAdmin(main) {
-  const [users, scan, lib, check, joining, sections, waiting, wanted] = await Promise.all([api("/users"), api("/scan"),
-    api("/library"), api("/check"), api("/join-requests"), api("/sections"), api("/submissions"), api("/requests")]);
+  const [users, scan, lib, check, joining, sections, waiting, wanted, auto] = await Promise.all([api("/users"), api("/scan"),
+    api("/library"), api("/check"), api("/join-requests"), api("/sections"), api("/submissions"), api("/requests"),
+    api("/autofill")]);
+  const autoText = auto.filled.length || auto.unsure.length
+    ? [auto.filled.length && `${auto.filled.length} ${auto.filled.length === 1 ? "book" : "books"} filled in`,
+      auto.unsure.length && `${auto.unsure.length} without a sure match`].filter(Boolean).join(", ")
+    : lib.auto_lookup && lib.online_lookups ? "New books get their details by themselves" : "Off";
   const admins = users.filter((u) => u.admin).length;
   const attention = check.items.length;
   const interval = INTERVALS.some(([m]) => m === lib.scan_interval_minutes) ? INTERVALS
@@ -46,6 +65,10 @@ export async function renderAdmin(main) {
       ${icon("bell")}<span><strong>Requests</strong>
       <span class="muted">${wanted.length ? `${wanted.length} ${wanted.length === 1 ? "book" : "books"} asked for` : "Nobody is asking for anything"}</span></span>
       ${icon("right")}</a>
+    <a class="check-link ${auto.unsure.length ? "" : "quiet"}" href="#/filled">
+      ${icon("edit")}<span><strong>Filled in automatically</strong>
+      <span class="muted">${autoText}</span></span>
+      ${icon("right")}</a>
 
     <section class="panel">
       <h2>The library</h2>
@@ -59,15 +82,18 @@ export async function renderAdmin(main) {
       <p class="field-hint indent">Off by default: a notes or passwords file in the books folder would show up for everyone.</p>
       <label class="switch"><input type="checkbox" data-lib="online_lookups" ${lib.online_lookups ? "checked" : ""}>
         <span>Look up details and covers online</span></label>
-      <p class="field-hint indent">Only when you ask for a lookup. Open Library and Google Books get the title, author and ISBN; AniList, asked for comics and manga, gets just the title.</p>
-      <form class="inline-form" data-google novalidate>
-        <label>Google Books key<input name="key" type="password" autocomplete="off" spellcheck="false"
-          placeholder="${lib.google_books ? "Saved. Paste a new key to replace it" : "Paste a key to add Google Books"}"></label>
-        <button class="btn" type="submit">Save key</button>
-        ${lib.google_books ? `<button class="btn" type="button" data-google-remove>Remove key</button>` : ""}
-      </form>
-      <p class="form-error" data-google-error role="alert" hidden></p>
-      <p class="field-hint">Google Books has the editions themselves, such as English manga volumes with their covers and ISBNs. It needs a free key from Google Cloud with the Books API turned on.</p>
+      <p class="field-hint indent">When you ask for a lookup, and for new books if the switch below is on. Open Library and any source below with a key get the title, author and ISBN; AniList, asked for comics and manga, gets just the title.</p>
+      <label class="switch"><input type="checkbox" data-lib="auto_lookup" ${lib.auto_lookup ? "checked" : ""} ${lib.online_lookups ? "" : "disabled"}>
+        <span>Fill in new books’ details by themselves</span></label>
+      <p class="field-hint indent">After each scan, new books missing a description, tags, an author or a cover are looked up. Only a sure match is used (the same title, and the same author when the book has one), only what’s missing is filled in, and each can be undone from <a href="#/filled">Filled in automatically</a>.</p>
+      <h3>More places to look</h3>
+      <p class="muted section-hint">Open Library and AniList need nothing. These need a key of your own; each one saved is asked too.</p>
+      ${keyForm("google_books", lib.google_books, "Google Books key", "Paste a key to add Google Books",
+        "Google Books has the editions themselves, such as English manga volumes with their covers and ISBNs. It needs a free key from Google Cloud with the Books API turned on.")}
+      ${keyForm("hardcover", lib.hardcover, "Hardcover token", "Paste a token to add Hardcover",
+        `Hardcover knows which series a book is in and its number, and has descriptions for most modern books. Free: on <a href="https://hardcover.app/account/api" target="_blank" rel="noreferrer noopener">hardcover.app</a>, Settings, Hardcover API, make a key, and paste it here. Tokens expire; make a new one when it does.`)}
+      ${keyForm("isbndb", lib.isbndb, "ISBNdb key", "Paste a key to add ISBNdb",
+        "ISBNdb is strongest for books with an ISBN: publisher, date and a synopsis for the edition. Its keys come with a paid plan (they start with a trial); when the key stops working, Alcove just asks the others.")}
     </section>
 
     <section class="panel" data-sections-panel>
@@ -172,18 +198,28 @@ export async function renderAdmin(main) {
       document.title = updated.name || "Alcove";
     }
   });
-  const googleError = main.querySelector("[data-google-error]");
-  const saveKey = async (value) => {
-    googleError.hidden = true;
-    if (await patch({ google_books_key: value }, googleError)) renderAdmin(main);
-  };
-  main.querySelector("[data-google]").addEventListener("submit", (e) => {
-    e.preventDefault();
-    if (e.target.key.value.trim()) saveKey(e.target.key.value);
+  main.querySelectorAll("[data-key-form]").forEach((form) => {
+    const name = form.dataset.keyForm;
+    const error = main.querySelector(`[data-key-error="${name}"]`);
+    const save = async (value) => {
+      error.hidden = true;
+      const button = form.querySelector("[type=submit]");
+      button.disabled = true;
+      button.textContent = "Checking…";  // the key is tried once before it's kept
+      const ok = await patch({ [KEY_FIELDS[name]]: value }, error);
+      button.disabled = false;
+      button.textContent = "Save";
+      if (ok) renderAdmin(main);
+    };
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (form.elements.key.value.trim()) save(form.elements.key.value);
+    });
+    form.querySelector("[data-key-remove]")?.addEventListener("click", () => save(""));
   });
-  main.querySelector("[data-google-remove]")?.addEventListener("click", () => saveKey(""));
   main.querySelectorAll("[data-lib]").forEach((c) => c.addEventListener("change", async () => {
     if (!(await patch({ [c.dataset.lib]: c.checked }))) c.checked = !c.checked;
+    else if (c.dataset.lib === "online_lookups") renderAdmin(main);  // the switch below it follows
   }));
 
   main.querySelectorAll("[data-join]").forEach((li) => {

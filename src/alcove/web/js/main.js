@@ -16,6 +16,7 @@ import { needsServer, renderOfflineBook, renderOfflineHome } from "./downloads.j
 import { refreshBell, renderNotifications } from "./notifications.js";
 import { renderStacks } from "./stacks.js";
 import { renderFill } from "./fill.js";
+import { renderFilled } from "./filled.js";
 
 const app = document.getElementById("app");
 export const state = { me: null, libraryName: "" };
@@ -131,6 +132,7 @@ async function route() {
     else if (page === "stacks") await renderStacks(main, params);
     else if (page === "check" && state.me.admin) await renderCheck(main);
     else if (page === "fill" && state.me.admin) await renderFill(main, params);
+    else if (page === "filled" && state.me.admin) await renderFilled(main);
     else if (page === "settings") await renderSettings(main);
     else main.innerHTML = `<div class="empty"><p>There’s nothing here.</p><a class="btn" href="#/">Back to the library</a></div>`;
   } catch (e) {

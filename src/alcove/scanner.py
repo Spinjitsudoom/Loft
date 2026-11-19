@@ -352,6 +352,8 @@ class Scanner:
         self.last: ScanResult | None = None
         self._wake = threading.Event()
         self._thread: threading.Thread | None = None
+        from .autofill import AutoFiller
+        self.filler = AutoFiller(cfg)
 
     def start(self) -> None:
         if self._thread is None:
@@ -368,6 +370,7 @@ class Scanner:
                 self.last = scan(self.cfg)
                 from .check import check_files
                 check_files(self.cfg)
+                self.filler.trigger()
                 prune_page_cache(self.cfg)
                 from .uploads import prune_drafts
                 prune_drafts(self.cfg)

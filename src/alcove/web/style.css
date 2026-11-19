@@ -1000,3 +1000,7 @@ body.arranging { overflow: hidden; }
   background: color-mix(in srgb, var(--bg) 82%, transparent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 6v9m0 0-3.6-3.6M12 15l3.6-3.6M7 18.5h10' fill='none' stroke='%23c9a27a' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 14px no-repeat;
   box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
 }
+
+/* Library settings: one block per lookup source that needs a key */
+.key-source { margin-top: 18px; }
+.key-source .field-hint { margin-top: 6px; }

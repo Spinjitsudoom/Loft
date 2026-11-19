@@ -1,6 +1,7 @@
 """Library settings, set by the admin in the app: the library's name, the books folders, where
 uploads go, how often to scan, whether plain-text files count as books, and online lookups (with
-an optional Google Books key, which is kept here and never sent back to the app).
+optional Google Books and ISBNdb keys and a Hardcover token, which are kept here and never sent
+back to the app).
 
 Stored in the database (only what the admin changed). Until the admin saves a folder list, the one
 from config.toml (or ALCOVE_BOOKS_DIRS) is used.
@@ -21,6 +22,7 @@ MAX_NAME = 40
 MAX_FOLDERS = 10
 SCAN_MINUTES = range(5, 1441)
 API_KEY = re.compile(r"^[A-Za-z0-9_-]{20,100}$")
+SECRET = re.compile(r"^[!-~]{10,4000}$")  # a token or key: printable, no spaces
 
 # The library's sections (its categories, for the stacks), suggested from the tags books have until
 # the admin saves their own. Order matters: a book stands in the first section whose tags it has.
@@ -65,8 +67,11 @@ def get_library(cfg: Config) -> dict:
         "scan_interval_minutes": stored.get("scan_interval_minutes", cfg.scan_interval_minutes),
         "allow_txt": stored.get("allow_txt", False),
         "online_lookups": stored.get("online_lookups", True),
+        "auto_lookup": stored.get("auto_lookup", True),  # new books missing details are looked up after scans
         "join_requests": stored.get("join_requests", False),  # people may ask to join from the sign-in page
         "google_books": bool(google_books_key(cfg, stored)),  # whether a key is saved, never the key
+        "hardcover": bool(hardcover_token(cfg, stored)),
+        "isbndb": bool(isbndb_key(cfg, stored)[0]),
         "sections": stored["sections"] if isinstance(stored.get("sections"), list) else _suggested_sections(cfg),
         "sections_suggested": not isinstance(stored.get("sections"), list),
     }
@@ -110,6 +115,20 @@ def _sections(value) -> list[dict] | None:
 def google_books_key(cfg: Config, stored: dict | None = None) -> str:
     value = (_stored(cfg) if stored is None else stored).get("google_books_key")
     return value if isinstance(value, str) else ""
+
+
+def hardcover_token(cfg: Config, stored: dict | None = None) -> str:
+    value = (_stored(cfg) if stored is None else stored).get("hardcover_token")
+    return value if isinstance(value, str) else ""
+
+
+def isbndb_key(cfg: Config, stored: dict | None = None) -> tuple[str, str]:
+    """The ISBNdb key and the address of the plan it works at (found when it was saved)."""
+    stored = _stored(cfg) if stored is None else stored
+    value, host = stored.get("isbndb_key"), stored.get("isbndb_host")
+    if not isinstance(value, str) or not value or not isinstance(host, str) or not host:
+        return "", ""
+    return value, host
 
 
 def books_dirs(cfg: Config) -> list[Path]:
@@ -174,7 +193,16 @@ def _clean(patch: dict, current: dict) -> dict:
             value = value.strip()
             if value and not API_KEY.match(value):
                 raise ValueError("google_books_key doesn’t look like a Google API key (they start with AIza)")
-        elif key in ("allow_txt", "online_lookups", "join_requests"):
+        elif key in ("hardcover_token", "isbndb_key"):
+            if not isinstance(value, str):
+                raise ValueError(f"{key} must be text")
+            value = value.strip()
+            if key == "hardcover_token" and value.lower().startswith("bearer "):
+                value = value[7:].strip()  # Hardcover shows it with "Bearer " in front
+            if value and not SECRET.match(value):
+                raise ValueError(f"{'That token' if key == 'hardcover_token' else 'That key'} doesn’t look right; "
+                                 "copy it again, whole")
+        elif key in ("allow_txt", "online_lookups", "auto_lookup", "join_requests"):
             if not isinstance(value, bool):
                 raise ValueError(f"{key} must be on or off")
         else:
@@ -194,6 +222,14 @@ def update_library(cfg: Config, patch: dict) -> dict:
     if clean.get("google_books_key") and clean.get("online_lookups", current["online_lookups"]):
         from .googlebooks import check_key
         check_key(clean["google_books_key"])
+    if clean.get("hardcover_token") and clean.get("online_lookups", current["online_lookups"]):
+        from . import hardcover
+        hardcover.check_key(clean["hardcover_token"])
+    if "isbndb_key" in clean:
+        clean["isbndb_host"] = ""
+        if clean["isbndb_key"]:
+            from . import isbndb
+            clean["isbndb_host"] = isbndb.check_key(clean["isbndb_key"])
     stored = {**_stored(cfg), **clean}
     with session(cfg.db_path) as con:
         con.execute("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",

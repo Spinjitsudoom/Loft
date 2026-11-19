@@ -2,7 +2,8 @@
 
 Only the title, author and ISBN are sent, and nothing at all while online lookups are off in
 Library settings. Covers are only ever downloaded from covers.openlibrary.org, or from AniList's
-or Google Books' image servers for matches found there (see anilist.py, googlebooks.py).
+Google Books', Hardcover's or ISBNdb's image servers for matches found there (see anilist.py,
+googlebooks.py, hardcover.py, isbndb.py).
 """
 
 from __future__ import annotations
@@ -19,7 +20,8 @@ SEARCH = "https://openlibrary.org/search.json"
 WORKS = "https://openlibrary.org"
 COVER_HOST = "covers.openlibrary.org"
 # host: where its covers live
-COVER_HOSTS = {COVER_HOST: "/b/", "s4.anilist.co": "/file/anilistcdn/", "books.google.com": "/books/content"}
+COVER_HOSTS = {COVER_HOST: "/b/", "s4.anilist.co": "/file/anilistcdn/", "books.google.com": "/books/content",
+               "assets.hardcover.app": "/", "images.isbndb.com": "/"}
 FIELDS = "key,title,author_name,first_publish_year,publisher,language,subject,isbn,cover_i"
 RESULTS = 6
 MAX_TAGS = 8
@@ -130,7 +132,7 @@ def fetch_cover(cfg: Config, url: str) -> bytes:
     folder = COVER_HOSTS.get(parsed.hostname or "")
     if (parsed.scheme != "https" or not folder or not parsed.path.startswith(folder)
             or parsed.port not in (None, 443) or parsed.username):
-        raise ValueError("Covers can only come from Open Library, Google Books or AniList")
+        raise ValueError("Covers can only come from Open Library, Google Books, Hardcover, ISBNdb or AniList")
     _allowed(cfg)
     try:
         return _get(url, MAX_COVER)

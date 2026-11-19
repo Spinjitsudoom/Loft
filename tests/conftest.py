@@ -25,13 +25,15 @@ def jpg(colour, size=(60, 90)) -> bytes:
 @pytest.fixture(autouse=True)
 def offline(monkeypatch):
     """Tests never reach the real Open Library or AniList; a test that needs them fakes them."""
-    from alcove import anilist, openlibrary
+    from alcove import anilist, hardcover, isbndb, openlibrary
 
     def refuse(url, *args):
         raise OSError(f"tests are offline ({url})")
 
     monkeypatch.setattr(openlibrary, "_get", refuse)
     monkeypatch.setattr(anilist, "_post", refuse)
+    monkeypatch.setattr(hardcover, "_post", refuse)
+    monkeypatch.setattr(isbndb, "_get", refuse)
 
 
 @pytest.fixture

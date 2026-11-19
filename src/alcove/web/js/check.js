@@ -17,7 +17,7 @@ const GROUPS = {
   series_gap: ["Gaps in a series", "Numbers missing from a series you have."],
 };
 
-function bookLine(b, extra = "") {
+export function bookLine(b, extra = "") {
   return `<a class="check-book" href="#/book/${b.id}">
     <span class="check-cover">${coverHTML(b, 240)}</span>
     <span class="check-text"><strong>${esc(b.title)}</strong><span class="muted">${esc(authorLine(b.authors)) || "No author"}${extra}</span></span>

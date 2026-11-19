@@ -19,7 +19,7 @@ async function additions(b, c) {
   if (!b.authors.length && c.authors && c.authors.length) patch.authors = c.authors;
   for (const k of ["publisher", "published", "language"]) if (!b[k] && c[k]) patch[k] = c[k];
   if (!b.series) {
-    const s = seriesFromTitle(b.title) || seriesFromTitle(c.title);
+    const s = c.series ? { series: c.series, index: c.series_index ?? null } : seriesFromTitle(b.title) || seriesFromTitle(c.title);
     if (s) { patch.series = s.series; patch.series_index = s.index; }
   }
   if (!b.description) {

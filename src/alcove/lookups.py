@@ -1,6 +1,9 @@
 """Looking a book up online, in every source that might know it, at once.
 
+- Hardcover, when the admin has saved a token: the series a book is in and its number, and
+  descriptions for most modern books.
 - Google Books, when the admin has saved a key: the editions themselves (English manga volumes too).
+- ISBNdb, when the admin has saved a key: editions by ISBN, with publisher, date and synopsis.
 - Open Library, always.
 - AniList, for comics (books shown page by page). Any other book asks it only when nothing else
   found anything, so ordinary novels don't send their titles to a manga site.
@@ -14,7 +17,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 
-from . import anilist, googlebooks, openlibrary
+from . import anilist, googlebooks, hardcover, isbndb, openlibrary
 from .config import Config
 from .openlibrary import LookupFailed, LookupsOff, normal_isbn
 
@@ -76,9 +79,14 @@ def search(cfg: Config, *, title: str = "", author: str = "", isbn: str = "", co
     openlibrary._allowed(cfg)
     query = {"title": title, "author": author, "isbn": isbn}
     ask_anilist = ("AniList", partial(anilist.search, cfg, title=title, author=author))
-    sources = [("Open Library", partial(_open_library, cfg, **query))]
+    sources = []
+    if hardcover.key(cfg):
+        sources.append(("Hardcover", partial(hardcover.search, cfg, **query)))
     if googlebooks.key(cfg):
-        sources.insert(0, ("Google Books", partial(googlebooks.search, cfg, **query)))
+        sources.append(("Google Books", partial(googlebooks.search, cfg, **query)))
+    if isbndb.key(cfg)[0]:
+        sources.append(("ISBNdb", partial(isbndb.search, cfg, **query)))
+    sources.append(("Open Library", partial(_open_library, cfg, **query)))
     if comic and has_title:
         sources.append(ask_anilist)
     results = _ask(sources)

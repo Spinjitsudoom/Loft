@@ -34,6 +34,7 @@ test("a series and its number are read from a title, when it has them", async ()
   assert.deepEqual(seriesFromTitle("Uprising #8"), { series: "Uprising", index: 8 });
   assert.deepEqual(seriesFromTitle("Geronimo Stilton, Vol. 2: Cat and Mouse"), { series: "Geronimo Stilton", index: 2 });
   assert.deepEqual(seriesFromTitle("Tomie, Volume 1"), { series: "Tomie", index: 1 });
+  assert.deepEqual(seriesFromTitle("Rumble in the Jungle (Geronimo Stilton #53)"), { series: "Geronimo Stilton", index: 53 });
   assert.equal(seriesFromTitle("Fahrenheit 451"), null);           // a number in a title isn't a series
   assert.equal(seriesFromTitle("Catch-22"), null);
   assert.equal(seriesFromTitle("Assassin's Creed: Brotherhood"), null);

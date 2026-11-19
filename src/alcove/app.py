@@ -21,6 +21,7 @@ from .config import Config
 from .covers import cover_path
 from .db import session
 from .sanitize import chapter_html
+from . import autofill
 from .scanner import Scanner, last_report
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -662,6 +663,27 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     def unshelve(shelf_id: int, book_id: int, user: User = Depends(current_user)):
         _shelf_call(shelves.remove, user.id, shelf_id, book_id)
         return {"ok": True}
+
+    # ---------- new books filled in by themselves ----------
+
+    @app.get("/api/autofill")
+    def autofilled(_: User = Depends(admin_user)):
+        return {**autofill.overview(cfg), "running": scanner.filler.running}
+
+    @app.post("/api/autofill/{book_id}/undo")
+    def undo_autofill(book_id: int, _: User = Depends(admin_user)):
+        try:
+            autofill.undo(cfg, book_id)
+        except LookupError:
+            raise HTTPException(404, "Nothing to undo for that book")
+        return {"ok": True}
+
+    @app.post("/api/autofill/rest", status_code=202)
+    def autofill_the_rest(_: User = Depends(admin_user)):
+        queued = autofill.look_up_the_rest(cfg)
+        if queued and scan_on_start:
+            scanner.filler.trigger()
+        return {"queued": queued}
 
     # ---------- the library check ----------
 

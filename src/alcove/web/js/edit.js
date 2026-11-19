@@ -103,7 +103,7 @@ export async function showLookup(box, { title = "", author = "", isbn = "", comi
         <img src="${esc(c.thumb_url || c.cover_url.replace("-L.jpg", "-M.jpg"))}" alt="" loading="lazy" onerror="this.closest('li').remove()"></button></li>`).join("")}</ul>`
     : `<p class="lookup-note">Pick the one that matches. Only empty fields are filled.</p><ul class="lookup-list">${found.map((c, i) => `<li><button type="button" data-pick="${i}">
         <span class="lookup-cover">${c.cover_url ? `<img src="${esc(c.thumb_url || c.cover_url.replace("-L.jpg", "-S.jpg"))}" alt="" loading="lazy" onerror="this.remove()">` : ""}</span>
-        <span class="lookup-text"><strong>${esc(c.title)}</strong><span>${esc(authorLine(c.authors))}${c.published ? ` · ${esc(c.published)}` : ""}${c.language ? ` · ${esc(languageName(c.language))}` : ""}</span><span class="lookup-source">From ${esc(c.source)}${c.source !== "Open Library" && !c.description ? " · no description" : ""}</span></span>
+        <span class="lookup-text"><strong>${esc(c.title)}</strong><span>${esc(authorLine(c.authors))}${c.series ? ` · ${esc(c.series)}${c.series_index != null ? ` #${esc(String(c.series_index).replace(/\.0$/, ""))}` : ""}` : ""}${c.published ? ` · ${esc(c.published)}` : ""}${c.language ? ` · ${esc(languageName(c.language))}` : ""}</span><span class="lookup-source">From ${esc(c.source)}${c.source !== "Open Library" && !c.description ? " · no description" : ""}</span></span>
       </button></li>`).join("")}</ul>`;
   box.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => onPick(found[Number(b.dataset.pick)])));
 }
@@ -120,8 +120,10 @@ export async function fillEmpty(form, c) {
   set("published", c.published);
   set("language", c.language);
   set("tags", list(c.tags));
-  // No series yet: read one from the title ("#04 Assassin's Creed - Revelations"), or the match's.
-  const s = seriesFromTitle(form.elements.title.value) || seriesFromTitle(c.title);
+  // No series yet: the match's own (Hardcover knows them), else read from the title
+  // ("#04 Assassin's Creed - Revelations"), or the match's.
+  const s = c.series ? { series: c.series, index: c.series_index ?? "" }
+    : seriesFromTitle(form.elements.title.value) || seriesFromTitle(c.title);
   if (s) { set("series", s.series); set("series_index", String(s.index)); }
   set("description", c.description);
   if (!form.elements.description.value.trim() && c.key) {

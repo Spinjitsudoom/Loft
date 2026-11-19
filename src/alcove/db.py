@@ -198,6 +198,18 @@ CREATE TABLE IF NOT EXISTS messages (
     removed    INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS messages_book ON messages(book_id, id);
+
+-- New books filled in by themselves (autofill.py): where each is, and what was filled, to undo it.
+CREATE TABLE IF NOT EXISTS autofill (
+    book_id  INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+    state    TEXT NOT NULL,  -- waiting, filled, unsure, complete, before (there first), undone
+    tries    INTEGER NOT NULL DEFAULT 0,
+    at       REAL,
+    sources  TEXT NOT NULL DEFAULT '[]',
+    filled   TEXT NOT NULL DEFAULT '[]',
+    previous TEXT NOT NULL DEFAULT '{}',
+    after    TEXT NOT NULL DEFAULT '{}'
+);
 """
 
 

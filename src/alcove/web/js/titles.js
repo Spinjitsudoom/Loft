@@ -40,7 +40,9 @@ export function spineTitle(b, inSeries) {
 // (a number alone, as in "Fahrenheit 451", isn't a series).
 export function seriesFromTitle(title) {
   const t = String(title || "").replace(/_\s/g, ": ").replace(/_+/g, " ").replace(/\s+/g, " ").trim();
-  let m = /^#?(\d+(?:\.\d+)?)\s*[-.:)]?\s+(.+?)\s+[-–—:]\s+\S.*$/.exec(t);
+  let m = /^.+?\s*\(([^()]+?),?\s+(?:#\s*|book\s+|vol\.?\s*|volume\s+|no\.?\s*)(\d+(?:\.\d+)?)\)$/i.exec(t);
+  if (m && /\p{L}/u.test(m[1])) return { series: m[1].trim(), index: Number(m[2]) };   // "Rumble… (Geronimo Stilton #53)"
+  m = /^#?(\d+(?:\.\d+)?)\s*[-.:)]?\s+(.+?)\s+[-–—:]\s+\S.*$/.exec(t);
   if (m && /\p{L}/u.test(m[2])) return { series: m[2].trim(), index: Number(m[1]) };
   m = /^(.+?),?\s+(?:#\s*|book\s+|vol\.?\s*|volume\s+|no\.?\s*)(\d+(?:\.\d+)?)(?:\s*[-–—:].*)?$/i.exec(t);
   if (m && /\p{L}/u.test(m[1])) return { series: m[1].replace(/[\s,:–—-]+$/, "").trim(), index: Number(m[2]) };
