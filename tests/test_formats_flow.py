@@ -3,8 +3,8 @@ import struct
 
 import pytest
 
-from alcove import fb2, kindle, txt
-from alcove.pages import Unreadable
+from loft import fb2, kindle, txt
+from loft.pages import Unreadable
 from conftest import png
 
 FB2 = f"""<?xml version="1.0" encoding="utf-8"?>

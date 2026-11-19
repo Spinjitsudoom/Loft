@@ -1,9 +1,9 @@
-// Alcove for Windows, macOS and Linux: a window onto your Alcove library.
+// Loft for Windows, macOS and Linux: a window onto your Loft library.
 //
-// The first time, it asks for the server's address (start.html), checks there's an Alcove server
+// The first time, it asks for the server's address (start.html), checks there's a Loft server
 // there and remembers it. After that it opens straight onto the server's web app.
 //
-// Opening with no connection: Alcove's web app keeps its own files with a service worker, which
+// Opening with no connection: Loft's web app keeps its own files with a service worker, which
 // browsers only allow on secure (https) addresses. A home server is usually plain http, so the app
 // tells Chromium to treat that one address as secure; from the next start it opens offline too,
 // onto the books downloaded in it.
@@ -12,8 +12,8 @@ const { app, BrowserWindow, ipcMain, Menu, net, session, shell } = require("elec
 const fs = require("node:fs");
 const path = require("node:path");
 
-app.setName("Alcove");
-if (process.platform === "win32") app.setAppUserModelId("app.alcove.desktop");
+app.setName("Loft");
+if (process.platform === "win32") app.setAppUserModelId("app.loft.desktop");
 
 const START = path.join(__dirname, "start.html");
 const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
@@ -54,12 +54,12 @@ function normalize(input) {
   }
 }
 
-/** Null if an Alcove server answers at `url`, else a message to show. */
+/** Null if a Loft server answers at `url`, else a message to show. */
 async function check(url) {
   try {
     const res = await net.fetch(`${url}/api/ping`, { cache: "no-store", signal: AbortSignal.timeout(7000) });
     const body = res.ok ? await res.json().catch(() => null) : null;
-    return body?.app === "alcove" ? null : `${url.replace(/^https?:\/\//, "")} answered, but it isn’t an Alcove server.`;
+    return body?.app === "loft" ? null : `${url.replace(/^https?:\/\//, "")} answered, but it isn’t a Loft server.`;
   } catch {
     return `Couldn’t reach ${url.replace(/^https?:\/\//, "")}. Check the address, and that the server is running and on the same network.`;
   }
@@ -89,7 +89,7 @@ function createWindow() {
     y: saved?.y,
     minWidth: 360,
     minHeight: 500,
-    title: "Alcove",
+    title: "Loft",
     backgroundColor: "#14110f",
     autoHideMenuBar: true,
     icon: path.join(__dirname, "icon.png"),
@@ -125,7 +125,7 @@ function createWindow() {
     showStart(`Couldn’t reach ${(readSettings().server || "").replace(/^https?:\/\//, "")}. Is the server running? Try again, or enter another address.`);
   });
   // The page title is the library's name: keep the window's in step.
-  win.webContents.on("page-title-updated", (e, title) => { e.preventDefault(); win.setTitle(title || "Alcove"); });
+  win.webContents.on("page-title-updated", (e, title) => { e.preventDefault(); win.setTitle(title || "Loft"); });
   openServer();
 }
 
@@ -133,7 +133,7 @@ function buildMenu() {
   // The menu bar stays hidden (Alt shows it); its shortcuts work either way.
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     ...(process.platform === "darwin" ? [{ role: "appMenu" }] : []),
-    { label: "Alcove", submenu: [
+    { label: "Loft", submenu: [
       { label: "Change server…", click: () => showStart() },
       { type: "separator" },
       { role: "quit" },
@@ -150,7 +150,7 @@ function buildMenu() {
   ]));
 }
 
-ipcMain.handle("alcove:connect", async (_e, input) => {
+ipcMain.handle("loft:connect", async (_e, input) => {
   const url = normalize(input);
   if (!url) return "That doesn’t look like a server address. Try something like 192.168.1.20:4545.";
   const problem = await check(url);
@@ -159,10 +159,10 @@ ipcMain.handle("alcove:connect", async (_e, input) => {
   win.loadURL(`${url}/`);
   return null;
 });
-ipcMain.on("alcove:get-server", (e) => { e.returnValue = readSettings().server || ""; });
-ipcMain.on("alcove:change-server", () => showStart());
+ipcMain.on("loft:get-server", (e) => { e.returnValue = readSettings().server || ""; });
+ipcMain.on("loft:change-server", () => showStart());
 
-// One Alcove at a time: opening it again brings the window forward.
+// One Loft at a time: opening it again brings the window forward.
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {

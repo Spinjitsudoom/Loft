@@ -1,18 +1,18 @@
 import os
 from pathlib import Path
 
-from alcove.config import load_config
+from loft.config import load_config
 
 
 def test_defaults_without_file(tmp_path, monkeypatch):
-    monkeypatch.setenv("ALCOVE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LOFT_DATA_DIR", str(tmp_path / "data"))
     cfg = load_config(tmp_path / "none.toml")
     assert cfg.port == 4545
     assert cfg.books_dirs == []
 
 
 def test_reads_toml(tmp_path, monkeypatch):
-    monkeypatch.setenv("ALCOVE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LOFT_DATA_DIR", str(tmp_path / "data"))
     f = tmp_path / "config.toml"
     f.write_text('books_dirs = ["~/Books"]\nport = 5000\n')
     cfg = load_config(f)
@@ -21,9 +21,9 @@ def test_reads_toml(tmp_path, monkeypatch):
 
 
 def test_env_overrides(tmp_path, monkeypatch):
-    monkeypatch.setenv("ALCOVE_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("ALCOVE_BOOKS_DIRS", f"/a{os.pathsep}/b")
-    monkeypatch.setenv("ALCOVE_PORT", "4600")
+    monkeypatch.setenv("LOFT_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LOFT_BOOKS_DIRS", f"/a{os.pathsep}/b")
+    monkeypatch.setenv("LOFT_PORT", "4600")
     cfg = load_config(tmp_path / "none.toml")
     assert cfg.books_dirs == [Path("/a"), Path("/b")]
     assert cfg.port == 4600
@@ -31,20 +31,20 @@ def test_env_overrides(tmp_path, monkeypatch):
 
 
 def test_secret_key_persists(tmp_path, monkeypatch):
-    monkeypatch.setenv("ALCOVE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LOFT_DATA_DIR", str(tmp_path / "data"))
     a = load_config(tmp_path / "none.toml")
     b = load_config(tmp_path / "none.toml")
     assert a.secret_key and a.secret_key == b.secret_key
 
 
 def test_config_file_and_host_from_the_environment(tmp_path, monkeypatch):
-    # In a container the settings file lives at a fixed path and Alcove must listen on every address.
-    monkeypatch.setenv("ALCOVE_DATA_DIR", str(tmp_path / "data"))
+    # In a container the settings file lives at a fixed path and Loft must listen on every address.
+    monkeypatch.setenv("LOFT_DATA_DIR", str(tmp_path / "data"))
     f = tmp_path / "elsewhere.toml"
     f.write_text('books_dirs = ["/books"]\nhost = "127.0.0.1"\nscan_interval_minutes = 30\n')
-    monkeypatch.setenv("ALCOVE_CONFIG", str(f))
+    monkeypatch.setenv("LOFT_CONFIG", str(f))
     cfg = load_config()
     assert cfg.books_dirs == [Path("/books")] and cfg.scan_interval_minutes == 30 and cfg.host == "127.0.0.1"
-    monkeypatch.setenv("ALCOVE_HOST", "0.0.0.0")
+    monkeypatch.setenv("LOFT_HOST", "0.0.0.0")
     assert load_config().host == "0.0.0.0"
-    assert load_config(tmp_path / "none.toml").books_dirs == []   # a path given wins over ALCOVE_CONFIG
+    assert load_config(tmp_path / "none.toml").books_dirs == []   # a path given wins over LOFT_CONFIG

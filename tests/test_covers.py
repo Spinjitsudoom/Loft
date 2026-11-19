@@ -5,7 +5,7 @@ import re
 import pytest
 from PIL import Image
 
-from alcove.covers import cover_path, extract_cover, store_cover
+from loft.covers import cover_path, extract_cover, store_cover
 from conftest import jpg
 
 

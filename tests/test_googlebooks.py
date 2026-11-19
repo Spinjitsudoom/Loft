@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from alcove import anilist, googlebooks, libsettings, lookups, openlibrary
+from loft import anilist, googlebooks, libsettings, lookups, openlibrary
 
 KEY = "AIzaSyTestKey_0123456789abcdefghijkl"
 VOLUME = {"id": "vOiCeS123", "volumeInfo": {

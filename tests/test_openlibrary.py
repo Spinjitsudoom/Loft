@@ -4,8 +4,8 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from alcove import libsettings, openlibrary
-from alcove.filemeta import read_file_meta
+from loft import libsettings, openlibrary
+from loft.filemeta import read_file_meta
 
 FULL = {"key": "/works/OL45883W", "title": "The Long Way to a Small, Angry Planet",
         "author_name": ["Becky Chambers"], "first_publish_year": 2014, "publisher": ["Hodder", "Harper Voyager"],

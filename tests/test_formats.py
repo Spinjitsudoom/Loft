@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from alcove.formats import format_of
+from loft.formats import format_of
 
 
 @pytest.mark.parametrize("name,fmt", [

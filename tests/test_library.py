@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from alcove import library
-from alcove.db import session
+from loft import library
+from loft.db import session
 
 
 def titles(cards):

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Alcove</title>
+<title>Loft</title>
 <style>
   :root { --bg: #14110f; --raised: #1f1a17; --line: #2a2420; --ink: #e8e0d6; --muted: #9a8f84; --brass: #c9a27a; }
   * { box-sizing: border-box; }
@@ -28,11 +28,11 @@
 <main>
   <form id="f" novalidate>
     <img src="icon.svg" alt="" width="60" height="60">
-    <h1>Alcove</h1>
-    <p class="lead">Connect to the Alcove server with your books.</p>
+    <h1>Loft</h1>
+    <p class="lead">Connect to the Loft server with your books.</p>
     <label for="server">Server address</label>
     <input id="server" type="url" inputmode="url" autocomplete="url" autocapitalize="off" spellcheck="false" placeholder="192.168.1.20:4545">
-    <p class="hint">The address you open Alcove at in a browser, like <b>192.168.1.20:4545</b>.</p>
+    <p class="hint">The address you open Loft at in a browser, like <b>192.168.1.20:4545</b>.</p>
     <p class="error" id="error" role="alert"></p>
     <button type="submit" id="go">Connect</button>
   </form>
@@ -47,7 +47,7 @@
     e.preventDefault();
     error.textContent = "";
     go.disabled = true; go.textContent = "Connecting…";
-    AlcoveDesktop.connect(input.value).then(function (problem) {
+    LoftDesktop.connect(input.value).then(function (problem) {
       if (!problem) return;
       error.textContent = problem;
       go.disabled = false; go.textContent = "Connect";

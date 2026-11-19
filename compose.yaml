@@ -1,17 +1,17 @@
-# Alcove with Docker Compose:   docker compose up -d   then open http://<this computer>:4545
+# Loft with Docker Compose:   docker compose up -d   then open http://<this computer>:4545
 # The first person to open it makes the admin account. See docs/docker.md for more.
 services:
-  alcove:
-    build: .                          # or, once there's a published image: image: <registry>/alcove:latest
-    container_name: alcove
+  loft:
+    build: .                          # or, once there's a published image: image: <registry>/loft:latest
+    container_name: loft
     restart: unless-stopped
     ports:
       - "4545:4545"
     volumes:
-      - ./alcove-data:/data           # accounts, library database, covers: keep this
-      - /path/to/your/books:/books    # your books; add :ro if you won't add books in Alcove
+      - ./loft-data:/data           # accounts, library database, covers: keep this
+      - /path/to/your/books:/books    # your books; add :ro if you won't add books in Loft
                                       # (it never changes a file that's there, only saves new ones)
-    # user: "1000:1000"               # run as the owner of the books and ./alcove-data
+    # user: "1000:1000"               # run as the owner of the books and ./loft-data
     environment:
       TZ: Europe/Brussels             # your time zone
       # FORWARDED_ALLOW_IPS: "*"      # behind a reverse proxy or `tailscale serve`: see docs/docker.md

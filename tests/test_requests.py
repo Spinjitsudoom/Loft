@@ -1,8 +1,8 @@
 """Asking for books: anyone asks, others vote, an admin adds it (or says why not)."""
 import pytest
 
-from alcove import auth, notifications
-from alcove import book_requests as requests
+from loft import auth, notifications
+from loft import book_requests as requests
 from test_members import member
 
 

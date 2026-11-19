@@ -1,7 +1,7 @@
 import pytest
 
-from alcove.epub import open_epub
-from alcove.sanitize import chapter_html
+from loft.epub import open_epub
+from loft.sanitize import chapter_html
 from conftest import png
 
 HOSTILE = """<h1 id="top" onclick="steal()">Hello</h1>

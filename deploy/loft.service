@@ -1,0 +1,17 @@
+# Keeps Loft running in the background and starts it with the computer (systemd, per user).
+# For a copy of Loft in ~/loft (edit the paths if yours is elsewhere):
+#   cp deploy/loft.service ~/.config/systemd/user/ && systemctl --user enable --now loft
+#   loginctl enable-linger $USER      # keep running when you're logged out
+# Its settings come from ~/loft/config.toml (copy config.example.toml to start).
+[Unit]
+Description=Loft ebook library
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/env bash %h/loft/run.sh
+WorkingDirectory=%h/loft
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

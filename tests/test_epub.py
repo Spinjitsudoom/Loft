@@ -2,8 +2,8 @@ import zipfile
 
 import pytest
 
-from alcove.epub import open_epub
-from alcove.pages import Unreadable
+from loft.epub import open_epub
+from loft.pages import Unreadable
 from conftest import png
 
 CHAPTERS = [("Text/one.xhtml", "<h1>One</h1><p>First.</p>"),
@@ -90,7 +90,7 @@ def test_sloppy_nav_without_ncx_means_no_contents(tmp_path, make_rich_epub):
 
 def test_oversized_member_is_damaged(tmp_path, make_rich_epub, monkeypatch):
     """A zip bomb: a tiny file whose chapter unpacks to something enormous."""
-    from alcove import flow
+    from loft import flow
     p = make_rich_epub(tmp_path / "a.epub", chapters=[("Text/one.xhtml", "<p>" + "x" * 5000 + "</p>")])
     monkeypatch.setattr(flow, "MAX_MEMBER", 2000)
     book = open_epub(p)

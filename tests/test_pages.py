@@ -7,9 +7,9 @@ import pytest
 from PIL import Image
 from pypdf import PdfWriter
 
-from alcove import pages
-from alcove.db import session
-from alcove.scanner import scan
+from loft import pages
+from loft.db import session
+from loft.scanner import scan
 
 
 def outline_pdf(path, sizes=((300, 450), (600, 450), (300, 450))):

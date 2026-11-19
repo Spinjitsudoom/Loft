@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from alcove import comics
-from alcove.covers import extract_cover
+from loft import comics
+from loft.covers import extract_cover
 from conftest import PAGE_COLOURS
 
 ORDER = ["page1.png", "page2.png", "page10.png"]

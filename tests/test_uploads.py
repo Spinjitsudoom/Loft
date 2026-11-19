@@ -4,10 +4,10 @@ import time
 
 import pytest
 
-from alcove import libsettings, uploads
-from alcove.db import session
-from alcove.library import get_book
-from alcove.scanner import ScanResult, scan
+from loft import libsettings, uploads
+from loft.db import session
+from loft.library import get_book
+from loft.scanner import ScanResult, scan
 
 from conftest import jpg
 
@@ -171,7 +171,7 @@ def test_upload_routes(client, cfg, tmp_path, make_epub):
 
 def test_saving_waits_for_a_running_scan(cfg, tmp_path, make_epub):
     import threading
-    from alcove import scanner
+    from loft import scanner
     draft = uploads.start(cfg, "Tale.epub", chunks(epub_bytes(tmp_path, make_epub)))
     done = []
     with scanner._scan_lock:
@@ -190,7 +190,7 @@ def test_files_without_a_title_are_named_from_the_uploaded_name(cfg, make_pdf, t
 
 
 def test_a_cover_that_wont_download_falls_back_to_the_files_own(cfg, tmp_path, make_epub, monkeypatch):
-    from alcove import openlibrary
+    from loft import openlibrary
     def down(url, limit):
         raise OSError("no route")
     monkeypatch.setattr(openlibrary, "_get", down)
@@ -201,7 +201,7 @@ def test_a_cover_that_wont_download_falls_back_to_the_files_own(cfg, tmp_path, m
 
 def test_a_manga_can_be_marked_right_to_left_when_added(cfg, tmp_path):
     import zipfile
-    from alcove import pages
+    from loft import pages
     from conftest import png
     comic = tmp_path / "Manga.cbz"
     with zipfile.ZipFile(comic, "w") as z:

@@ -25,7 +25,7 @@ def jpg(colour, size=(60, 90)) -> bytes:
 @pytest.fixture(autouse=True)
 def offline(monkeypatch):
     """Tests never reach the real Open Library or AniList; a test that needs them fakes them."""
-    from alcove import anilist, hardcover, isbndb, openlibrary
+    from loft import anilist, hardcover, isbndb, openlibrary
 
     def refuse(url, *args):
         raise OSError(f"tests are offline ({url})")
@@ -197,9 +197,9 @@ def make_calibre_db(make_pdf, make_epub):
 
 @pytest.fixture
 def cfg(tmp_path, monkeypatch):
-    from alcove.config import load_config
-    monkeypatch.setenv("ALCOVE_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.delenv("ALCOVE_BOOKS_DIRS", raising=False)
+    from loft.config import load_config
+    monkeypatch.setenv("LOFT_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.delenv("LOFT_BOOKS_DIRS", raising=False)
     c = load_config(tmp_path / "none.toml")
     c.books_dirs = [tmp_path / "books"]
     c.books_dirs[0].mkdir()
@@ -211,8 +211,8 @@ def app_lib(cfg, make_calibre_db, make_cbz, make_pdf, make_epub, make_rich_epub)
     """A small scanned library and an app over it (no one signed in yet)."""
     from fastapi.testclient import TestClient
 
-    from alcove.app import create_app
-    from alcove.scanner import scan
+    from loft.app import create_app
+    from loft.scanner import scan
 
     root = cfg.books_dirs[0]
     make_calibre_db(root, [{"id": 7, "title": "It", "authors": ["Stephen King"], "cover": True,
@@ -244,8 +244,8 @@ def client(app_lib):
 
 @pytest.fixture
 def add(cfg):
-    from alcove.db import session
-    from alcove.scanner import _write_book
+    from loft.db import session
+    from loft.scanner import _write_book
 
     counter = {"t": 1000.0}
 

@@ -3,10 +3,10 @@ import os
 
 import pytest
 
-from alcove import editing
-from alcove.db import session
-from alcove.library import get_book, search
-from alcove.scanner import scan
+from loft import editing
+from loft.db import session
+from loft.library import get_book, search
+from loft.scanner import scan
 
 from conftest import jpg, png
 

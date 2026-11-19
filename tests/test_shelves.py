@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from alcove import auth, library, reading, settings, shelves
-from alcove.db import session
+from loft import auth, library, reading, settings, shelves
+from loft.db import session
 
 
 @pytest.fixture

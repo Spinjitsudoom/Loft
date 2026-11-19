@@ -1,7 +1,7 @@
 """Talking about a book without spoiling it: messages from further ahead than you are marked."""
 import pytest
 
-from alcove import auth, discussion, notifications, reading
+from loft import auth, discussion, notifications, reading
 from test_members import member
 
 
@@ -16,7 +16,7 @@ def at(cfg, user, book, page, pages=100):
 
 
 def _file(cfg, book):
-    from alcove.db import session
+    from loft.db import session
     with session(cfg.db_path) as con:
         return con.execute("SELECT id FROM book_files WHERE book_id = ?", (book,)).fetchone()["id"]
 

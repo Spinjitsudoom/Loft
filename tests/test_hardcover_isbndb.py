@@ -4,7 +4,7 @@ import urllib.error
 
 import pytest
 
-from alcove import autofill, hardcover, isbndb, libsettings, lookups, openlibrary
+from loft import autofill, hardcover, isbndb, libsettings, lookups, openlibrary
 
 HC_DOC = {"id": 1, "title": "Revelations", "subtitle": "", "author_names": ["Oliver Bowden"], "release_year": 2011,
           "isbns": ["0141046783", "9780141046785"], "genres": ["Fiction", "Historical"],
@@ -172,7 +172,7 @@ def test_a_new_book_takes_the_series_hardcover_gives(cfg, add, monkeypatch):
     autofill._enqueue(cfg)
     bid = add("Revelations", authors=["Oliver Bowden"])
     autofill.run(cfg, pause=0)
-    from alcove.db import session
+    from loft.db import session
     with session(cfg.db_path) as con:
         b = con.execute("SELECT * FROM books WHERE id = ?", (bid,)).fetchone()
     assert (b["series"], b["series_index"]) == ("Assassin's Creed", 4.0)

@@ -1,6 +1,6 @@
 import os
 
-from alcove.calibre import read_calibre
+from loft.calibre import read_calibre
 
 IT = {"id": 7, "title": "It", "authors": ["Stephen King"], "series": "Dark Tower", "series_index": 3,
       "tags": ["Horror", "Fiction"], "comment": "<p>Derry.</p><script>x()</script>", "publisher": "Viking",

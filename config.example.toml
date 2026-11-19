@@ -1,11 +1,11 @@
-# Copy to config.toml and edit (or point ALCOVE_CONFIG at a file elsewhere). Environment variables
-# ALCOVE_BOOKS_DIRS, ALCOVE_DATA_DIR, ALCOVE_HOST and ALCOVE_PORT override these.
+# Copy to config.toml and edit (or point LOFT_CONFIG at a file elsewhere). Environment variables
+# LOFT_BOOKS_DIRS, LOFT_DATA_DIR, LOFT_HOST and LOFT_PORT override these.
 
-# Folders containing your books. Subfolders are scanned. Alcove only reads them.
+# Folders containing your books. Subfolders are scanned. Loft only reads them.
 books_dirs = ["/var/mnt/smb-g/EBooks"]
 
 # Database and covers. Keep this on a local disk, not a network share.
-# data_dir = "~/.local/share/alcove"
+# data_dir = "~/.local/share/loft"
 
 host = "0.0.0.0"
 port = 4545

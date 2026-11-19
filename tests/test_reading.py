@@ -1,8 +1,8 @@
 import pytest
 
-from alcove import auth, library, reading
-from alcove.db import session
-from alcove.settings import update_settings
+from loft import auth, library, reading
+from loft.db import session
+from loft.settings import update_settings
 
 
 @pytest.fixture

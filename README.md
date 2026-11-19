@@ -1,7 +1,7 @@
-# Alcove
+# Loft
 
 A self-hosted ebook library with pages that turn like paper. Your books stay where they are;
-Alcove reads them, shelves them, and lets everyone you invite read them on a phone, tablet or
+Loft reads them, shelves them, and lets everyone you invite read them on a phone, tablet or
 computer.
 
 - **A library that looks like one.** A cover wall at home, and **the stacks**: every book standing
@@ -26,7 +26,7 @@ and open `http://<that computer>:4545`. More in [docs/docker.md](docs/docker.md)
 
 ### Directly (Linux and macOS)
 
-Alcove needs [uv](https://docs.astral.sh/uv/) (it fetches the right Python itself). For CBR comics,
+Loft needs [uv](https://docs.astral.sh/uv/) (it fetches the right Python itself). For CBR comics,
 install `unar` (or `unrar`, `7z` or `bsdtar`).
 
 ```bash
@@ -35,23 +35,23 @@ bash run.sh
 ```
 
 Then open `http://localhost:4545`. To keep it running and start it with the computer, see
-[deploy/alcove.service](deploy/alcove.service).
+[deploy/loft.service](deploy/loft.service).
 
-**The first person to open a new Alcove makes the admin account.** After that, the admin adds
+**The first person to open a new Loft makes the admin account.** After that, the admin adds
 people in **Library settings → People**, or lets them ask to join from the sign-in page.
 
 ## On Android
 
-**Alcove Lite** (`android-lite/`) is the web app in a small Android shell: it asks once for the
+**Loft Lite** (`android-lite/`) is the web app in a small Android shell: it asks once for the
 server's address, then opens straight onto your library. It keeps the app's own files on the phone,
 so with no connection it still opens onto your downloaded books (even over plain http), keeps the
 screen on while you read, lets you pick books from the phone to add or send, and saves files to
 Downloads. Build it with `bash android-lite/build.sh` (needs the Android SDK and a JDK; see the
-script), then install `android-lite/build/alcove-lite.apk`.
+script), then install `android-lite/build/loft-lite.apk`.
 
 ## On a computer
 
-**Alcove for Windows, macOS and Linux** (`desktop/`) is the web app in its own window (Electron),
+**Loft for Windows, macOS and Linux** (`desktop/`) is the web app in its own window (Electron),
 like Shelf's. It asks once for the server's address, opens straight onto it after that, and from
 the second start opens with no connection too, onto your downloaded books. **Change server** is
 in its menu (Alt shows it) and in Your settings. To run it: `cd desktop && npm install &&
@@ -60,7 +60,7 @@ node node_modules/electron/install.js && npm start`; to package it: `npm run dis
 
 ## Away from home
 
-Alcove isn't meant to face the internet. Use [Tailscale](https://tailscale.com): install it on the
+Loft isn't meant to face the internet. Use [Tailscale](https://tailscale.com): install it on the
 server and your devices, and open `http://<server's Tailscale name>:4545`. For https (which lets a
 phone keep the app itself for opening offline), run `sudo tailscale serve --bg 4545` and use
 `https://<server>.<tailnet>.ts.net`.
@@ -70,8 +70,8 @@ phone keep the app itself for opening offline), run `sudo tailscale serve --bg 4
 - Formats: EPUB, PDF, CBZ / CBR / CB7 comics, Kindle (MOBI, AZW, AZW3) and FB2. Plain-text files only
   if you turn them on (a stray notes file shouldn't appear as a book). Protected (DRM) books are
   listed but can't be opened.
-- Alcove **never renames, moves or rewrites your files.** Details you edit are kept in Alcove's own
-  database and survive rescans. Books added in Alcove are saved into the folder you choose, as
+- Loft **never renames, moves or rewrites your files.** Details you edit are kept in Loft's own
+  database and survive rescans. Books added in Loft are saved into the folder you choose, as
   `Author/Title/file`.
 - Calibre libraries are recognised: titles, authors, series and covers come from them once.
 
@@ -81,7 +81,7 @@ phone keep the app itself for opening offline), run `sudo tailscale serve --bg 4
 - **The stacks** (the shelf icon): bookcases shelved by **Series**, **Sections** or **Authors**
   (by surname, with name cards between them), narrowed by reading status, section, author or
   format. Tap a spine and the book slides out. Switch to **Covers** to see them face-out.
-- **Sections** are the library's categories. Alcove suggests them from your books' tags; arrange
+- **Sections** are the library's categories. Loft suggests them from your books' tags; arrange
   them in **Library settings → Sections** (a book stands in the first section it matches).
 - **Search** finds titles, authors, series and tags.
 
@@ -124,7 +124,7 @@ is back; a book that changes on the server downloads again by itself.
 
 ## Where things live
 
-Alcove's own data (`~/.local/share/alcove`, or `/data` in Docker): `alcove.db` (accounts, the
+Loft's own data (`~/.local/share/loft`, or `/data` in Docker): `loft.db` (accounts, the
 library, progress, settings), `covers/`, `pages/` (page images, pruned to `page_cache_mb`), and
 `uploads/` (books waiting to be saved or approved). Back up the database and covers.
 
@@ -135,7 +135,7 @@ bash run.sh                     # the server, on port 4545
 bash test.sh -q                 # the tests
 ```
 
-`run.sh` and `test.sh` keep the Python environment on local disk (`~/.local/share/alcove/venv`),
+`run.sh` and `test.sh` keep the Python environment on local disk (`~/.local/share/loft/venv`),
 since a network share can't hold one. The design and the decisions made along the way are in
 `docs/superpowers/specs/`.
 

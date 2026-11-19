@@ -2,8 +2,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from alcove import auth, joining, libsettings, notifications
-from alcove.db import session
+from loft import auth, joining, libsettings, notifications
+from loft.db import session
 
 
 def member(client, name="sam", password="samsamsam"):

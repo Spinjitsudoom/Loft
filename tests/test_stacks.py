@@ -1,8 +1,8 @@
 """The stacks: the library as bookcases, signed by series, section or author, with filters."""
 import pytest
 
-from alcove import auth, browse, libsettings, reading
-from alcove.db import session
+from loft import auth, browse, libsettings, reading
+from loft.db import session
 
 
 @pytest.fixture

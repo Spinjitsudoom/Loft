@@ -1,8 +1,8 @@
 import pytest
 
-from alcove import check, editing, library, reading, shelves, auth
-from alcove.db import session
-from alcove.scanner import scan
+from loft import check, editing, library, reading, shelves, auth
+from loft.db import session
+from loft.scanner import scan
 
 from conftest import jpg
 

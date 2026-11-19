@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from alcove.filemeta import read_file_meta, title_from_filename
+from loft.filemeta import read_file_meta, title_from_filename
 
 
 def test_pdf_title_author(tmp_path, make_pdf):
@@ -67,7 +67,7 @@ def test_dash_kept_outside_calibre_folders():
 
 
 def test_html_to_text():
-    from alcove.calibre import html_to_text
+    from loft.calibre import html_to_text
     assert html_to_text('<p>One &amp; two</p><script>alert(1)</script><p>Three<br>four</p>') == "One & two\n\nThree\nfour"
     assert html_to_text('<div><p style="x">A  <b>bold</b>\n move</p></div>') == "A bold move"
     assert html_to_text("") == ""

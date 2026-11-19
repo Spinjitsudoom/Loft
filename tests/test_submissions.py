@@ -4,8 +4,8 @@ import time
 
 import pytest
 
-from alcove import auth, notifications, submissions, uploads
-from alcove.library import get_book
+from loft import auth, notifications, submissions, uploads
+from loft.library import get_book
 from conftest import jpg
 from test_members import member
 

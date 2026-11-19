@@ -2,9 +2,9 @@ import json
 
 import pytest
 
-from alcove import autofill, editing, googlebooks, libsettings, lookups, openlibrary
-from alcove.db import session
-from alcove.titles import search_title, series_from_title
+from loft import autofill, editing, googlebooks, libsettings, lookups, openlibrary
+from loft.db import session
+from loft.titles import search_title, series_from_title
 
 
 def test_titles_are_tidied_like_the_web_app_does():

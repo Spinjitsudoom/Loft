@@ -1,7 +1,7 @@
 // The web app's pure text helpers (run by tests/test_js.py with Node, when Node is installed).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { searchTitle, spineTitle } from "../../src/alcove/web/js/titles.js";
+import { searchTitle, spineTitle } from "../../src/loft/web/js/titles.js";
 
 test("titles are tidied before they're looked up", () => {
   assert.equal(searchTitle("#04 Assassin's Creed - Revelations"), "Assassin's Creed: Revelations");
@@ -28,7 +28,7 @@ test("a spine in a series' case doesn't repeat the series", () => {
 });
 
 test("a series and its number are read from a title, when it has them", async () => {
-  const { seriesFromTitle } = await import("../../src/alcove/web/js/titles.js");
+  const { seriesFromTitle } = await import("../../src/loft/web/js/titles.js");
   assert.deepEqual(seriesFromTitle("#04 Assassin's Creed - Revelation"), { series: "Assassin's Creed", index: 4 });
   assert.deepEqual(seriesFromTitle("Assassin's Creed Book 4"), { series: "Assassin's Creed", index: 4 });
   assert.deepEqual(seriesFromTitle("Uprising #8"), { series: "Uprising", index: 8 });

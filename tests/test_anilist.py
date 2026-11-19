@@ -3,7 +3,7 @@ import socket
 
 import pytest
 
-from alcove import anilist, libsettings, lookups, openlibrary
+from loft import anilist, libsettings, lookups, openlibrary
 
 VOICES = {
     "id": 3126, "title": {"romaji": "Yami no Koe", "english": "Voices in the Dark"}, "startDate": {"year": 2003},
@@ -175,7 +175,7 @@ def test_lookup_route_asks_anilist_for_comics(client, cfg, net):
 
 
 def test_matches_in_your_language_with_a_description_come_first(cfg, net, monkeypatch):
-    from alcove import googlebooks
+    from loft import googlebooks
     monkeypatch.setattr(googlebooks, "key", lambda c: "k")
     gb = [
         {"source": "Google Books", "title": "Revelations", "language": "it", "description": ""},

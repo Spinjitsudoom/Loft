@@ -2,8 +2,8 @@ import copy
 
 import pytest
 
-from alcove import auth
-from alcove.settings import DEFAULTS, get_settings, update_settings
+from loft import auth
+from loft.settings import DEFAULTS, get_settings, update_settings
 
 
 @pytest.fixture
@@ -51,7 +51,7 @@ def test_settings_go_with_the_account(cfg, user):
     auth.delete_user(cfg, user.id)
     other = auth.create_user(cfg, "sam2", "longpassword")
     assert get_settings(cfg, other.id) == DEFAULTS
-    from alcove.db import session
+    from loft.db import session
     with session(cfg.db_path) as con:
         assert con.execute("SELECT COUNT(*) FROM user_settings").fetchone()[0] == 0
 

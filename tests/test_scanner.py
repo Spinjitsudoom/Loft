@@ -1,5 +1,5 @@
-from alcove.db import session
-from alcove.scanner import ScanResult, scan
+from loft.db import session
+from loft.scanner import ScanResult, scan
 
 
 def books(cfg):
@@ -126,7 +126,7 @@ def test_loose_file_becoming_calibre_leaves_no_orphan(cfg, make_calibre_db):
 
 
 def test_failed_calibre_read_is_retried(cfg, make_calibre_db, monkeypatch):
-    import alcove.scanner as scanner_mod
+    import loft.scanner as scanner_mod
     root = cfg.books_dirs[0]
     make_calibre_db(root, [{"id": 4, "title": "Leila", "authors": ["A. B."]}])
     real = scanner_mod.read_calibre
@@ -150,7 +150,7 @@ def test_two_calibre_libraries_stay_apart(cfg, make_calibre_db, tmp_path):
 def test_others_can_write_while_a_scan_runs(cfg, make_pdf, monkeypatch):
     """Creating the admin account during the first scan mustn't wait for (or time out on) the scan."""
     import sqlite3
-    import alcove.scanner as scanner_mod
+    import loft.scanner as scanner_mod
     root = cfg.books_dirs[0]
     for name in ("A", "B", "C"):
         make_pdf(root / f"{name}.pdf")

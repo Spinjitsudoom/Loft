@@ -2,9 +2,9 @@ import os
 
 import pytest
 
-from alcove import libsettings
-from alcove.db import session
-from alcove.scanner import last_report, scan
+from loft import libsettings
+from loft.db import session
+from loft.scanner import last_report, scan
 
 
 def titles(cfg):
@@ -149,7 +149,7 @@ def test_same_folder_by_another_path_is_refused(cfg, tmp_path):
 
 
 def test_nested_folders_from_config_dont_churn(cfg, make_pdf):
-    from alcove import reading, auth
+    from loft import reading, auth
     root = cfg.books_dirs[0]
     make_pdf(root / "Comics" / "A.pdf", title="A", pages=3)
     cfg.books_dirs = [root, root / "Comics"]
@@ -168,7 +168,7 @@ def test_nested_folders_from_config_dont_churn(cfg, make_pdf):
 def test_removing_a_folder_during_a_scan_keeps_it_removed(cfg, tmp_path, make_pdf, monkeypatch):
     import threading
     import time as _time
-    from alcove import scanner
+    from loft import scanner
     a, b = cfg.books_dirs[0], tmp_path / "b"
     make_pdf(a / "InA.pdf", title="InA")
     make_pdf(b / "InB.pdf", title="InB")

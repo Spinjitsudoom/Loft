@@ -1,6 +1,6 @@
 import pytest
 
-from alcove import auth
+from loft import auth
 
 
 def test_create_and_authenticate(cfg):

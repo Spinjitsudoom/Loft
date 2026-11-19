@@ -1,4 +1,4 @@
-from alcove.db import connect, session
+from loft.db import connect, session
 
 
 def test_schema_created(tmp_path):
