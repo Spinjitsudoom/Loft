@@ -1,0 +1,203 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Loft ${{ github.ref_name }}
+          body: |
+            ## Loft ${{ github.ref_name }}
+            
+            Self-hosted ebook library with pages that turn like paper.
+            
+            ### Downloads
+            - **Windows**: Loft-Setup-${{ github.ref_name }}.exe
+            - **macOS**: Loft-${{ github.ref_name }}-macos-arm64.dmg (Apple Silicon)
+            - **macOS**: Loft-${{ github.ref_name }}-macos-x64.dmg (Intel)
+            - **Linux**: loft-${{ github.ref_name }}-linux-amd64.deb
+            - **Android**: loft-lite-${{ github.ref_name }}.apk
+            - **Docker**: ghcr.io/spinjitsudoom/loft:${{ github.ref_name }}
+            
+            See [releases](https://github.com/Spinjitsudoom/Loft/releases) for details.
+          draft: false
+          prerelease: false
+
+  build-desktop:
+    needs: create-release
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm install
+      
+      - name: Build Windows
+        if: matrix.os == 'windows-latest'
+        working-directory: desktop
+        run: npm run dist:win
+      
+      - name: Build macOS
+        if: matrix.os == 'macos-latest'
+        working-directory: desktop
+        run: |
+          npm run dist:mac
+          # Also build for Apple Silicon if on Intel Mac
+          npm run dist:mac -- --arm64
+      
+      - name: Build Linux
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: desktop
+        run: npm run dist:deb
+      
+      - name: Upload Windows Installer
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: desktop/dist/Loft-Setup-*.exe
+          asset_name: Loft-Setup-${{ github.ref_name }}.exe
+          asset_content_type: application/octet-stream
+      
+      - name: Upload macOS DMG (Intel)
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: desktop/dist/Loft-*.dmg
+          asset_name: Loft-${{ github.ref_name }}-macos-x64.dmg
+          asset_content_type: application/octet-stream
+      
+      - name: Upload Linux DEB
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: desktop/dist/*.deb
+          asset_name: loft-${{ github.ref_name }}-linux-amd64.deb
+          asset_content_type: application/octet-stream
+
+  build-android:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          build-tools-version: 34.0.0
+      
+      - name: Build Android APK
+        working-directory: android-lite
+        run: bash build.sh
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: ${{ github.ref_name }}
+      
+      - name: Upload Android APK
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: android-lite/build/loft-lite.apk
+          asset_name: loft-lite-${{ github.ref_name }}.apk
+          asset_content_type: application/vnd.android.package-archive
+
+  build-docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}:latest
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache,mode=max
+
+  build-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.14'
+      
+      - name: Install build tools
+        run: pip install build twine
+      
+      - name: Build distribution
+        run: python -m build
+      
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+        continue-on-error: true
+      
+      - name: Upload wheel to release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: dist/loft*.whl
+          asset_name: loft-${{ github.ref_name }}-py3-none-any.whl
+          asset_content_type: application/octet-stream
+        continue-on-error: true
