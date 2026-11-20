@@ -8,6 +8,7 @@ import { state } from "./main.js";
 import { wireDownload } from "./downloads.js";
 import { wireDiscussion } from "./discussion.js";
 import { searchTitle } from "./titles.js";
+import { trailFor, trailHTML, wireTrail } from "./trail.js";
 
 function size(bytes) {
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
@@ -46,8 +47,9 @@ export async function renderBook(main, id, params = new URLSearchParams()) {
     b.published && ["Published", esc(publishedText(b.published))],
     b.language && ["Language", esc(b.language)],
   ].filter(Boolean);
+  const trail = trailHTML(await trailFor(b), b.id);
 
-  main.innerHTML = `<article class="book-page" style="--glow: ${esc(b.color || "#3a2a1e")}">
+  main.innerHTML = `${trail}<article class="book-page${trail ? " has-trail" : ""}" style="--glow: ${esc(b.color || "#3a2a1e")}">
     <div class="book-page-cover">${coverHTML(b, 480, "book-thick")}</div>
     <div class="book-page-text">
       <h1 class="book-page-title">${esc(b.title)}</h1>
@@ -71,8 +73,9 @@ export async function renderBook(main, id, params = new URLSearchParams()) {
     <h2 id="talk-head">Discussion</h2>
     <div data-talk></div>
   </section>
-  ${b.series_books.length ? shelfHTML({ title: `More in ${b.series}`, kind: "series", value: b.series, books: b.series_books }) : ""}`;
+  ${b.series_books.length ? shelfHTML({ title: `More in ${b.series}`, kind: "series", value: b.series, books: b.series_books, trail: false }) : ""}`;
   wireShelves(main);
+  wireTrail(main);
   wireShelfMenu(main, b);
   const slot = main.querySelector("[data-download]");
   if (slot) wireDownload(slot, b);

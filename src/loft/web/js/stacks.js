@@ -146,7 +146,7 @@ export async function renderStacks(main, params) {
       <div class="segmented stacks-view" role="radiogroup" aria-label="Show books">${[["spines", "Spines"], ["covers", "Covers"]].map(([k, label]) =>
         `<button type="button" role="radio" aria-checked="${state.view === k}" data-view="${k}">${label}</button>`).join("")}</div>
     </div>
-    ${data.cases.length ? data.cases.map((c) => `<section class="case" aria-label="${esc(c.title)}">
+    ${data.cases.length ? data.cases.map((c) => `<section class="case" aria-label="${esc(c.title)}" data-trail="${esc(c.title)}">
         <header class="case-sign">
           <h2>${esc(c.title)}</h2><span class="case-count">${c.count}</span>
           ${caseLink(c) ? `<a class="see-all" href="${caseLink(c)}">See all</a>` : ""}

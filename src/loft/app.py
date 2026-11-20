@@ -17,12 +17,14 @@ from pydantic import BaseModel, ConfigDict
 
 from . import auth, browse, check, discussion, editing, flowbooks, joining, libsettings, library, lookups, notifications, openlibrary, book_requests, submissions, pages, reading, settings, shelves, txt, uploads
 from .auth import User, admin_user, current_user
+from .backup import BackupManager
 from .config import Config
 from .covers import cover_path
 from .db import session
 from .sanitize import chapter_html
 from . import autofill
 from .scanner import Scanner, last_report
+from .update import get_checker
 
 WEB_DIR = Path(__file__).parent / "web"
 
@@ -155,8 +157,41 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # Initialize update checker
+        update_checker = get_checker()
+        app.state.update_checker = update_checker
+        
+        # Initialize backup manager
+        db_path = cfg.data_dir / "library.db"
+        backup_manager = BackupManager(cfg.data_dir, db_path, backup_count=7)
+        app.state.backup_manager = backup_manager
+        
+        # Create initial backup on startup
+        if db_path.exists():
+            backup_manager.backup_now()
+        
         if scan_on_start:
             scanner.start()
+        
+        # Check for updates periodically in background
+        async def check_updates_periodically():
+            import asyncio
+            while True:
+                try:
+                    if update_checker.should_check():
+                        await update_checker.check_for_updates()
+                except Exception as e:
+                    import logging
+                    logging.error(f"Update check failed: {e}")
+                await asyncio.sleep(3600)  # Check every hour
+        
+        # Start update checker task
+        try:
+            import asyncio
+            asyncio.create_task(check_updates_periodically())
+        except Exception:
+            pass
+        
         yield
 
     app = FastAPI(title="Loft", lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -191,6 +226,55 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     def status():
         lib = libsettings.get_library(cfg)
         return {"setup_needed": not auth.has_users(cfg), "name": lib["name"], "join_requests": lib["join_requests"]}
+
+    # ---------- updates ----------
+
+    @app.get("/api/update/status")
+    def update_status():
+        """Get current update status."""
+        checker = app.state.update_checker
+        return checker.get_status()
+
+    @app.post("/api/update/check")
+    async def check_for_updates_now():
+        """Immediately check for updates."""
+        checker = app.state.update_checker
+        await checker.check_for_updates()
+        return checker.get_status()
+
+    # ---------- backups ----------
+
+    @app.get("/api/backup/status")
+    def backup_status():
+        """Get backup status and list."""
+        manager = app.state.backup_manager
+        return manager.get_status()
+
+    @app.post("/api/backup/create")
+    async def create_backup_now():
+        """Create an immediate backup."""
+        manager = app.state.backup_manager
+        backup_file = await run_in_threadpool(manager.backup_now)
+        if backup_file:
+            return {"success": True, "backup": backup_file.name}
+        return {"success": False, "error": "Backup failed"}
+
+    @app.post("/api/backup/restore")
+    async def restore_backup(body: Body):
+        """Restore from a backup file.
+        
+        Body: {"filename": "loft_db_YYYYMMDD_HHMMSS.sqlite.gz"}
+        """
+        import json
+        filename = body.get("filename") if isinstance(body, dict) else json.loads(body).get("filename")
+        backup_file = app.state.backup_manager.backup_dir / filename
+        
+        if not backup_file.exists():
+            raise HTTPException(404, "Backup not found")
+        
+        manager = app.state.backup_manager
+        success = await run_in_threadpool(manager.restore_backup, backup_file)
+        return {"success": success}
 
     @app.post("/api/setup")
     def setup(body: Credentials, request: Request, response: Response):

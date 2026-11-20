@@ -19,7 +19,7 @@ export async function renderGrid(main, { kind, value, title, query }) {
     main.innerHTML = `<section class="page">
       <header class="page-head"><h1>${books.length ? `Results for “${esc(query)}”` : `Nothing matches “${esc(query)}”`}</h1>
       ${books.length ? "" : `<p class="muted">Try part of a title, an author’s surname or a series name.</p>`}</header>
-      <ul class="grid">${books.map(gridItem).join("")}</ul></section>`;
+      <ul class="grid" data-trail="${esc(`Results for “${query}”`)}">${books.map(gridItem).join("")}</ul></section>`;
     return;
   }
 
@@ -35,7 +35,7 @@ export async function renderGrid(main, { kind, value, title, query }) {
       ${shelf && shelf.kind === "own" ? `<div class="head-actions">
         <button class="btn btn-small" type="button" data-rename>Rename</button>
         <button class="btn btn-small" type="button" data-delete>Remove shelf</button></div>` : ""}</header>
-    <ul class="grid">${first.books.map(gridItem).join("")}</ul>
+    <ul class="grid" data-trail="${esc(shelf ? shelf.name : heading)}" data-more="${esc(base)}" data-total="${first.total}">${first.books.map(gridItem).join("")}</ul>
     <div class="grid-more" aria-hidden="true"></div>
   </section>`;
   main.querySelector("[data-rename]")?.addEventListener("click", async () => {

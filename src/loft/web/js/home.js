@@ -27,7 +27,7 @@ function allLink(row) {
 }
 
 export function shelfHTML(row) {
-  return `<section class="shelf" aria-label="${esc(row.title)}">
+  return `<section class="shelf" aria-label="${esc(row.title)}"${row.trail === false ? "" : ` data-trail="${esc(row.title)}"`}>
     <header class="shelf-head">
       <h2>${esc(row.title)}</h2>
       ${row.kind === "continue" || row.kind === "device" ? "" : `<a class="see-all" href="${allLink(row)}">See all</a>`}
