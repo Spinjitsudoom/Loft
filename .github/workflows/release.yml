@@ -10,123 +10,91 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.14'
-      
-      - name: Install build tools
-        run: pip install build
-      
-      - name: Build distribution
-        run: python -m build
-      
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - run: pip install build && python -m build
+      - uses: actions/upload-artifact@v4
         with:
           name: python-dist
           path: dist/
 
-  build-desktop:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+  build-desktop-windows:
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      
-      - name: Install dependencies
-        working-directory: desktop
-        run: npm ci
-      
-      - name: Build Windows
-        if: matrix.os == 'windows-latest'
-        working-directory: desktop
-        run: npm run dist:win
-      
-      - name: Build macOS
-        if: matrix.os == 'macos-latest'
-        working-directory: desktop
-        run: npm run dist:mac
-      
-      - name: Build Linux
-        if: matrix.os == 'ubuntu-latest'
-        working-directory: desktop
-        run: npm run dist:deb
-      
-      - name: Upload Windows artifacts
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
+      - working-directory: desktop
+        run: npm install --no-optional && npm run dist:win
+      - uses: actions/upload-artifact@v4
         with:
-          name: desktop-windows
+          name: windows-exe
           path: desktop/dist/Loft-Setup-*.exe
-      
-      - name: Upload macOS artifacts
-        if: matrix.os == 'macos-latest'
-        uses: actions/upload-artifact@v4
+
+  build-desktop-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          name: desktop-macos
+          node-version: '20'
+      - working-directory: desktop
+        run: npm install --no-optional && npm run dist:mac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
           path: desktop/dist/Loft-*.dmg
-      
-      - name: Upload Linux DEB
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
+
+  build-desktop-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          name: desktop-linux-deb
+          node-version: '20'
+      - working-directory: desktop
+        run: npm install --no-optional && npm run dist:deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb
           path: desktop/dist/loft_*.deb
 
   build-android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Setup Java
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-      
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v3
         with:
           api-level: 34
           build-tools-version: 34.0.0
-      
-      - name: Build Android APK
-        working-directory: android-lite
+      - working-directory: android-lite
         run: bash build.sh
         env:
           VERSION_CODE: ${{ github.run_number }}
           VERSION_NAME: ${{ github.ref_name }}
-      
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: android-apk
           path: android-lite/build/loft-lite.apk
 
   create-release:
-    needs: [build-python, build-desktop, build-android]
+    needs: [build-python, build-desktop-windows, build-desktop-macos, build-desktop-linux, build-android]
     if: always()
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
-      
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - uses: softprops/action-gh-release@v1
         with:
           files: artifacts/**/*
           draft: false
@@ -136,28 +104,18 @@ jobs:
             
             Self-hosted ebook library with pages that turn like paper.
             
-            ### Downloads
-            
-            **Server**
-            - PyPI: `pip install loft==${{ github.ref_name }}`
-            
-            **Desktop Clients**
-            - Windows: `Loft-Setup-*.exe`
-            - macOS: `Loft-*.dmg` (Intel compatible)
-            - Linux DEB: `loft_*.deb` (Debian/Ubuntu)
-            
-            **Mobile**
-            - Android: `loft-lite.apk`
+            ### Available Downloads
+            - **Windows**: Loft-Setup-*.exe
+            - **macOS**: Loft-*.dmg
+            - **Linux**: loft_*.deb
+            - **Android**: loft-lite.apk
+            - **Python**: `pip install loft==${{ github.ref_name }}`
             
             ### Features
-            - What's New popup showing changelog on update
-            - Automatic update checking from GitHub releases
-            - Database backups with rotation policy
-            - Multi-user library with admin controls
-            - Paper-curl page-turning reader
-            - Support for EPUB, PDF, MOBI, AZW3, FB2, comics
+            - What's New popup, Auto-update, Database backups
+            - Multi-user library, Paper-curl reader
+            - Support for 8+ ebook formats
             
-            ### Installation & Deployment
-            See [README.md](https://github.com/${{ github.repository }}) for detailed setup instructions.
+            See README for setup guides.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
