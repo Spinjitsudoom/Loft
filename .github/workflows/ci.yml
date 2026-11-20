@@ -2,69 +2,27 @@ name: CI
 
 on:
   push:
-    branches: [master, m6-packaging]
+    branches: [master]
   pull_request:
-    branches: [master, m6-packaging]
+
+permissions:
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.14']
-    
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip uv
-          uv pip install -e ".[dev]"
-      
-      - name: Run tests
-        run: bash test.sh
-      
-      - name: Setup Node.js for JS tests
-        uses: actions/setup-node@v4
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v6
+      - name: Server tests
+        run: bash test.sh -q
+        env:
+          UV_PYTHON_PREFERENCE: only-system
+      - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-      
-      - name: Run JavaScript tests
-        working-directory: src/loft/web/js
-        run: |
-          npm install --save-dev @babel/core @babel/preset-env @babel/register chai mocha
-          npm test
-        continue-on-error: true
-
-  build-preview:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.14'
-      
-      - name: Build Python distribution
-        run: |
-          python -m pip install build
-          python -m build
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      
-      - name: Build desktop preview
-        working-directory: desktop
-        run: |
-          npm install
-          npm run dist:dir
-        continue-on-error: true
+          node-version: "22"
+      - name: Web app tests
+        run: node --test tests/js/

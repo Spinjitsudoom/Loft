@@ -1,15 +1,16 @@
 {
   "name": "loft-desktop",
   "productName": "Loft",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Loft for Windows, macOS and Linux. Opens your Loft library.",
   "license": "AGPL-3.0-or-later",
   "private": true,
   "main": "app/main.js",
   "scripts": {
     "start": "electron .",
-    "dist:win": "electron-builder --win nsis --publish never",
-    "dist:mac": "electron-builder --mac dmg --publish never",
+    "dist:win": "electron-builder --win nsis --x64 --publish never",
+    "dist:mac": "electron-builder --mac dmg --x64 --arm64 --publish never",
+    "dist:linux": "electron-builder --linux AppImage deb rpm --x64 --publish never",
     "dist:deb": "electron-builder --linux deb --publish never",
     "dist:dir": "electron-builder --linux dir --publish never"
   },
@@ -22,14 +23,63 @@
     "productName": "Loft",
     "executableName": "loft",
     "artifactName": "Loft-${version}-${os}-${arch}.${ext}",
-    "directories": { "output": "dist" },
-    "files": ["app/**", "package.json"],
-    "win": { "target": "nsis", "icon": "app/icon.png" },
-    "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true,
-              "shortcutName": "Loft", "artifactName": "Loft-Setup-${version}.${ext}" },
-    "mac": { "category": "public.app-category.books", "icon": "app/icon.png" },
-    "linux": { "icon": "app/icon.png", "category": "Office", "synopsis": "Your Loft ebook library",
-               "desktop": { "entry": { "Keywords": "books;ebooks;comics;reader;library;", "Categories": "Office;Viewer;" } } },
-    "deb": { "artifactName": "loft_${version}_${arch}.${ext}" }
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "app/**",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "app/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Loft",
+      "artifactName": "Loft-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "category": "public.app-category.books",
+      "icon": "app/icon.png",
+      "identity": null,
+      "target": [
+        "dmg"
+      ]
+    },
+    "linux": {
+      "icon": "app/icon.png",
+      "category": "Office",
+      "synopsis": "Your Loft ebook library",
+      "desktop": {
+        "entry": {
+          "Keywords": "books;ebooks;comics;reader;library;",
+          "Categories": "Office;Viewer;"
+        }
+      },
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "maintainer": "Spinjitsudoom <229893545+Spinjitsudoom@users.noreply.github.com>"
+    },
+    "deb": {
+      "artifactName": "loft_${version}_${arch}.${ext}"
+    },
+    "afterPack": "build-hooks/adhoc-sign.js",
+    "rpm": {
+      "artifactName": "loft-${version}.${arch}.${ext}"
+    },
+    "appImage": {
+      "artifactName": "Loft-${version}-linux-${arch}.${ext}"
+    }
+  },
+  "homepage": "https://github.com/Spinjitsudoom/Loft",
+  "author": {
+    "name": "Spinjitsudoom",
+    "email": "229893545+Spinjitsudoom@users.noreply.github.com"
   }
 }

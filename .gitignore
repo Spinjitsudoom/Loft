@@ -5,3 +5,7 @@ __pycache__/
 .pytest_cache/
 /data/
 config.toml
+/dist/
+/build/
+desktop/dist/
+desktop/node_modules/

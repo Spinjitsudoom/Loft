@@ -14,6 +14,13 @@ computer.
 
 ## Install
 
+### Download
+
+Each [release](https://github.com/Spinjitsudoom/Loft/releases/latest) has the server for Windows,
+macOS and Linux (nothing else to install: unpack it, start `loft-server`, open
+`http://localhost:4545`), the desktop app for each, and Loft Lite for Android. The release page says
+what each system asks the first time.
+
 ### With Docker (any Linux server, NAS or Raspberry Pi)
 
 Change the books path in `compose.yaml`, then:
@@ -55,8 +62,9 @@ script), then install `android-lite/build/loft-lite.apk`.
 like Shelf's. It asks once for the server's address, opens straight onto it after that, and from
 the second start opens with no connection too, onto your downloaded books. **Change server** is
 in its menu (Alt shows it) and in Your settings. To run it: `cd desktop && npm install &&
-node node_modules/electron/install.js && npm start`; to package it: `npm run dist:deb` (or
-`dist:win`, `dist:mac`).
+node node_modules/electron/install.js && npm start`; to package it: `npm run dist:linux` (or
+`dist:win`, `dist:mac`). The standalone server is built with
+`uv run --with pyinstaller python packaging/build_server.py`; pushing a `v*` tag builds everything.
 
 ## Away from home
 
