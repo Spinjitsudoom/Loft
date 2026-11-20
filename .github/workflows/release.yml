@@ -17,7 +17,7 @@ jobs:
           python-version: '3.14'
       
       - name: Install build tools
-        run: pip install build twine
+        run: pip install build
       
       - name: Build distribution
         run: python -m build
@@ -28,24 +28,107 @@ jobs:
           name: python-dist
           path: dist/
 
+  build-desktop:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm ci
+      
+      - name: Build Windows
+        if: matrix.os == 'windows-latest'
+        working-directory: desktop
+        run: npm run dist:win
+      
+      - name: Build macOS
+        if: matrix.os == 'macos-latest'
+        working-directory: desktop
+        run: npm run dist:mac
+      
+      - name: Build Linux
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: desktop
+        run: npm run dist:deb
+      
+      - name: Upload Windows artifacts
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows
+          path: desktop/dist/Loft-Setup-*.exe
+      
+      - name: Upload macOS artifacts
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos
+          path: desktop/dist/Loft-*.dmg
+      
+      - name: Upload Linux DEB
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux-deb
+          path: desktop/dist/loft_*.deb
+
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          build-tools-version: 34.0.0
+      
+      - name: Build Android APK
+        working-directory: android-lite
+        run: bash build.sh
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: ${{ github.ref_name }}
+      
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: android-lite/build/loft-lite.apk
+
   create-release:
-    needs: [build-python]
+    needs: [build-python, build-desktop, build-android]
+    if: always()
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
       
-      - name: Download python artifacts
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          name: python-dist
-          path: dist/
+          path: artifacts
       
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: dist/*
+          files: artifacts/**/*
           draft: false
           prerelease: false
           body: |
@@ -53,19 +136,28 @@ jobs:
             
             Self-hosted ebook library with pages that turn like paper.
             
-            ### Installation
-            **PyPI:** `pip install loft==${{ github.ref_name }}`
+            ### Downloads
             
-            **Docker:** Build from source with `docker build -t loft:${{ github.ref_name }} .`
+            **Server**
+            - PyPI: `pip install loft==${{ github.ref_name }}`
             
-            **Desktop/Mobile:** Build from source - see README for instructions
+            **Desktop Clients**
+            - Windows: `Loft-Setup-*.exe`
+            - macOS: `Loft-*.dmg` (Intel compatible)
+            - Linux DEB: `loft_*.deb` (Debian/Ubuntu)
+            
+            **Mobile**
+            - Android: `loft-lite.apk`
             
             ### Features
-            - What's New popup showing changelog
-            - Automatic update checking
-            - Database backups
-            - Multi-platform support
+            - What's New popup showing changelog on update
+            - Automatic update checking from GitHub releases
+            - Database backups with rotation policy
+            - Multi-user library with admin controls
+            - Paper-curl page-turning reader
+            - Support for EPUB, PDF, MOBI, AZW3, FB2, comics
             
-            See [README.md](https://github.com/${{ github.repository }}) for setup.
+            ### Installation & Deployment
+            See [README.md](https://github.com/${{ github.repository }}) for detailed setup instructions.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
