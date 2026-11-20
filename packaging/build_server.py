@@ -3,10 +3,13 @@
     uv run --with pyinstaller python packaging/build_server.py
 
 Makes dist/loft-server-<version>-<system>-<arch>.zip (.tar.gz on Linux): a folder, loft-server, holding
-the program, the web app and everything Python needs, so nothing has to be installed first.
+the program, the web app and everything Python needs, so nothing has to be installed first. On
+Windows it also makes dist/loft-server-<version>-windows-<arch>-setup.exe from the same folder, with
+Inno Setup 6 (packaging/windows/loft-server.iss); set ISCC to its ISCC.exe if it isn't found.
 """
 from __future__ import annotations
 
+import os
 import platform
 import shutil
 import subprocess
@@ -60,8 +63,34 @@ def main() -> None:
         subprocess.run(["ditto", "-c", "-k", "--keepParent", str(folder), str(out)], check=True)
     else:
         out = Path(shutil.make_archive(str(dist / NAME), "zip", dist, "loft-server"))
+        windows_setup(folder, dist, work)
     shutil.rmtree(folder)
     print(f"Built {out}")
+
+
+def find_iscc() -> str | None:
+    candidates = [os.environ.get("ISCC"), shutil.which("iscc")]
+    for base in ("ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA"):
+        if os.environ.get(base):
+            candidates += [str(Path(os.environ[base]) / sub / "Inno Setup 6" / "ISCC.exe") for sub in ("", "Programs")]
+    return next((c for c in candidates if c and Path(c).is_file()), None)
+
+
+def windows_setup(folder: Path, dist: Path, work: Path) -> None:
+    """The installer: the same folder, put in the Start menu, with an uninstaller."""
+    iscc = find_iscc()
+    if not iscc:
+        if os.environ.get("CI"):
+            raise SystemExit("Inno Setup 6 (ISCC.exe) is needed to build the Windows setup")
+        print("Inno Setup 6 isn't installed: skipping the Windows setup")
+        return
+    from PIL import Image
+    icon = work / "loft.ico"
+    Image.open(ROOT / "desktop" / "app" / "icon.png").save(icon, sizes=[(s, s) for s in (16, 24, 32, 48, 64, 128, 256)])
+    subprocess.run([iscc, "/Q", f"/DAppVersion={VERSION}", f"/DSourceDir={folder}", f"/DOutputDir={dist}",
+                    f"/DOutputName={NAME}-setup", f"/DIconFile={icon}",
+                    str(ROOT / "packaging" / "windows" / "loft-server.iss")], check=True)
+    print(f"Built {dist / (NAME + '-setup.exe')}")
 
 
 if __name__ == "__main__":

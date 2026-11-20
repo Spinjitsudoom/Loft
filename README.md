@@ -18,7 +18,9 @@ computer.
 
 Each [release](https://github.com/Spinjitsudoom/Loft/releases/latest) has the server for Windows,
 macOS and Linux (nothing else to install: unpack it, start `loft-server`, open
-`http://localhost:4545`), the desktop app for each, and Loft Lite for Android. The release page says
+`http://localhost:4545`; on Windows there's also a setup, `loft-server-…-setup.exe`, that installs
+it in the Start menu and can start it when you sign in), the desktop app for each, and Loft Lite
+for Android. The release page says
 what each system asks the first time.
 
 ### With Docker (any Linux server, NAS or Raspberry Pi)

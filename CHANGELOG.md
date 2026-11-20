@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.1.2 (not released yet)
+## 0.1.3 (2026-11-21)
+
+- The Windows server has a setup (`loft-server-<version>-windows-x64-setup.exe`): no administrator
+  needed, Start menu shortcuts, an option to start Loft when you sign in, and an uninstaller that
+  leaves the library's data alone. Installed copies update themselves by running the next setup.
+  The zip is still there for anyone who'd rather unpack it.
+
+## 0.1.2 (2026-11-20)
 
 - Loft keeps itself up to date: the standalone server downloads new versions and an admin chooses
   when to restart into them; the desktop app (Windows, Linux AppImage) and Loft Lite download them

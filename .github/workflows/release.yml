@@ -44,13 +44,43 @@ jobs:
           python-version: "3.14"
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --locked --no-dev
+      - if: runner.os == 'Windows'
+        name: Inno Setup, for the Windows setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
       - run: uv run --no-dev --with pyinstaller python packaging/build_server.py
+      - if: runner.os == 'Windows'
+        name: Try the Windows setup (install, start, uninstall)
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path pyproject.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          $setup = (Get-ChildItem dist\loft-server-*-setup.exe)[0].FullName
+          Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-' -Wait
+          $dir = "$env:LOCALAPPDATA\Programs\Loft Server"
+          foreach ($f in 'loft-server.exe','unins000.exe','README.txt') { if (-not (Test-Path "$dir\$f")) { throw "The setup didn't install $f" } }
+          $env:LOFT_DATA_DIR = "$env:RUNNER_TEMP\loft-data"
+          $server = Start-Process "$dir\loft-server.exe" -WorkingDirectory $dir -PassThru
+          $ping = $null
+          for ($i = 0; $i -lt 60 -and -not $ping; $i++) {
+            Start-Sleep 1
+            try { $ping = Invoke-RestMethod http://127.0.0.1:4545/api/ping } catch { }
+          }
+          Stop-Process $server -Force
+          if (-not $ping) { throw "The installed server didn't answer" }
+          if ($ping.version -ne $version) { throw "The installed server is $($ping.version), not $version" }
+          Start-Sleep 2
+          Start-Process "$dir\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES' -Wait
+          for ($i = 0; $i -lt 30 -and (Test-Path "$dir\loft-server.exe"); $i++) { Start-Sleep 1 }
+          if (Test-Path "$dir\loft-server.exe") { throw "Uninstalling left the server behind" }
+          Write-Output "Setup for $version installs, runs and uninstalls."
       - uses: actions/upload-artifact@v4
         with:
           name: server-${{ matrix.os }}
           path: |
             dist/loft-server-*.zip
             dist/loft-server-*.tar.gz
+            dist/loft-server-*-setup.exe
           if-no-files-found: error
 
   desktop:

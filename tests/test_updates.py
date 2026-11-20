@@ -143,6 +143,67 @@ def test_restarting_swaps_the_folders_and_keeps_config(cfg, release, monkeypatch
     assert started[0][1]["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
 
 
+@pytest.fixture
+def windows_setup_install(release, monkeypatch):
+    """The release above, seen from a copy installed on Windows by the setup."""
+    monkeypatch.setattr(updates.sys, "platform", "win32")
+    monkeypatch.setattr(updates, "system", lambda: ("windows", "x64"))
+    monkeypatch.setattr(updates, "PROGRAM", "loft-server.exe")
+    home = release["home"]
+    (home / "loft-server.exe").write_text("old")
+    (home / "unins000.exe").write_bytes(b"MZ uninstaller")
+    setup = b"MZ setup for 0.1.2"
+    name = "loft-server-0.1.2-windows-x64-setup.exe"
+    release["files"].clear()
+    release["files"].update({
+        name: setup,
+        "loft-server-0.1.2-windows-x64.zip": b"not this one",
+        "SHA256SUMS.txt": f"{hashlib.sha256(setup).hexdigest()}  {name}\n".encode(),
+    })
+    return {**release, "name": name, "setup": setup}
+
+
+def test_copies_installed_by_the_setup_download_the_next_setup(cfg, windows_setup_install):
+    assert updates.asset_name("0.1.2") == windows_setup_install["name"]
+    now = updates.check(cfg)
+    assert now["ready"] and not now["error"]
+    assert (updates.staging_dir("0.1.2") / windows_setup_install["name"]).read_bytes() == windows_setup_install["setup"]
+
+
+def test_a_setup_with_a_bad_checksum_is_never_run(cfg, windows_setup_install):
+    windows_setup_install["files"][windows_setup_install["name"]] = b"MZ something else"
+    now = updates.check(cfg)
+    assert not now["ready"] and "couldn’t be downloaded" in now["error"]
+
+
+def restart_script(monkeypatch, version) -> str:
+    started = []
+    monkeypatch.setattr(updates.subprocess, "Popen", lambda args, **kw: started.append(args))
+    monkeypatch.setattr(updates.os, "_exit", lambda code: started.append(("exit", code)))
+    updates._restart_into(version)
+    assert started[-1] == ("exit", 0)
+    script = Path(started[0][-1])
+    return script.read_text()
+
+
+def test_restarting_a_setup_install_runs_the_setup_silently(cfg, windows_setup_install, monkeypatch):
+    updates.check(cfg)
+    home, stage = windows_setup_install["home"], updates.staging_dir("0.1.2")
+    script = restart_script(monkeypatch, "0.1.2")
+    setup = stage / windows_setup_install["name"]
+    assert f'start "" /wait "{setup}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-' in script
+    assert f'"{home / "loft-server.exe"}"' in script.split("/VERYSILENT")[1]   # started again afterwards
+    assert f'rmdir /s /q "{stage}"' in script and " move " not in script
+    assert (home / "loft-server.exe").read_text() == "old"   # the setup does the replacing
+
+
+def test_restarting_an_unpacked_windows_copy_still_swaps_folders(cfg, release, monkeypatch):
+    monkeypatch.setattr(updates.sys, "platform", "win32")
+    updates.check(cfg)
+    script = restart_script(monkeypatch, "0.1.2")
+    assert "/VERYSILENT" not in script and f'move "{updates.staging_dir("0.1.2")}"' in script
+
+
 def zip_with(entries) -> Path:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:

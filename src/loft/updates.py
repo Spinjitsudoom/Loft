@@ -5,7 +5,8 @@ newest release. The standalone server (packaging/build_server.py) then downloads
 for this system, checks it against the release's SHA256SUMS.txt, unpacks it next to itself, and
 tells the admins it's ready. Nothing changes until an admin chooses Restart to update: then the
 new folder takes the old one's place (the old one is kept beside it as "<name>.previous") and
-Loft starts again from it. Loft installed any other way (Docker, from source) is only told a new
+Loft starts again from it. On Windows a copy installed with the setup is updated by the next setup
+instead, run silently, so Windows' list of installed apps stays right. Loft installed any other way (Docker, from source) is only told a new
 version is out, since it's updated the way it was installed.
 
 Only Loft's own release address is asked, and nothing about the library is sent.
@@ -81,6 +82,8 @@ def system() -> tuple[str, str]:
 
 def asset_name(version: str) -> str:
     name, arch = system()
+    if by_setup():
+        return f"loft-server-{version}-{name}-{arch}-setup.exe"
     return f"loft-server-{version}-{name}-{arch}.{'tar.gz' if name == 'linux' else 'zip'}"
 
 
@@ -89,6 +92,12 @@ def install_dir() -> Path | None:
     if not getattr(sys, "frozen", False) and not os.environ.get("LOFT_UPDATES_INSTALL"):
         return None
     return Path(os.environ.get("LOFT_UPDATES_INSTALL") or Path(sys.executable).parent).resolve()
+
+
+def by_setup() -> bool:
+    """Whether this copy was installed on Windows with the setup (which leaves its uninstaller here)."""
+    home = install_dir()
+    return bool(sys.platform == "win32" and home and (home / "unins000.exe").is_file())
 
 
 def can_install() -> bool:
@@ -100,6 +109,12 @@ def can_install() -> bool:
 def staging_dir(version: str) -> Path:
     home = install_dir()
     return home.parent / f".{home.name}.update-{version}"
+
+
+def _staged(version: str) -> Path:
+    """What a finished download leaves: the next setup, or the new server unpacked."""
+    stage = staging_dir(version)
+    return stage / asset_name(version) if by_setup() else stage / PROGRAM
 
 
 # ---------- what's known ----------
@@ -127,8 +142,7 @@ def status(cfg: Config) -> dict:
     current = current_version()
     latest = state.get("latest") or ""
     is_newer = newer(latest, current)
-    ready = bool(is_newer and state.get("ready") == latest and can_install()
-                 and (staging_dir(latest) / PROGRAM).is_file())
+    ready = bool(is_newer and state.get("ready") == latest and can_install() and _staged(latest).is_file())
     return {
         "current": current,
         "latest": latest if is_newer else current,
@@ -230,6 +244,8 @@ def _fetch(version: str, assets: dict[str, str]) -> None:
                 digest.update(chunk)
         if digest.hexdigest() != expected:
             raise ValueError("the download doesn't match its checksum")
+        if by_setup():
+            return  # the setup itself is what's run
         unpacked = stage / "unpacked"
         unpack(archive, unpacked)
         archive.unlink()
@@ -312,7 +328,7 @@ def _restart_into(version: str) -> None:
     env = {**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1"}
     log.warning("Restarting into Loft %s", version)
     if sys.platform == "win32":
-        _restart_windows(home, stage, previous, argv, env)
+        _restart_windows(home, stage, previous, argv, env, setup=_staged(version) if by_setup() else None)
         return
     try:
         shutil.rmtree(previous, ignore_errors=True)
@@ -331,21 +347,32 @@ def _restart_into(version: str) -> None:
     os.execve(argv[0], argv, env)
 
 
-def _restart_windows(home: Path, stage: Path, previous: Path, argv: list[str], env: dict) -> None:
+def _restart_windows(home: Path, stage: Path, previous: Path, argv: list[str], env: dict,
+                     setup: Path | None = None) -> None:
     # A running program's folder can't be moved on Windows: a small script waits for Loft to
-    # stop, swaps the folders and starts the new one in a window of its own.
+    # stop, swaps the folders (or runs the next setup, for a copy the setup installed) and starts
+    # the new one in a window of its own.
     script = home.parent / f".{home.name}.update.cmd"
     args = subprocess.list2cmdline(argv[1:])
     here = Path.cwd().resolve()
     cwd = home if here == home else here
+    if setup:
+        replace = [
+            f'start "" /wait "{setup}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-',
+            f'rmdir /s /q "{stage}" 2>nul',
+        ]
+    else:
+        replace = [
+            f'rmdir /s /q "{previous}" 2>nul',
+            f'move "{home}" "{previous}" >nul || goto start',
+            f'move "{stage}" "{home}" >nul || move "{previous}" "{home}" >nul',
+            f'if exist "{previous}\\config.toml" if not exist "{home}\\config.toml" copy /y "{previous}\\config.toml" "{home}\\" >nul',
+        ]
     script.write_text("\r\n".join([
         "@echo off",
         ":wait",
         f'tasklist /FI "PID eq {os.getpid()}" | find "{os.getpid()}" >nul && (timeout /t 1 /nobreak >nul & goto wait)',
-        f'rmdir /s /q "{previous}" 2>nul',
-        f'move "{home}" "{previous}" >nul || goto start',
-        f'move "{stage}" "{home}" >nul || move "{previous}" "{home}" >nul',
-        f'if exist "{previous}\\config.toml" if not exist "{home}\\config.toml" copy /y "{previous}\\config.toml" "{home}\\" >nul',
+        *replace,
         ":start",
         f'start "Loft" /D "{cwd}" "{home / PROGRAM}" {args}',
         '(goto) 2>nul & del "%~f0"',

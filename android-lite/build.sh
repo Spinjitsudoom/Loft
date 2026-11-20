@@ -14,8 +14,8 @@ BT="$SDK/build-tools/${BUILD_TOOLS:-34.0.0}"
 JAR="$SDK/platforms/android-34/android.jar"
 APP=app/src/main
 OUT=build
-VERSION_CODE="${VERSION_CODE:-3}"
-VERSION_NAME="${VERSION_NAME:-0.1.2}"
+VERSION_CODE="${VERSION_CODE:-4}"
+VERSION_NAME="${VERSION_NAME:-0.1.3}"
 
 rm -rf "$OUT" && mkdir -p "$OUT/classes" "$OUT/dex" "$OUT/gen"
 "$BT/aapt2" compile --dir "$APP/res" -o "$OUT/res.zip"
