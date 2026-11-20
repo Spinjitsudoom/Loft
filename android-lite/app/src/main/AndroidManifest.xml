@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- "Save file" on older phones (Android 9 and before) writes to Downloads. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- Offering a downloaded update to Android's installer (Android still asks the person). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Home servers are usually plain http on the local network. -->
     <application
@@ -26,5 +28,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Lends the installer a downloaded update (Updater, UpdateFiles). -->
+        <provider
+            android:name=".UpdateFiles"
+            android:authorities="app.loft.lite.updates"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

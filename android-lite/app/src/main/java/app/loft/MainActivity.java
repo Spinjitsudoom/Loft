@@ -45,6 +45,7 @@ public class MainActivity extends Activity {
 
     private WebView web;
     private ValueCallback<Uri[]> picking;
+    private Updater updater;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -71,6 +72,13 @@ public class MainActivity extends Activity {
 
         if (state != null) web.restoreState(state);
         else openServer();
+        updater = new Updater(this, prefs(), version());
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (updater != null) updater.checkIfDue();  // at most once a day
     }
 
     private SharedPreferences prefs() {

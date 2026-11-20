@@ -20,6 +20,13 @@ Then open http://localhost:4545 in a browser (from other devices: this computer'
 4545). The first person to open it creates the admin account, then chooses the books folder in
 Library settings.
 
+Updates
+-------
+Once a day Loft checks for a new version and downloads it. Admins see "Loft x.y.z is ready" in
+the notifications and in Library settings, where Restart to update swaps it in (the old version is
+kept beside this folder as loft-server.previous). Loft needs to be allowed to write to the folder
+this one is in. Turn checking off in Library settings.
+
 Settings
 --------
 Most settings are in the web app. For the rest (port, address to listen on, where Loft keeps its

@@ -1032,3 +1032,9 @@ body.arranging { overflow: hidden; }
 /* Library settings: one block per lookup source that needs a key */
 .key-source { margin-top: 18px; }
 .key-source .field-hint { margin-top: 6px; }
+
+/* ---------- Library settings: Loft version ---------- */
+.update-line { margin: 0 0 14px; }
+.update-version { font-weight: 600; margin-right: 6px; }
+.update-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
+.update-actions:empty { display: none; }

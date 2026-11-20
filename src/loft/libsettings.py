@@ -69,6 +69,7 @@ def get_library(cfg: Config) -> dict:
         "online_lookups": stored.get("online_lookups", True),
         "auto_lookup": stored.get("auto_lookup", True),  # new books missing details are looked up after scans
         "join_requests": stored.get("join_requests", False),  # people may ask to join from the sign-in page
+        "check_updates": stored.get("check_updates", True),  # ask GitHub once a day for a new version of Loft
         "google_books": bool(google_books_key(cfg, stored)),  # whether a key is saved, never the key
         "hardcover": bool(hardcover_token(cfg, stored)),
         "isbndb": bool(isbndb_key(cfg, stored)[0]),
@@ -202,7 +203,7 @@ def _clean(patch: dict, current: dict) -> dict:
             if value and not SECRET.match(value):
                 raise ValueError(f"{'That token' if key == 'hardcover_token' else 'That key'} doesn’t look right; "
                                  "copy it again, whole")
-        elif key in ("allow_txt", "online_lookups", "auto_lookup", "join_requests"):
+        elif key in ("allow_txt", "online_lookups", "auto_lookup", "join_requests", "check_updates"):
             if not isinstance(value, bool):
                 raise ValueError(f"{key} must be on or off")
         else:

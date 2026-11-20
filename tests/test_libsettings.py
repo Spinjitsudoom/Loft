@@ -16,7 +16,7 @@ def test_defaults_come_from_config(cfg):
     lib = libsettings.get_library(cfg)
     assert lib == {"name": "", "books_dirs": [str(cfg.books_dirs[0])], "upload_dir": str(cfg.books_dirs[0]),
                    "scan_interval_minutes": cfg.scan_interval_minutes, "allow_txt": False, "online_lookups": True, "auto_lookup": True,
-                   "google_books": False, "hardcover": False, "isbndb": False, "join_requests": False, "sections": [], "sections_suggested": True}
+                   "google_books": False, "hardcover": False, "isbndb": False, "join_requests": False, "check_updates": True, "sections": [], "sections_suggested": True}
 
 
 def test_name_round_trips_and_is_tidied(cfg):

@@ -1,7 +1,7 @@
 {
   "name": "loft-desktop",
   "productName": "Loft",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Loft for Windows, macOS and Linux. Opens your Loft library.",
   "license": "AGPL-3.0-or-later",
   "private": true,
@@ -75,11 +75,22 @@
     },
     "appImage": {
       "artifactName": "Loft-${version}-linux-${arch}.${ext}"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Spinjitsudoom",
+        "repo": "Loft",
+        "releaseType": "release"
+      }
+    ]
   },
   "homepage": "https://github.com/Spinjitsudoom/Loft",
   "author": {
     "name": "Spinjitsudoom",
     "email": "229893545+Spinjitsudoom@users.noreply.github.com"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
   }
 }

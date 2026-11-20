@@ -2,8 +2,8 @@
 
     uv run --with pyinstaller python packaging/build_server.py
 
-Makes dist/loft-server-<version>-<system>-<arch>.zip (.tar.gz on Linux): a folder holding the
-loft-server program, the web app and everything Python needs, so nothing has to be installed first.
+Makes dist/loft-server-<version>-<system>-<arch>.zip (.tar.gz on Linux): a folder, loft-server, holding
+the program, the web app and everything Python needs, so nothing has to be installed first.
 """
 from __future__ import annotations
 
@@ -43,11 +43,10 @@ def main() -> None:
     for doc in ("LICENSE", "config.example.toml"):
         shutil.copy(ROOT / doc, folder / doc)
     shutil.copy(ROOT / "packaging" / "SERVER-README.txt", folder / "README.txt")
-    staged = dist / NAME
-    shutil.rmtree(staged, ignore_errors=True)
-    folder.rename(staged)
+    # Inside each download the folder is plain "loft-server": it keeps its name through updates.
     if SYSTEM == "linux":
         out = dist / f"{NAME}.tar.gz"
+
         def runnable(info: tarfile.TarInfo) -> tarfile.TarInfo:
             # A network share can drop the execute bits: set them for the program and its libraries.
             if info.isdir() or info.name.endswith("/loft-server") or ".so" in info.name.rsplit("/", 1)[-1]:
@@ -55,13 +54,13 @@ def main() -> None:
             return info
 
         with tarfile.open(out, "w:gz") as tar:
-            tar.add(staged, arcname=NAME, filter=runnable)
+            tar.add(folder, arcname="loft-server", filter=runnable)
     elif SYSTEM == "macos":  # ditto keeps the symlinks and signatures macOS needs
         out = dist / f"{NAME}.zip"
-        subprocess.run(["ditto", "-c", "-k", "--keepParent", str(staged), str(out)], check=True)
+        subprocess.run(["ditto", "-c", "-k", "--keepParent", str(folder), str(out)], check=True)
     else:
-        out = Path(shutil.make_archive(str(staged), "zip", dist, NAME))
-    shutil.rmtree(staged)
+        out = Path(shutil.make_archive(str(dist / NAME), "zip", dist, "loft-server"))
+    shutil.rmtree(folder)
     print(f"Built {out}")
 
 

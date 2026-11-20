@@ -11,6 +11,7 @@
 const { app, BrowserWindow, ipcMain, Menu, net, session, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
+const { startUpdates } = require("./updater");
 
 app.setName("Loft");
 if (process.platform === "win32") app.setAppUserModelId("app.loft.desktop");
@@ -18,6 +19,7 @@ if (process.platform === "win32") app.setAppUserModelId("app.loft.desktop");
 const START = path.join(__dirname, "start.html");
 const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
 let win = null;
+let updates = { checkNow: () => {} };
 
 function readSettings() {
   try { return JSON.parse(fs.readFileSync(settingsFile(), "utf8")); } catch { return {}; }
@@ -135,6 +137,7 @@ function buildMenu() {
     ...(process.platform === "darwin" ? [{ role: "appMenu" }] : []),
     { label: "Loft", submenu: [
       { label: "Change server…", click: () => showStart() },
+      { label: "Check for updates…", click: () => updates.checkNow() },
       { type: "separator" },
       { role: "quit" },
     ] },
@@ -178,6 +181,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     buildMenu();
     createWindow();
+    updates = startUpdates(() => win, { read: readSettings, write: writeSettings });
   });
   app.on("window-all-closed", () => app.quit());
   // Keep the sign-in (and the rest of the cookie jar) on disk, however the app is closed:

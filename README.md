@@ -66,6 +66,19 @@ node node_modules/electron/install.js && npm start`; to package it: `npm run dis
 `dist:win`, `dist:mac`). The standalone server is built with
 `uv run --with pyinstaller python packaging/build_server.py`; pushing a `v*` tag builds everything.
 
+## Updates
+
+Loft checks for a new version once a day (turn it off in **Library settings → Loft version**).
+- **The standalone server** downloads it, then admins are told it's ready; **Restart to update**
+  swaps it in (the old version is kept beside it as `loft-server.previous`).
+- **Docker and source installs** are told a new version is out (update them the way you installed them).
+- **The desktop app** on Windows and as an AppImage downloads it and asks to restart; on macOS, and
+  from a .deb or .rpm, it offers the download page.
+- **Loft Lite** downloads it and asks; Android shows its own install screen to confirm.
+
+Only Loft's release page on GitHub is asked; nothing about your library is sent. Releasing: push a
+`v*` tag (the Release workflow drafts it), run `bash packaging/attach-apk.sh <tag>`, then publish.
+
 ## Away from home
 
 Loft isn't meant to face the internet. Use [Tailscale](https://tailscale.com): install it on the

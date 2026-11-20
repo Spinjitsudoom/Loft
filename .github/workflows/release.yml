@@ -2,7 +2,8 @@ name: Release
 
 # Pushing a tag like v0.1.1 tests the code, builds the server and the desktop app on Linux, macOS
 # and Windows, and gathers them into a draft release. The Android app is signed with a key kept off
-# GitHub, so it's built and attached by hand before the draft is published.
+# GitHub, so it's built and attached by hand (packaging/attach-apk.sh) before the draft is published.
+# latest*.yml and the .blockmap files are what the desktop app reads to update itself.
 
 on:
   push:
@@ -90,6 +91,8 @@ jobs:
             desktop/dist/*.AppImage
             desktop/dist/*.deb
             desktop/dist/*.rpm
+            desktop/dist/latest*.yml
+            desktop/dist/*.blockmap
           if-no-files-found: error
 
   draft:

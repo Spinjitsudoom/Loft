@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 import zipfile
 from contextlib import asynccontextmanager
@@ -21,7 +22,7 @@ from .config import Config
 from .covers import cover_path
 from .db import session
 from .sanitize import chapter_html
-from . import autofill
+from . import autofill, updates
 from .scanner import Scanner, last_report
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -157,8 +158,10 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     async def lifespan(app: FastAPI):
         if scan_on_start:
             scanner.start()
+            updater.start()
         yield
 
+    updater = updates.UpdateChecker(cfg)
     app = FastAPI(title="Loft", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.cfg = cfg
     app.state.scanner = scanner
@@ -352,6 +355,28 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             return libsettings.update_library(cfg, patch)
         except ValueError as e:
             raise HTTPException(400, str(e))
+
+    # ---------- updates ----------
+
+    @app.get("/api/updates")
+    def update_status(_: User = Depends(admin_user)):
+        return updates.status(cfg)
+
+    @app.post("/api/updates/check")
+    def check_updates(_: User = Depends(admin_user)):
+        """Ask now. Downloading (when there's something to download) carries on in the background."""
+        found = updates.check(cfg, download=False)
+        if found["newer"] and found["can_install"] and not found["ready"]:
+            threading.Thread(target=updates.check, args=(cfg,), name="loft-update-download", daemon=True).start()
+            found = {**found, "downloading": True}
+        return found
+
+    @app.post("/api/updates/install", status_code=202)
+    def install_update(_: User = Depends(admin_user)):
+        try:
+            return {"version": updates.install(cfg)}
+        except LookupError as e:
+            raise HTTPException(409, str(e))
 
     # ---------- the library ----------
 
