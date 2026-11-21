@@ -3,6 +3,7 @@
 // the new version answers.
 import { api, esc } from "./api.js";
 import { ago } from "./admin.js";
+import { showWhatsNew } from "./whatsnew.js";
 
 function line(u) {
   if (u.ready) return `<strong>Loft ${esc(u.latest)} is ready.</strong> Restarting takes a few seconds; anyone reading carries on where they were.`;
@@ -20,7 +21,7 @@ export function updatesPanelHTML(u, lib) {
     <div class="update-actions">
       ${u.ready ? `<button class="btn btn-primary" type="button" data-update-install>Restart to update</button>` : ""}
       <button class="btn btn-small" type="button" data-update-check>Check now</button>
-      ${u.notes_url ? `<a class="btn btn-small" href="${esc(u.notes_url)}" target="_blank" rel="noopener">What’s new</a>` : ""}
+      <button class="btn btn-small" type="button" data-whatsnew>What’s new</button>
     </div>
     <p class="form-error" data-update-error role="alert" hidden></p>
     <label class="switch"><input type="checkbox" data-lib="check_updates" ${lib.check_updates ? "checked" : ""}>
@@ -32,9 +33,11 @@ export function updatesPanelHTML(u, lib) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export function wireUpdates(root, redraw) {
+export function wireUpdates(root, redraw, u) {
   const panel = root.querySelector("[data-updates]");
   if (!panel) return;
+  panel.querySelector("[data-whatsnew]").addEventListener("click", () =>
+    showWhatsNew({ admin: true, current: u.current, upcoming: u.newer ? u.notes || [] : [], ready: u.ready }));
   const error = panel.querySelector("[data-update-error]");
   const fail = (message) => { error.textContent = message; error.hidden = false; };
 

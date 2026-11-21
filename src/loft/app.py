@@ -193,7 +193,8 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     @app.get("/api/status")
     def status():
         lib = libsettings.get_library(cfg)
-        return {"setup_needed": not auth.has_users(cfg), "name": lib["name"], "join_requests": lib["join_requests"]}
+        return {"setup_needed": not auth.has_users(cfg), "name": lib["name"], "join_requests": lib["join_requests"],
+                "version": updates.current_version()}
 
     @app.post("/api/setup")
     def setup(body: Credentials, request: Request, response: Response):

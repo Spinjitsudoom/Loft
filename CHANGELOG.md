@@ -7,6 +7,9 @@
   a terminal, it still runs there.
 - A Windows server installed by the first 0.1.3 setup updates itself to this one and ends up in
   the tray.
+- What's new opens in Loft instead of on GitHub: a pop-up after each update (once), and from Your
+  settings and Library settings any time. Before updating, Library settings shows the new
+  version's notes. Each release carries them as `whatsnew.json` (from `src/loft/web/whatsnew.json`).
 
 ## 0.1.3 (2026-11-21)
 

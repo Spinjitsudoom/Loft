@@ -296,3 +296,30 @@ def test_every_part_has_the_same_version():
     desktop = json.loads((root / "desktop" / "package.json").read_text())["version"]
     android = re.search(r'VERSION_NAME:-([0-9.]+)\}', (root / "android-lite" / "build.sh").read_text())[1]
     assert server == desktop == android
+
+
+NOTES = [
+    {"version": "0.1.3", "date": "2026-11-21", "new": [{"title": "Later", "text": "Not out yet."}], "fixed": []},
+    {"version": "0.1.2", "date": "2026-11-20", "new": [{"title": "Shelves", "text": "Put books on shelves.", "admin": True}],
+     "fixed": ["Covers load faster.", {"text": "The Windows server starts in the tray.", "admin": True}]},
+    {"version": "0.1.1", "date": "2026-11-19", "new": [], "fixed": ["This version."]},
+]
+
+
+def test_the_next_versions_notes_come_with_the_check(cfg, release):
+    release["files"]["whatsnew.json"] = json.dumps(NOTES).encode()
+    now = updates.check(cfg, download=False)
+    assert now["notes"] == [NOTES[1]]   # newer than this one, up to the release that's out
+
+
+@pytest.mark.parametrize("body", [b"not json", b'{"version": "0.1.2"}', json.dumps([{"version": "0.1.2", "new": "x"}]).encode(),
+                                  json.dumps([{"version": "0.1.2", "fixed": [{"admin": True}]}]).encode()])
+def test_notes_that_dont_make_sense_are_left_out(cfg, release, body):
+    release["files"]["whatsnew.json"] = body
+    now = updates.check(cfg, download=False)
+    assert now["newer"] and now["notes"] == []
+
+
+def test_a_release_without_notes_still_updates(cfg, release):
+    now = updates.check(cfg)
+    assert now["ready"] and now["notes"] == []

@@ -1,13 +1,18 @@
+from loft import updates
+
+
 def book_id(client, title):
     return next(b["id"] for b in client.get("/api/books?limit=100").json()["books"] if b["title"] == title)
 
 
 def test_setup_flow(app_lib):
-    assert app_lib.get("/api/status").json() == {"setup_needed": True, "name": "", "join_requests": False}
+    assert app_lib.get("/api/status").json() == {"setup_needed": True, "name": "", "join_requests": False,
+                                                  "version": updates.current_version()}
     assert app_lib.get("/api/home").status_code == 401
     r = app_lib.post("/api/setup", json={"username": "admin", "password": "longpassword"})
     assert r.status_code == 200 and r.json()["admin"] is True
-    assert app_lib.get("/api/status").json() == {"setup_needed": False, "name": "", "join_requests": False}
+    assert app_lib.get("/api/status").json() == {"setup_needed": False, "name": "", "join_requests": False,
+                                                  "version": updates.current_version()}
     assert app_lib.get("/api/me").json()["username"] == "admin"
     assert app_lib.post("/api/setup", json={"username": "x", "password": "longpassword"}).status_code == 409
 

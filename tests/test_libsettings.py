@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from loft import libsettings
+from loft import libsettings, updates
 from loft.db import session
 from loft.scanner import last_report, scan
 
@@ -115,7 +115,8 @@ def test_scan_report_names_unreachable_folders(cfg, tmp_path):
 
 def test_status_shows_the_name_before_sign_in(app_lib, cfg):
     libsettings.update_library(cfg, {"name": "The Den"})
-    assert app_lib.get("/api/status").json() == {"setup_needed": True, "name": "The Den", "join_requests": False}
+    assert app_lib.get("/api/status").json() == {"setup_needed": True, "name": "The Den", "join_requests": False,
+                                                  "version": updates.current_version()}
 
 
 def test_library_routes(client, app_lib):

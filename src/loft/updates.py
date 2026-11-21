@@ -150,6 +150,7 @@ def status(cfg: Config) -> dict:
         "latest": latest if is_newer else current,
         "newer": is_newer,
         "notes_url": state.get("notes_url", "") if is_newer else "",
+        "notes": release_notes(state.get("notes"), current, latest) if is_newer else [],
         "can_install": can_install(),
         "downloading": bool(is_newer and state.get("downloading")),
         "ready": ready,
@@ -204,7 +205,8 @@ def check(cfg: Config, download: bool = True) -> dict:
             assets = {a.get("name"): a.get("browser_download_url", "") for a in release.get("assets") or []
                       if isinstance(a, dict)}
             state = _save(cfg, checked_at=time.time(), latest=version, error="",
-                          notes_url=str(release.get("html_url", "")), assets=assets)
+                          notes_url=str(release.get("html_url", "")), assets=assets,
+                          notes=_fetch_notes(assets, version))
         except Exception as e:  # offline, GitHub busy: try again tomorrow
             log.info("Update check failed: %s", e)
             _save(cfg, checked_at=time.time(), error="Loft couldn’t reach GitHub to check for a new version.")
@@ -224,6 +226,35 @@ def check(cfg: Config, download: bool = True) -> dict:
         if download or not can_install():  # otherwise the download that follows tells them
             _tell_admins(cfg, version)
         return status(cfg)
+
+
+def release_notes(notes, after: str, upto: str) -> list[dict]:
+    """The entries of a whatsnew.json (src/loft/web/whatsnew.json, attached to every release) for
+    the versions after `after` up to `upto`, newest first. A fix is its text, or {"text", "admin"}
+    for one only admins would notice, like "new" items. Anything that isn't a proper entry is
+    left out: the notes are only shown, never needed."""
+    def ok(n) -> bool:
+        return (isinstance(n, dict) and isinstance(n.get("version"), str) and parse(n["version"]) is not None
+                and isinstance(n.get("new", []), list) and isinstance(n.get("fixed", []), list)
+                and all(isinstance(i, dict) and isinstance(i.get("title"), str) and isinstance(i.get("text"), str)
+                        for i in n.get("new", []))
+                and all(isinstance(f, str) or (isinstance(f, dict) and isinstance(f.get("text"), str))
+                        for f in n.get("fixed", [])))
+    if not isinstance(notes, list):
+        return []
+    return [n for n in notes if ok(n) and newer(n["version"], after) and not newer(n["version"], upto)]
+
+
+def _fetch_notes(assets: dict[str, str], version: str) -> list[dict]:
+    """The released version's "What's new", to show before it's installed. Never stops a check."""
+    url = assets.get("whatsnew.json")
+    if not url:
+        return []
+    try:
+        return release_notes(json.loads(_get(url, MAX_JSON)), current_version(), version)
+    except Exception as e:
+        log.info("Couldn’t read Loft %s’s notes: %s", version, e)
+        return []
 
 
 def _fetch(version: str, assets: dict[str, str]) -> None:

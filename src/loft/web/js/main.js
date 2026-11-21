@@ -17,9 +17,11 @@ import { refreshBell, renderNotifications } from "./notifications.js";
 import { renderStacks } from "./stacks.js";
 import { renderFill } from "./fill.js";
 import { renderFilled } from "./filled.js";
+import { maybeShowWhatsNew } from "./whatsnew.js";
 
 const app = document.getElementById("app");
-export const state = { me: null, libraryName: "" };
+export const state = { me: null, libraryName: "", version: "" };
+let whatsNewAsked = false;
 
 const ME = "loft-me";  // who was signed in here last: downloaded books open for them offline
 
@@ -70,6 +72,7 @@ async function route() {
       const status = await api("/status");
       if (status.setup_needed) { location.hash = "#/setup"; return; }
       state.libraryName = status.name || "";
+      state.version = status.version || "";
       document.title = state.libraryName || "Loft";
       state.me = await api("/me");
       offline.setOffline(false);
@@ -96,6 +99,11 @@ async function route() {
     }
   }
   if (token !== renderToken) return;
+  // After an update, once: what's new (not over a book being read; it waits for the next page).
+  if (page !== "read" && state.version && !offline.isOffline() && !whatsNewAsked) {
+    whatsNewAsked = true;
+    maybeShowWhatsNew({ version: state.version, admin: !!state.me.admin });
+  }
 
   if (page === "read" && arg) {
     try {

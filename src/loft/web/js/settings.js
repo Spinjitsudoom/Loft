@@ -3,6 +3,7 @@ import { api, esc, icon } from "./api.js";
 import { settingsSection, wireSettingsSection } from "./downloads.js";
 import { ACCENTS, loadPrefs, patchPrefs } from "./prefs.js";
 import { state } from "./main.js";
+import { showWhatsNew } from "./whatsnew.js";
 
 const ROW_NAMES = { continue: "Continue reading", shelves: "Your shelves", recent: "Recently added", series: "Series", genres: "Genres" };
 const ACCENT_NAMES = { brass: "Brass", sage: "Sage", dusk: "Dusk", rose: "Rose", lilac: "Lilac" };
@@ -71,6 +72,12 @@ export async function renderSettings(main) {
     </section>` : ""}
 
     <section class="settings-section">
+      <h2>Loft</h2>
+      <p class="muted">${state.version ? `This library runs Loft ${esc(state.version)}.` : ""}</p>
+      <button class="btn" type="button" data-whatsnew>What’s new</button>
+    </section>
+
+    <section class="settings-section">
       <h2>Account</h2>
       <form class="password-form" novalidate>
         <h3>Change password</h3>
@@ -88,6 +95,8 @@ export async function renderSettings(main) {
   </section>`;
 
   wireSettingsSection(main);
+  main.querySelector("[data-whatsnew]").addEventListener("click", () =>
+    showWhatsNew({ admin: !!state.me.admin, current: state.version }));
   main.querySelector("[data-signout-here]").addEventListener("click", async () => {
     await api("/logout", { method: "POST" }).catch(() => {});
     state.me = null;

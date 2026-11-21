@@ -181,6 +181,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
+          # The release's "What's new", so servers can show it before they update.
+          cp src/loft/web/whatsnew.json files/
           cd files && sha256sum * > SHA256SUMS.txt && cd ..
           notes="docs/releases/${TAG#v}.md"
           gh release create "$TAG" files/* --draft --verify-tag --title "Loft ${TAG#v}" \

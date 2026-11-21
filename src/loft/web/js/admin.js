@@ -177,7 +177,7 @@ export async function renderAdmin(main) {
     </section>
     ${updatesPanelHTML(update, lib)}
   </section>`;
-  wireUpdates(main, () => renderAdmin(main));
+  wireUpdates(main, () => renderAdmin(main), update);
 
   const fail = (el, message) => { el.textContent = message; el.hidden = false; };
   const patch = async (body, errorBox) => {
