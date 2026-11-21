@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4 (2026-11-21)
+
+- On Windows, opening `loft-server.exe` directly (by double-clicking it, or from a shortcut made
+  by the first 0.1.3 setup) starts Loft Server in the tray instead of a console window. Typed in
+  a terminal, it still runs there.
+- A Windows server installed by the first 0.1.3 setup updates itself to this one and ends up in
+  the tray.
+
 ## 0.1.3 (2026-11-21)
 
 - The Windows server has a setup (`loft-server-<version>-windows-x64-setup.exe`): no administrator

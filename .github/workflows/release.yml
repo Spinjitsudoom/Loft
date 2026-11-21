@@ -99,6 +99,14 @@ jobs:
           Start-Process "$dir\Loft Server.exe" -ArgumentList '--background'
           Start-Sleep 5
           if (@(Get-Process 'Loft Server').Count -ne 1) { throw "A second tray started" }
+          # loft-server.exe double-clicked (or an old shortcut to it) hands over to the tray, without a console of its own.
+          $server = Get-Process loft-server
+          Start-Process "$dir\loft-server.exe"
+          Start-Sleep 8
+          if (@(Get-Process 'Loft Server').Count -ne 1) { throw "Double-clicking loft-server.exe didn't leave one tray" }
+          $servers = @(Get-Process loft-server)
+          if ($servers.Count -ne 1 -or $servers[0].Id -ne $server.Id) { throw "Double-clicking loft-server.exe ran a second server ($($servers.Count))" }
+          Wait-Ping $version
           (Start-Process "$dir\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES' -PassThru).WaitForExit(120000) | Out-Null
           for ($i = 0; $i -lt 30 -and (Test-Path "$dir\loft-server.exe"); $i++) { Start-Sleep 1 }
           if (Test-Path "$dir\loft-server.exe") { throw "Uninstalling left the server behind" }
