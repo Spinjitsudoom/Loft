@@ -181,7 +181,7 @@ def restart_script(monkeypatch, version) -> str:
     monkeypatch.setattr(updates.subprocess, "Popen", lambda args, **kw: started.append(args))
     monkeypatch.setattr(updates.os, "_exit", lambda code: started.append(("exit", code)))
     updates._restart_into(version)
-    assert started[-1] == ("exit", 0)
+    assert started[-1] == ("exit", updates.UPDATING)
     script = Path(started[0][-1])
     return script.read_text()
 
@@ -202,6 +202,28 @@ def test_restarting_an_unpacked_windows_copy_still_swaps_folders(cfg, release, m
     updates.check(cfg)
     script = restart_script(monkeypatch, "0.1.2")
     assert "/VERYSILENT" not in script and f'move "{updates.staging_dir("0.1.2")}"' in script
+
+
+def test_with_the_tray_the_script_waits_for_it_and_starts_it_again(cfg, windows_setup_install, monkeypatch):
+    home = windows_setup_install["home"]
+    (home / "Loft Server.exe").write_text("tray")
+    monkeypatch.setenv("LOFT_TRAY_PID", "4242")
+    updates.check(cfg)
+    script = restart_script(monkeypatch, "0.1.2")
+    assert 'PID eq 4242' in script and f'PID eq {os.getpid()}' in script
+    after = script.split("/VERYSILENT")[1]
+    assert f'"{home / "Loft Server.exe"}" --background' in after
+    assert f'"{home / "loft-server.exe"}"' not in after   # the tray starts the server, hidden
+
+
+def test_an_unpacked_copy_run_by_the_tray_comes_back_with_the_tray(cfg, release, monkeypatch):
+    monkeypatch.setattr(updates.sys, "platform", "win32")
+    (release["home"] / "Loft Server.exe").write_text("tray")
+    monkeypatch.setenv("LOFT_TRAY_PID", "4242")
+    updates.check(cfg)
+    script = restart_script(monkeypatch, "0.1.2")
+    assert f'move "{updates.staging_dir("0.1.2")}"' in script
+    assert f'"{release["home"] / "Loft Server.exe"}" --background' in script
 
 
 def zip_with(entries) -> Path:

@@ -49,31 +49,44 @@ jobs:
         shell: pwsh
         run: |
           if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
-      - run: uv run --no-dev --with pyinstaller python packaging/build_server.py
+      - run: uv run --no-dev --with pyinstaller ${{ runner.os == 'Windows' && '--with pystray' || '' }} python packaging/build_server.py
       - if: runner.os == 'Windows'
-        name: Try the Windows setup (install, start, uninstall)
+        name: Try the Windows setup (install, run from the tray, uninstall)
         shell: pwsh
         run: |
           $version = (Select-String -Path pyproject.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          function Wait-Ping($want) {
+            for ($i = 0; $i -lt 60; $i++) {
+              Start-Sleep 1
+              try { $p = Invoke-RestMethod http://127.0.0.1:4545/api/ping; if ($p.version -eq $want) { return $p } } catch { }
+            }
+            throw "Loft didn't answer as $want"
+          }
           $setup = (Get-ChildItem dist\loft-server-*-setup.exe)[0].FullName
           Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-' -Wait
           $dir = "$env:LOCALAPPDATA\Programs\Loft Server"
-          foreach ($f in 'loft-server.exe','unins000.exe','README.txt') { if (-not (Test-Path "$dir\$f")) { throw "The setup didn't install $f" } }
-          $env:LOFT_DATA_DIR = "$env:RUNNER_TEMP\loft-data"
-          $server = Start-Process "$dir\loft-server.exe" -WorkingDirectory $dir -PassThru
-          $ping = $null
-          for ($i = 0; $i -lt 60 -and -not $ping; $i++) {
-            Start-Sleep 1
-            try { $ping = Invoke-RestMethod http://127.0.0.1:4545/api/ping } catch { }
-          }
+          foreach ($f in 'Loft Server.exe','loft-server.exe','unins000.exe','README.txt') { if (-not (Test-Path "$dir\$f")) { throw "The setup didn't install $f" } }
+          # A silent install starts the tray in the background; the tray starts the server, hidden.
+          Wait-Ping $version | Out-Null
+          if (-not (Get-Process 'Loft Server' -ErrorAction SilentlyContinue)) { throw "The tray isn't running" }
+          $server = Get-Process loft-server
+          if ($server.MainWindowHandle -ne 0) { throw "The server has a window" }
+          if (-not (Test-Path "$env:LOCALAPPDATA\Loft\server.log")) { throw "No server.log" }
+          if (-not (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Loft Server' -ErrorAction SilentlyContinue)) { throw "It doesn't start with Windows" }
+          # The tray starts the server again when it stops by itself.
           Stop-Process $server -Force
-          if (-not $ping) { throw "The installed server didn't answer" }
-          if ($ping.version -ne $version) { throw "The installed server is $($ping.version), not $version" }
           Start-Sleep 2
+          Wait-Ping $version | Out-Null
+          # A second start doesn't make a second tray.
+          Start-Process "$dir\Loft Server.exe" -ArgumentList '--background'
+          Start-Sleep 5
+          if (@(Get-Process 'Loft Server').Count -ne 1) { throw "A second tray started" }
           Start-Process "$dir\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES' -Wait
           for ($i = 0; $i -lt 30 -and (Test-Path "$dir\loft-server.exe"); $i++) { Start-Sleep 1 }
           if (Test-Path "$dir\loft-server.exe") { throw "Uninstalling left the server behind" }
-          Write-Output "Setup for $version installs, runs and uninstalls."
+          if (Get-Process 'Loft Server','loft-server' -ErrorAction SilentlyContinue) { throw "Uninstalling left Loft running" }
+          if (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Loft Server' -ErrorAction SilentlyContinue) { throw "Uninstalling left it starting with Windows" }
+          Write-Output "Setup for $version installs, runs from the tray, and uninstalls."
       - uses: actions/upload-artifact@v4
         with:
           name: server-${{ matrix.os }}

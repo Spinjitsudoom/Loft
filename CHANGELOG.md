@@ -3,9 +3,13 @@
 ## 0.1.3 (2026-11-21)
 
 - The Windows server has a setup (`loft-server-<version>-windows-x64-setup.exe`): no administrator
-  needed, Start menu shortcuts, an option to start Loft when you sign in, and an uninstaller that
-  leaves the library's data alone. Installed copies update themselves by running the next setup.
-  The zip is still there for anyone who'd rather unpack it.
+  needed, Start menu shortcuts, and an uninstaller that leaves the library's data alone. Installed
+  copies update themselves by running the next setup. The zip is still there for anyone who'd
+  rather unpack it.
+- Loft Server for Windows runs in the background, with an icon in the notification area (like
+  Shelf Server): Open Loft, the address other devices use, Update, Start with Windows, the data
+  folder, Restart and Quit. No console window; the server's messages go to
+  `%LOCALAPPDATA%\Loft\server.log`, and settings to `%LOCALAPPDATA%\Loft\config.toml`.
 
 ## 0.1.2 (2026-11-20)
 

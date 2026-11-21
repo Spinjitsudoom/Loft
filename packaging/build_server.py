@@ -31,17 +31,26 @@ def main() -> None:
     work, dist = ROOT / "build" / "server", ROOT / "dist"
     shutil.rmtree(work, ignore_errors=True)
     shutil.rmtree(dist / "loft-server", ignore_errors=True)
-    PyInstaller.__main__.run([
-        str(ROOT / "packaging" / "server_entry.py"),
-        "--name", "loft-server", "--onedir", "--console", "--noconfirm", "--clean",
-        "--distpath", str(dist), "--workpath", str(work), "--specpath", str(work),
-        "--collect-data", "loft",            # the web app: HTML, scripts, fonts, icons
-        "--collect-submodules", "loft",
-        "--collect-submodules", "uvicorn",   # uvicorn picks its loop and protocols by name
-        "--collect-all", "pypdfium2", "--collect-all", "pypdfium2_raw",
-        "--copy-metadata", "loft",           # /api/ping reports the version from it
-        "--icon", str(ROOT / "desktop" / "app" / "icon.png"),
-    ])
+    if SYSTEM == "windows":
+        # Two programs in one folder: the tray (Loft Server.exe) and the server it runs hidden.
+        work.mkdir(parents=True)
+        os.environ["LOFT_ICON"] = str(make_ico(work))
+        PyInstaller.__main__.run([str(ROOT / "packaging" / "windows" / "loft-server.spec"), "--noconfirm", "--clean",
+                                  "--distpath", str(dist), "--workpath", str(work)])
+        if subprocess.run([str(dist / "loft-server" / "Loft Server.exe"), "--self-test"]).returncode:
+            raise SystemExit("Loft Server.exe is missing something it needs")
+    else:
+        PyInstaller.__main__.run([
+            str(ROOT / "packaging" / "server_entry.py"),
+            "--name", "loft-server", "--onedir", "--console", "--noconfirm", "--clean",
+            "--distpath", str(dist), "--workpath", str(work), "--specpath", str(work),
+            "--collect-data", "loft",            # the web app: HTML, scripts, fonts, icons
+            "--collect-submodules", "loft",
+            "--collect-submodules", "uvicorn",   # uvicorn picks its loop and protocols by name
+            "--collect-all", "pypdfium2", "--collect-all", "pypdfium2_raw",
+            "--copy-metadata", "loft",           # /api/ping reports the version from it
+            "--icon", str(ROOT / "desktop" / "app" / "icon.png"),
+        ])
     folder = dist / "loft-server"
     for doc in ("LICENSE", "config.example.toml"):
         shutil.copy(ROOT / doc, folder / doc)
@@ -68,6 +77,13 @@ def main() -> None:
     print(f"Built {out}")
 
 
+def make_ico(work: Path) -> Path:
+    from PIL import Image
+    icon = work / "loft.ico"
+    Image.open(ROOT / "desktop" / "app" / "icon.png").save(icon, sizes=[(s, s) for s in (16, 24, 32, 48, 64, 128, 256)])
+    return icon
+
+
 def find_iscc() -> str | None:
     candidates = [os.environ.get("ISCC"), shutil.which("iscc")]
     for base in ("ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA"):
@@ -84,11 +100,8 @@ def windows_setup(folder: Path, dist: Path, work: Path) -> None:
             raise SystemExit("Inno Setup 6 (ISCC.exe) is needed to build the Windows setup")
         print("Inno Setup 6 isn't installed: skipping the Windows setup")
         return
-    from PIL import Image
-    icon = work / "loft.ico"
-    Image.open(ROOT / "desktop" / "app" / "icon.png").save(icon, sizes=[(s, s) for s in (16, 24, 32, 48, 64, 128, 256)])
     subprocess.run([iscc, "/Q", f"/DAppVersion={VERSION}", f"/DSourceDir={folder}", f"/DOutputDir={dist}",
-                    f"/DOutputName={NAME}-setup", f"/DIconFile={icon}",
+                    f"/DOutputName={NAME}-setup", f"/DIconFile={work / 'loft.ico'}",
                     str(ROOT / "packaging" / "windows" / "loft-server.iss")], check=True)
     print(f"Built {dist / (NAME + '-setup.exe')}")
 

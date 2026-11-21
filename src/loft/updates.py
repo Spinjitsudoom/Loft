@@ -45,6 +45,8 @@ TIMEOUT = 30
 MAX_JSON = 2_000_000
 MAX_ARCHIVE = 400_000_000
 PROGRAM = "loft-server.exe" if sys.platform == "win32" else "loft-server"
+TRAY = "Loft Server.exe"        # on Windows, what runs the server hidden (packaging/windows/tray.py)
+UPDATING = 75                   # the exit code that tells the tray the server stopped to be updated
 VERSION = re.compile(r"^v?(\d{1,4})\.(\d{1,4})\.(\d{1,6})$")
 
 _lock = threading.Lock()        # one check or download at a time
@@ -356,6 +358,14 @@ def _restart_windows(home: Path, stage: Path, previous: Path, argv: list[str], e
     args = subprocess.list2cmdline(argv[1:])
     here = Path.cwd().resolve()
     cwd = home if here == home else here
+    # Run by the tray (or the tray itself updating): wait for it too, and start it again after.
+    tray_pid = os.environ.get("LOFT_TRAY_PID", "")
+    by_tray = (home / TRAY).is_file() and (tray_pid.isdigit() or Path(sys.executable).name == TRAY)
+    pids = [str(os.getpid())] + ([tray_pid] if tray_pid.isdigit() else [])
+    if by_tray:
+        start = f'start "" /D "{home}" "{home / TRAY}" --background'
+    else:
+        start = f'start "Loft" /D "{cwd}" "{home / PROGRAM}" {args}'
     if setup:
         replace = [
             f'start "" /wait "{setup}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-',
@@ -371,15 +381,16 @@ def _restart_windows(home: Path, stage: Path, previous: Path, argv: list[str], e
     script.write_text("\r\n".join([
         "@echo off",
         ":wait",
-        f'tasklist /FI "PID eq {os.getpid()}" | find "{os.getpid()}" >nul && (timeout /t 1 /nobreak >nul & goto wait)',
+        *[f'tasklist /FI "PID eq {pid}" | find "{pid}" >nul && (timeout /t 1 /nobreak >nul & goto wait)' for pid in pids],
         *replace,
         ":start",
-        f'start "Loft" /D "{cwd}" "{home / PROGRAM}" {args}',
+        start,
         '(goto) 2>nul & del "%~f0"',
     ]) + "\r\n")
     flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    env = {k: v for k, v in env.items() if k != "LOFT_TRAY_PID"}
     subprocess.Popen(["cmd", "/c", str(script)], env=env, creationflags=flags, close_fds=True, cwd=str(home.parent))
-    os._exit(0)
+    os._exit(UPDATING)
 
 
 # ---------- the daily check ----------
