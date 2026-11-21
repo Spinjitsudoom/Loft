@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.5 (2026-11-21)
+
+- Backups: Loft backs up its library by itself (Library settings, Backups): the database, covers
+  chosen by hand and books waiting for approval, in one zip. Every day, every week or off; to a
+  folder of the admin's choosing; keeping a week of dailies then eight weeklies, or the newest 5,
+  10 or 30. Back up now, Download and Restore (which backs up what's there first). Admins are told
+  when a backup can't be made.
+
 ## 0.1.4 (2026-11-21)
 
 - On Windows, opening `loft-server.exe` directly (by double-clicking it, or from a shortcut made

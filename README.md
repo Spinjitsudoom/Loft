@@ -145,11 +145,32 @@ as page images, EPUBs and the like with their pictures). They're under **On this
 and in **Your settings → Downloads**. Progress and bookmarks made offline are sent when the server
 is back; a book that changes on the server downloads again by itself.
 
+## Backups
+
+Loft backs up its library by itself (**Library settings → Backups**): everything a rescan can't
+bring back, meaning accounts, reading progress, shelves, bookmarks, edits and filled-in details,
+covers chosen by hand, and books waiting for approval. Each backup is one zip
+(`loft-YYYY-MM-DD-HHMMSS-<code>.zip`).
+
+- **How often:** every day (the default), every week, or off.
+- **Where:** `backups/` in Loft's data folder until you pick another folder. Another drive is
+  safer. Not a books folder (Loft only reads those) and not inside Loft's data folder. Loft leaves
+  a small `.loft-backups` file there; if the drive isn't connected, Loft doesn't back up anywhere
+  else, and admins are told.
+- **How many:** a week of daily backups then one a week for eight weeks (the default), or the
+  newest 5, 10 or 30. Only files named like Loft's backups are ever removed.
+- **Back up now**, **Download** and **Restore**. Restoring first backs up what's there, so it can be
+  undone the same way, and everyone signs in again afterwards. If it can't finish, nothing changes.
+- Several Lofts can share a backup folder: each prunes only its own (their names end in a short
+  code for the Loft that made them), and any of them can be restored.
+
+Backups hold the lookup keys saved in Library settings, but not what signs people in.
+
 ## Where things live
 
 Loft's own data (`~/.local/share/loft`, or `/data` in Docker): `loft.db` (accounts, the
 library, progress, settings), `covers/`, `pages/` (page images, pruned to `page_cache_mb`), and
-`uploads/` (books waiting to be saved or approved). Back up the database and covers.
+`uploads/` (books waiting to be saved or approved), and `backups/` unless they go elsewhere.
 
 ## Development
 

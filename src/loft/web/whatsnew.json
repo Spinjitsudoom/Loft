@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.1.5",
+    "date": "2026-11-21",
+    "new": [
+      {
+        "title": "Automatic backups",
+        "text": "Loft backs up the library by itself: people, reading progress, shelves, bookmarks, edits, covers you chose and books waiting for approval. In Library settings, Backups, choose how often, how many to keep and where (another drive is safer), back up now, download a backup, or restore one.",
+        "admin": true
+      }
+    ],
+    "fixed": []
+  },
+  {
     "version": "0.1.4",
     "date": "2026-11-21",
     "new": [

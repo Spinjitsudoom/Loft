@@ -42,8 +42,9 @@ LOFT_CONFIG to its path. LOFT_PORT, LOFT_HOST, LOFT_DATA_DIR and LOFT_BOOKS_DIRS
 Loft's own data (accounts, the library, covers) is kept in
   Windows:  %LOCALAPPDATA%\Loft
   macOS and Linux:  ~/.local/share/loft
-Back that folder up. Your books themselves are never changed, and uninstalling Loft leaves this
-folder where it is.
+Loft backs it up by itself, every day, into its backups folder; in Library settings, Backups,
+choose how often, how many to keep, and another folder (another drive is safer). Your books
+themselves are never changed, and uninstalling Loft leaves this folder where it is.
 
 CBR comics need a RAR tool: Windows 10 and later and macOS already have one (tar); on Linux install
 unar, unrar or 7z.

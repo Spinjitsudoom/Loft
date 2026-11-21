@@ -16,7 +16,8 @@ def test_defaults_come_from_config(cfg):
     lib = libsettings.get_library(cfg)
     assert lib == {"name": "", "books_dirs": [str(cfg.books_dirs[0])], "upload_dir": str(cfg.books_dirs[0]),
                    "scan_interval_minutes": cfg.scan_interval_minutes, "allow_txt": False, "online_lookups": True, "auto_lookup": True,
-                   "google_books": False, "hardcover": False, "isbndb": False, "join_requests": False, "check_updates": True, "sections": [], "sections_suggested": True}
+                   "google_books": False, "hardcover": False, "isbndb": False, "join_requests": False, "check_updates": True,
+                   "backup_every": "day", "backup_dir": "", "backup_keep": 0, "sections": [], "sections_suggested": True}
 
 
 def test_name_round_trips_and_is_tidied(cfg):
@@ -192,3 +193,36 @@ def test_removing_a_folder_during_a_scan_keeps_it_removed(cfg, tmp_path, make_pd
     worker[0].join()
     scan(cfg)
     assert titles(cfg) == ["InA"]
+
+
+def test_backup_settings_default_and_change(cfg, tmp_path):
+    lib = libsettings.get_library(cfg)
+    assert (lib["backup_every"], lib["backup_dir"], lib["backup_keep"]) == ("day", "", 0)
+    elsewhere = tmp_path / "usb"
+    elsewhere.mkdir()
+    lib = libsettings.update_library(cfg, {"backup_every": "week", "backup_dir": str(elsewhere), "backup_keep": 10})
+    assert (lib["backup_every"], lib["backup_dir"], lib["backup_keep"]) == ("week", str(elsewhere), 10)
+    assert libsettings.update_library(cfg, {"backup_dir": ""})["backup_dir"] == ""
+    assert libsettings.update_library(cfg, {"backup_every": "off", "backup_keep": 0})["backup_every"] == "off"
+
+
+@pytest.mark.parametrize("patch, words", [
+    ({"backup_every": "hourly"}, "backup_every"),
+    ({"backup_every": True}, "backup_every"),
+    ({"backup_keep": 7}, "backup_keep"),
+    ({"backup_keep": True}, "backup_keep"),
+    ({"backup_dir": "relative/path"}, "full path"),
+    ({"backup_dir": "/no/such/folder"}, "can’t find"),
+    ({"backup_dir": 5}, "backup_dir"),
+])
+def test_bad_backup_settings_are_refused(cfg, patch, words):
+    with pytest.raises(ValueError, match=words):
+        libsettings.update_library(cfg, patch)
+
+
+def test_backups_never_go_in_or_around_a_books_folder(cfg):
+    books = cfg.books_dirs[0]
+    (books / "inside").mkdir()
+    for place in (books, books / "inside", books.parent):
+        with pytest.raises(ValueError, match="books folder"):
+            libsettings.update_library(cfg, {"backup_dir": str(place)})

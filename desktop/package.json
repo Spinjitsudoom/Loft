@@ -1,7 +1,7 @@
 {
   "name": "loft-desktop",
   "productName": "Loft",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Loft for Windows, macOS and Linux. Opens your Loft library.",
   "license": "AGPL-3.0-or-later",
   "private": true,

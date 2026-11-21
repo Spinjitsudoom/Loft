@@ -1,5 +1,7 @@
-// Library settings, for admins: the library itself, its folders and scanning, and the people in it.
+// Library settings, for admins: the library itself, its folders and scanning, the people in it,
+// backups and updates.
 import { updatesPanelHTML, wireUpdates } from "./updates.js";
+import { backupsPanelHTML, wireBackups } from "./backups.js";
 import { api, esc, icon } from "./api.js";
 import { state } from "./main.js";
 import { saved } from "./settings.js";
@@ -39,9 +41,9 @@ function keyForm(name, isSaved, label, placeholder, hint) {
 }
 
 export async function renderAdmin(main) {
-  const [users, scan, lib, check, joining, sections, waiting, wanted, auto, update] = await Promise.all([api("/users"), api("/scan"),
+  const [users, scan, lib, check, joining, sections, waiting, wanted, auto, update, saves] = await Promise.all([api("/users"), api("/scan"),
     api("/library"), api("/check"), api("/join-requests"), api("/sections"), api("/submissions"), api("/requests"),
-    api("/autofill"), api("/updates")]);
+    api("/autofill"), api("/updates"), api("/backups")]);
   const autoText = auto.filled.length || auto.unsure.length
     ? [auto.filled.length && `${auto.filled.length} ${auto.filled.length === 1 ? "book" : "books"} filled in`,
       auto.unsure.length && `${auto.unsure.length} without a sure match`].filter(Boolean).join(", ")
@@ -175,8 +177,10 @@ export async function renderAdmin(main) {
         <p class="form-error" role="alert" hidden></p>
       </form>
     </section>
+    ${backupsPanelHTML(saves)}
     ${updatesPanelHTML(update, lib)}
   </section>`;
+  wireBackups(main, () => renderAdmin(main));
   wireUpdates(main, () => renderAdmin(main), update);
 
   const fail = (el, message) => { el.textContent = message; el.hidden = false; };

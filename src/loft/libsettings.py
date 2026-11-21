@@ -1,5 +1,6 @@
 """Library settings, set by the admin in the app: the library's name, the books folders, where
-uploads go, how often to scan, whether plain-text files count as books, and online lookups (with
+uploads go, how often to scan, whether plain-text files count as books, backups (how often, where, how many
+to keep), and online lookups (with
 optional Google Books and ISBNdb keys and a Hardcover token, which are kept here and never sent
 back to the app).
 
@@ -22,6 +23,8 @@ MAX_NAME = 40
 MAX_FOLDERS = 10
 SCAN_MINUTES = range(5, 1441)
 API_KEY = re.compile(r"^[A-Za-z0-9_-]{20,100}$")
+BACKUP_EVERY = ("day", "week", "off")
+BACKUP_KEEP = (0, 5, 10, 30)
 SECRET = re.compile(r"^[!-~]{10,4000}$")  # a token or key: printable, no spaces
 
 # The library's sections (its categories, for the stacks), suggested from the tags books have until
@@ -70,6 +73,9 @@ def get_library(cfg: Config) -> dict:
         "auto_lookup": stored.get("auto_lookup", True),  # new books missing details are looked up after scans
         "join_requests": stored.get("join_requests", False),  # people may ask to join from the sign-in page
         "check_updates": stored.get("check_updates", True),  # ask GitHub once a day for a new version of Loft
+        "backup_every": stored.get("backup_every", "day"),  # back up the library: "day", "week" or "off"
+        "backup_dir": stored.get("backup_dir", ""),  # where backups go; "" for the data folder's backups
+        "backup_keep": stored.get("backup_keep", 0),  # how many to keep: 0 for a week of days, then 8 weeks
         "google_books": bool(google_books_key(cfg, stored)),  # whether a key is saved, never the key
         "hardcover": bool(hardcover_token(cfg, stored)),
         "isbndb": bool(isbndb_key(cfg, stored)[0]),
@@ -168,7 +174,42 @@ def _folders(value) -> list[str]:
     return result
 
 
-def _clean(patch: dict, current: dict) -> dict:
+def _backup_folder(value, books: list[str], data_dir: Path | None) -> str:
+    """Where backups go: "" for the data folder, or a full path to a folder Loft can read and write,
+    neither inside nor around a books folder (Loft only reads those, except uploads), and not
+    inside Loft's own data folder except its backups folder (a restore replaces the rest). The
+    folder gets a mark that tells Loft later its drive is connected."""
+    if not isinstance(value, str):
+        raise ValueError("backup_dir must be a path")
+    if not value.strip():
+        return ""
+    path = Path(value.strip()).expanduser()
+    if not path.is_absolute():
+        raise ValueError(f"Backups: use the full path, starting from the top ({value})")
+    if not path.is_dir():
+        raise ValueError(f"Backups: Loft can’t find a folder at {path}")
+    if not os.access(path, os.R_OK | os.W_OK | os.X_OK):
+        raise ValueError(f"Backups: Loft needs to read and write in {path}")
+    real = path.resolve()
+    if data_dir is not None:
+        own, theirs = data_dir.resolve(), (data_dir / "backups").resolve()
+        if (real == own or real.is_relative_to(own)) and not real.is_relative_to(theirs):
+            raise ValueError(f"Backups can’t go in Loft’s own data folder ({data_dir}), other than its "
+                             "backups folder: a restore replaces what’s there.")
+    for d in books:
+        rd = Path(d).resolve()
+        if real == rd or real.is_relative_to(rd) or rd.is_relative_to(real):
+            raise ValueError(f"Backups can’t go in or around a books folder ({d}): Loft only reads those. "
+                             "Pick another folder, ideally on another drive.")
+    from .backups import mark
+    try:
+        mark(path)
+    except OSError as e:
+        raise ValueError(f"Backups: Loft couldn’t write in {path} ({e.strerror or e})")
+    return str(path)
+
+
+def _clean(patch: dict, current: dict, data_dir: Path | None = None) -> dict:
     clean: dict = {}
     for key, value in patch.items():
         if key == "name":
@@ -203,6 +244,14 @@ def _clean(patch: dict, current: dict) -> dict:
             if value and not SECRET.match(value):
                 raise ValueError(f"{'That token' if key == 'hardcover_token' else 'That key'} doesn’t look right; "
                                  "copy it again, whole")
+        elif key == "backup_every":
+            if value not in BACKUP_EVERY or isinstance(value, bool):
+                raise ValueError("backup_every must be day, week or off")
+        elif key == "backup_keep":
+            if value not in BACKUP_KEEP or isinstance(value, bool):
+                raise ValueError("backup_keep must be 0 (a week of days, then weeks), 5, 10 or 30")
+        elif key == "backup_dir":
+            value = _backup_folder(value, clean.get("books_dirs", current["books_dirs"]), data_dir)
         elif key in ("allow_txt", "online_lookups", "auto_lookup", "join_requests", "check_updates"):
             if not isinstance(value, bool):
                 raise ValueError(f"{key} must be on or off")
@@ -219,7 +268,7 @@ def update_library(cfg: Config, patch: dict) -> dict:
     if not isinstance(patch, dict):
         raise ValueError("Library settings must be an object")
     current = get_library(cfg)
-    clean = _clean(patch, current)
+    clean = _clean(patch, current, cfg.data_dir)
     if clean.get("google_books_key") and clean.get("online_lookups", current["online_lookups"]):
         from .googlebooks import check_key
         check_key(clean["google_books_key"])

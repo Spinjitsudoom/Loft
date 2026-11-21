@@ -1064,3 +1064,14 @@ body.arranging { overflow: hidden; }
 .wn-actions { display: flex; justify-content: flex-end; padding-top: 20px; }
 .wn-actions .btn { min-width: 120px; justify-content: center; }
 @media (max-width: 480px) { .whatsnew { padding: 24px 20px 18px; } }
+
+/* Library settings → Backups (js/backups.js). */
+.backup-last { margin: 10px 0 4px; }
+.backup-choices { display: flex; flex-wrap: wrap; gap: 12px 28px; margin: 16px 0 4px; }
+.backup-choices select { max-width: 100%; }
+.backup-folder { margin-bottom: 14px; }
+.backup-folder code { overflow-wrap: anywhere; }
+.backup-list { margin-top: 18px; }
+[data-backups] .update-actions { margin-top: 14px; }
+.backup-when { display: flex; flex-direction: column; }
+.backup-when .muted { font-size: 14px; }

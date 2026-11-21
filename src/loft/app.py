@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 import time
 import zipfile
@@ -22,7 +23,7 @@ from .config import Config
 from .covers import cover_path
 from .db import session
 from .sanitize import chapter_html
-from . import autofill, updates
+from . import autofill, backups, updates
 from .scanner import Scanner, last_report
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -159,6 +160,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         if scan_on_start:
             scanner.start()
             updater.start()
+            backups.BackupKeeper(cfg).start()
         yield
 
     updater = updates.UpdateChecker(cfg)
@@ -371,6 +373,38 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             threading.Thread(target=updates.check, args=(cfg,), name="loft-update-download", daemon=True).start()
             found = {**found, "downloading": True}
         return found
+
+    # ---------- backups ----------
+
+    @app.get("/api/backups")
+    def backup_status(_: User = Depends(admin_user)):
+        return backups.status(cfg)
+
+    @app.post("/api/backups")
+    def back_up_now(_: User = Depends(admin_user)):
+        try:
+            made = backups.make_now(cfg)
+        except (OSError, sqlite3.Error):
+            raise HTTPException(500, backups.status(cfg)["error"] or "Loft couldn’t back up the library")
+        return {"name": made.name, **backups.status(cfg)}
+
+    @app.get("/api/backups/{name}")
+    def download_backup(name: str, _: User = Depends(admin_user)):
+        try:
+            p = backups.path_of(cfg, name)
+        except backups.BackupError:
+            raise HTTPException(404, "No such backup")
+        return FileResponse(p, media_type="application/zip", filename=name)
+
+    @app.post("/api/backups/{name}/restore")
+    def restore_backup(name: str, _: User = Depends(admin_user)):
+        """Put the library back as it was. What's there now is backed up first, so this can be undone."""
+        try:
+            safety = backups.restore(cfg, name)
+        except backups.BackupError as e:
+            raise HTTPException(400, str(e))
+        scanner.trigger()   # the books may have changed since the backup
+        return {"before": safety.name, **backups.status(cfg)}
 
     @app.post("/api/updates/install", status_code=202)
     def install_update(_: User = Depends(admin_user)):
