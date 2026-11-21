@@ -60,16 +60,19 @@ jobs:
           function Wait-Ping($want) {
             for ($i = 0; $i -lt 120; $i++) {
               Start-Sleep 1
-              try { $p = Invoke-RestMethod http://127.0.0.1:4545/api/ping; if ($p.version -eq $want) { return $p } } catch { }
+              try { $p = Invoke-RestMethod http://127.0.0.1:4545/api/ping -TimeoutSec 5; if ($p.version -eq $want) { Write-Host "$(Get-Date -Format T) answered as $($p.version)"; return } else { Write-Host "answered as $($p.version)" } } catch { $last = $_.Exception.Message }
             }
-            Write-Output "--- processes"; Get-Process 'Loft Server','loft-server' -ErrorAction SilentlyContinue | Format-Table Id,ProcessName,StartTime
+            Write-Host "--- last error: $last"
+            Write-Host "--- processes"; Get-Process 'Loft Server','loft-server' -ErrorAction SilentlyContinue | Format-Table Id,ProcessName,StartTime | Out-String | Write-Host
+            Write-Host "--- listening on 4545"; Get-NetTCPConnection -LocalPort 4545 -ErrorAction SilentlyContinue | Format-Table State,OwningProcess | Out-String | Write-Host
             foreach ($log in 'tray.log','server.log') {
-              Write-Output "--- $log"; Get-Content "$env:LOCALAPPDATA\Loft\$log" -ErrorAction SilentlyContinue
+              Write-Host "--- $log"; Get-Content "$env:LOCALAPPDATA\Loft\$log" -ErrorAction SilentlyContinue | Write-Host
             }
-            Write-Output "--- loft-server.exe on its own"
+            Get-Process 'Loft Server','loft-server' -ErrorAction SilentlyContinue | Stop-Process -Force
+            Write-Host "--- loft-server.exe on its own"
             $alone = Start-Process "$env:LOCALAPPDATA\Programs\Loft Server\loft-server.exe" -RedirectStandardOutput "$env:RUNNER_TEMP\alone.txt" -RedirectStandardError "$env:RUNNER_TEMP\alone-err.txt" -PassThru
             Start-Sleep 20; Stop-Process $alone -Force -ErrorAction SilentlyContinue
-            Get-Content "$env:RUNNER_TEMP\alone.txt","$env:RUNNER_TEMP\alone-err.txt"
+            Get-Content "$env:RUNNER_TEMP\alone.txt","$env:RUNNER_TEMP\alone-err.txt" | Write-Host
             throw "Loft didn't answer as $want"
           }
           $setup = (Get-ChildItem dist\loft-server-*-setup.exe)[0].FullName
@@ -80,7 +83,8 @@ jobs:
           $dir = "$env:LOCALAPPDATA\Programs\Loft Server"
           foreach ($f in 'Loft Server.exe','loft-server.exe','unins000.exe','README.txt') { if (-not (Test-Path "$dir\$f")) { throw "The setup didn't install $f" } }
           # A silent install starts the tray in the background; the tray starts the server, hidden.
-          Wait-Ping $version | Out-Null
+          Write-Host "$(Get-Date -Format T) installed; waiting for the tray's server"
+          Wait-Ping $version
           if (-not (Get-Process 'Loft Server' -ErrorAction SilentlyContinue)) { throw "The tray isn't running" }
           $server = Get-Process loft-server
           if ($server.MainWindowHandle -ne 0) { throw "The server has a window" }
@@ -88,8 +92,9 @@ jobs:
           if (-not (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Loft Server' -ErrorAction SilentlyContinue)) { throw "It doesn't start with Windows" }
           # The tray starts the server again when it stops by itself.
           Stop-Process $server -Force
+          Write-Host "$(Get-Date -Format T) stopped the server; waiting for the tray to start it again"
           Start-Sleep 2
-          Wait-Ping $version | Out-Null
+          Wait-Ping $version
           # A second start doesn't make a second tray.
           Start-Process "$dir\Loft Server.exe" -ArgumentList '--background'
           Start-Sleep 5
