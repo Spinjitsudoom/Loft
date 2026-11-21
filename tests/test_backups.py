@@ -260,7 +260,7 @@ def backup_notes(cfg) -> list[tuple[str, str]]:
 
 
 def test_step_follows_the_schedule(library):
-    t = 50 * DAY
+    t = time.mktime((2026, 3, 10, 12, 0, 0, 0, 0, -1))   # noon here: 23 hours later is the next day, in any time zone
     assert backups.step(library, now=t) is not None
     assert backups.step(library, now=t + 3600) is None
     assert backups.step(library, now=t + 23 * 3600) is not None
