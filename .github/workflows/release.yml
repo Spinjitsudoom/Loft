@@ -32,6 +32,7 @@ jobs:
 
   server:
     needs: test
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -63,7 +64,10 @@ jobs:
             throw "Loft didn't answer as $want"
           }
           $setup = (Get-ChildItem dist\loft-server-*-setup.exe)[0].FullName
-          Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-' -Wait
+          # Wait for the setup alone: -Wait would also wait for the tray it starts, which keeps running.
+          $install = Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-' -PassThru
+          if (-not $install.WaitForExit(300000)) { throw "The setup didn't finish" }
+          if ($install.ExitCode -ne 0) { throw "The setup failed ($($install.ExitCode))" }
           $dir = "$env:LOCALAPPDATA\Programs\Loft Server"
           foreach ($f in 'Loft Server.exe','loft-server.exe','unins000.exe','README.txt') { if (-not (Test-Path "$dir\$f")) { throw "The setup didn't install $f" } }
           # A silent install starts the tray in the background; the tray starts the server, hidden.
@@ -81,7 +85,7 @@ jobs:
           Start-Process "$dir\Loft Server.exe" -ArgumentList '--background'
           Start-Sleep 5
           if (@(Get-Process 'Loft Server').Count -ne 1) { throw "A second tray started" }
-          Start-Process "$dir\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES' -Wait
+          (Start-Process "$dir\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES' -PassThru).WaitForExit(120000) | Out-Null
           for ($i = 0; $i -lt 30 -and (Test-Path "$dir\loft-server.exe"); $i++) { Start-Sleep 1 }
           if (Test-Path "$dir\loft-server.exe") { throw "Uninstalling left the server behind" }
           if (Get-Process 'Loft Server','loft-server' -ErrorAction SilentlyContinue) { throw "Uninstalling left Loft running" }
