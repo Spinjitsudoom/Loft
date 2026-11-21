@@ -8,6 +8,7 @@ name: Release
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:   # build and check everything without releasing (the draft needs a tag)
 
 permissions:
   contents: read
@@ -57,10 +58,18 @@ jobs:
         run: |
           $version = (Select-String -Path pyproject.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
           function Wait-Ping($want) {
-            for ($i = 0; $i -lt 60; $i++) {
+            for ($i = 0; $i -lt 120; $i++) {
               Start-Sleep 1
               try { $p = Invoke-RestMethod http://127.0.0.1:4545/api/ping; if ($p.version -eq $want) { return $p } } catch { }
             }
+            Write-Output "--- processes"; Get-Process 'Loft Server','loft-server' -ErrorAction SilentlyContinue | Format-Table Id,ProcessName,StartTime
+            foreach ($log in 'tray.log','server.log') {
+              Write-Output "--- $log"; Get-Content "$env:LOCALAPPDATA\Loft\$log" -ErrorAction SilentlyContinue
+            }
+            Write-Output "--- loft-server.exe on its own"
+            $alone = Start-Process "$env:LOCALAPPDATA\Programs\Loft Server\loft-server.exe" -RedirectStandardOutput "$env:RUNNER_TEMP\alone.txt" -RedirectStandardError "$env:RUNNER_TEMP\alone-err.txt" -PassThru
+            Start-Sleep 20; Stop-Process $alone -Force -ErrorAction SilentlyContinue
+            Get-Content "$env:RUNNER_TEMP\alone.txt","$env:RUNNER_TEMP\alone-err.txt"
             throw "Loft didn't answer as $want"
           }
           $setup = (Get-ChildItem dist\loft-server-*-setup.exe)[0].FullName
@@ -144,6 +153,7 @@ jobs:
 
   draft:
     needs: [server, desktop]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write

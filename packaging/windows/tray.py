@@ -275,5 +275,23 @@ def main() -> None:
         updates._restart_into(update_to[0])  # swaps in the new version, starts this tray again, exits
 
 
+def run() -> None:
+    """main(), writing anything that goes wrong to tray.log: a program without a window has
+    nowhere else to say it."""
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException:
+        import traceback
+        try:
+            DATA.mkdir(parents=True, exist_ok=True)
+            with open(DATA / "tray.log", "a", encoding="utf-8") as f:
+                f.write(f"{time.ctime()}\n{traceback.format_exc()}\n")
+        except OSError:
+            pass
+        raise
+
+
 if __name__ == "__main__":
-    main()
+    run()
