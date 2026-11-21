@@ -67,3 +67,47 @@ def test_a_long_log_is_set_aside(tray):
     tray.LOG.write_bytes(b"x" * (tray.MAX_LOG + 1))
     tray.prepare_data()
     assert not tray.LOG.exists() and tray.LOG.with_name("server.log.1").stat().st_size == tray.MAX_LOG + 1
+
+
+class FakeRegistry:
+    """Just enough of winreg for Start with Windows, with the Run key missing at first (as on a
+    new Windows profile)."""
+    HKEY_CURRENT_USER, KEY_SET_VALUE, KEY_READ, REG_SZ = "HKCU", 2, 1, 1
+
+    def __init__(self):
+        self.keys: dict[str, dict] = {}
+
+    class _Key:
+        def __init__(self, values): self.values = values
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    def OpenKey(self, root, path, reserved=0, access=1):
+        if path not in self.keys:
+            raise FileNotFoundError(2, "The system cannot find the file specified")
+        return self._Key(self.keys[path])
+
+    def CreateKeyEx(self, root, path, reserved=0, access=1):
+        return self._Key(self.keys.setdefault(path, {}))
+
+    def SetValueEx(self, key, name, reserved, kind, value): key.values[name] = value
+    def QueryValueEx(self, key, name):
+        if name not in key.values:
+            raise FileNotFoundError(2, "no value")
+        return key.values[name], self.REG_SZ
+    def DeleteValue(self, key, name):
+        if name not in key.values:
+            raise FileNotFoundError(2, "no value")
+        del key.values[name]
+
+
+def test_start_with_windows_works_when_the_run_key_is_missing(tray, monkeypatch):
+    registry = FakeRegistry()
+    monkeypatch.setitem(__import__("sys").modules, "winreg", registry)
+    assert not tray.autostart()
+    tray.set_autostart(True)
+    assert tray.autostart()
+    assert registry.keys[tray.RUN_KEY][tray.RUN_NAME].endswith('" --background')
+    tray.set_autostart(False)
+    assert not tray.autostart()
+    tray.set_autostart(False)   # already off: nothing to do

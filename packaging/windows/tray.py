@@ -115,7 +115,8 @@ def autostart() -> bool:
 
 def set_autostart(on: bool) -> None:
     import winreg
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+    # CreateKeyEx, not OpenKey: on a new Windows profile the Run key may not exist yet.
+    with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
         if on:
             winreg.SetValueEx(k, RUN_NAME, 0, winreg.REG_SZ, f'"{sys.executable}" --background')
         else:
@@ -195,7 +196,10 @@ def main() -> None:
     prepare_data()
     first = not (DATA / ".tray").exists()
     if first:
-        set_autostart(True)  # a server is for having on: the menu turns this off
+        try:
+            set_autostart(True)  # a server is for having on: the menu turns this off
+        except OSError:
+            log_trouble()        # Loft still runs; Start with Windows stays off
         (DATA / ".tray").write_text("Loft Server has been started here before.\n")
 
     update_to: list[str] = []   # set when the person chooses Update: installed after the tray closes
@@ -275,22 +279,33 @@ def main() -> None:
         updates._restart_into(update_to[0])  # swaps in the new version, starts this tray again, exits
 
 
+def log_trouble() -> None:
+    """Write the exception being handled to tray.log: a program without a window has nowhere
+    else to say it."""
+    import traceback
+    try:
+        DATA.mkdir(parents=True, exist_ok=True)
+        with open(DATA / "tray.log", "a", encoding="utf-8") as f:
+            f.write(f"{time.ctime()}\n{traceback.format_exc()}\n")
+    except OSError:
+        pass
+
+
 def run() -> None:
-    """main(), writing anything that goes wrong to tray.log: a program without a window has
-    nowhere else to say it."""
     try:
         main()
     except SystemExit:
         raise
-    except BaseException:
-        import traceback
+    except BaseException as e:
+        log_trouble()
         try:
-            DATA.mkdir(parents=True, exist_ok=True)
-            with open(DATA / "tray.log", "a", encoding="utf-8") as f:
-                f.write(f"{time.ctime()}\n{traceback.format_exc()}\n")
-        except OSError:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(
+                None, f"Loft Server couldn’t start: {e}\n\nWhat went wrong is written in {DATA / 'tray.log'}.",
+                "Loft Server", 0x10)
+        except Exception:
             pass
-        raise
+        sys.exit(1)
 
 
 if __name__ == "__main__":
