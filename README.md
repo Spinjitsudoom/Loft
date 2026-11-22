@@ -115,6 +115,10 @@ phone keep the app itself for opening offline), run `sudo tailscale serve --bg 4
   (manga)**, and **Arrange pages** (move, hide, or add blank pages; the file is never changed),
   all on the book's edit page.
 - EPUB and the others: font, size and margins in the reader's settings.
+- Fixed-layout books (picture books and many children's books, EPUB or Kindle) are read as pages,
+  each as the book designed it, with its pictures and fonts: the page curl, two pages side by side
+  when there's room, zoom, and downloads. Their text size can't change; zoom instead. Pages are
+  shown in a sealed frame: nothing in a book runs, and nothing outside it is loaded.
 - Your place and bookmarks follow you between devices.
 
 ## Adding and editing books (admins)

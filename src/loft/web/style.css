@@ -1075,3 +1075,10 @@ body.arranging { overflow: hidden; }
 [data-backups] .update-actions { margin-top: 14px; }
 .backup-when { display: flex; flex-direction: column; }
 .backup-when .muted { font-size: 14px; }
+
+/* Fixed-layout books (js/fixed.js): each page is the book's own, in a frame scaled to its space.
+   Pages are designed on paper: white behind them, whatever the reader's colours. */
+.fixed-page { position: relative; width: 100%; height: 100%; overflow: hidden; }
+.fixed-page iframe, .zoom-frame iframe { position: absolute; left: 0; top: 0; border: 0; background: #fff;
+  transform-origin: 0 0; pointer-events: none; }
+.zoom-frame { overflow: hidden; }

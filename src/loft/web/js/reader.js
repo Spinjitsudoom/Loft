@@ -5,9 +5,12 @@ import { openZoom } from "./zoom.js";
 import * as offline from "./offline.js";
 import { wireDiscussion } from "./discussion.js";
 import { loadPrefs, patchPrefs } from "./prefs.js";
+import { downloadFits } from "./fixedfit.js";
 
 let FlowReaderClass = null;  // set by flow.js (it extends Reader)
 export function registerFlowReader(cls) { FlowReaderClass = cls; }
+let FixedReaderClass = null;  // set by fixed.js: fixed-layout books, read as pages
+export function registerFixedReader(cls) { FixedReaderClass = cls; }
 
 const WIDTHS = [600, 900, 1200, 1800, 2400];
 const SPEEDS = { gentle: 1000, normal: 700, quick: 420, off: 1 };
@@ -80,10 +83,11 @@ export async function renderReader(app, bookId, params, isCurrent = () => true) 
   }
   // A downloaded book reads from this device (quicker, and the same with no connection), unless
   // it has changed on the server since it was downloaded.
-  const stored = kept && kept.complete && kept.fileId === file.id && kept.version === manifest.version ? kept : null;
+  const stored = kept && kept.complete && kept.fileId === file.id && kept.version === manifest.version
+    && downloadFits(kept, manifest) ? kept : null;
   const prefs = await loadPrefs();
   if (stale()) return () => {};
-  const Cls = flowing ? FlowReaderClass : Reader;
+  const Cls = flowing ? (manifest.fixed && FixedReaderClass ? FixedReaderClass : FlowReaderClass) : Reader;
   const r = new Cls(app, book, file, manifest, prefs.reading);
   r.stored = stored;
   if (stored && !flowing) r.storedPages = await offline.pageUrls(book.id, file.id, manifest.version);
@@ -197,7 +201,7 @@ export class Reader {
     holder.innerHTML = Array.from({ length: this.leaves }, (_, leaf) => {
       const i = this.rtl ? this.leaves - 1 - leaf : leaf;
       return i >= this.count ? `<div class="leaf" data-density="soft"></div>`
-        : `<div class="leaf" data-density="soft"><img alt="Page ${i + 1}" data-page="${i}" draggable="false" decoding="async"></div>`;
+        : `<div class="leaf" data-density="soft">${this.pageInner(i)}</div>`;
     }).join("");
     this.stage.appendChild(holder);
     const stageW = this.stage.clientWidth;
@@ -222,15 +226,13 @@ export class Reader {
     const col = document.createElement("div");
     col.className = "scroll-book";
     col.innerHTML = this.m.sizes.map(([w, h], i) =>
-      `<div class="scroll-page" data-i="${i}" style="aspect-ratio: ${w} / ${h}"><img alt="Page ${i + 1}" decoding="async" draggable="false"></div>`).join("");
+      `<div class="scroll-page" data-i="${i}" style="aspect-ratio: ${w} / ${h}">${this.pageInner(i)}</div>`).join("");
     this.stage.appendChild(col);
     this.scroller = col;
     const width = () => col.querySelector(".scroll-page").clientWidth;
     const loader = new IntersectionObserver((entries) => {
       for (const e of entries) {
-        if (!e.isIntersecting) continue;
-        const img = e.target.querySelector("img");
-        if (!img.getAttribute("src")) { img.onerror = retryOnce; img.src = this.src(Number(e.target.dataset.i), width()); }
+        if (e.isIntersecting) this.fillScrollPage(e.target, Number(e.target.dataset.i), width());
       }
     }, { root: col, rootMargin: "150% 0px" });
     const current = new IntersectionObserver((entries) => {
@@ -238,6 +240,14 @@ export class Reader {
     }, { root: col, rootMargin: "-50% 0px -50% 0px" });
     col.querySelectorAll(".scroll-page").forEach((el) => { loader.observe(el); current.observe(el); });
     this.observer = { disconnect: () => { loader.disconnect(); current.disconnect(); } };
+  }
+
+  // What a page holds (a picture of it, for comics and PDFs; fixed.js puts the page itself there).
+  pageInner(i) { return `<img alt="Page ${i + 1}" data-page="${i}" draggable="false" decoding="async">`; }
+
+  fillScrollPage(el, i, width) {
+    const img = el.querySelector("img");
+    if (!img.getAttribute("src")) { img.onerror = retryOnce; img.src = this.src(i, width); }
   }
 
   pageWidthCss() {

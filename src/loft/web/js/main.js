@@ -9,6 +9,7 @@ import { renderAdd } from "./add.js";
 import { renderCheck } from "./check.js";
 import { renderReader } from "./reader.js";
 import "./flow.js";
+import "./fixed.js";
 import { renderSettings } from "./settings.js";
 import { applyLook, loadPrefs } from "./prefs.js";
 import * as offline from "./offline.js";

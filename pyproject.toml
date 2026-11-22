@@ -1,6 +1,6 @@
 [project]
 name = "loft"
-version = "0.1.5"
+version = "0.1.6"
 description = "A self-hosted ebook library with pages that turn like paper"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
@@ -15,6 +15,7 @@ dependencies = [
     "py7zr>=0.22",
     "pypdfium2>=4.30",
     "rarfile>=4.2",
+    "tinycss2>=1.4",
     "uvicorn[standard]>=0.32",
 ]
 

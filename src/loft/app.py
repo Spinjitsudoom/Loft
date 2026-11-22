@@ -23,7 +23,7 @@ from .config import Config
 from .covers import cover_path
 from .db import session
 from .sanitize import chapter_html
-from . import autofill, backups, updates
+from . import autofill, backups, fixedpage, updates
 from .scanner import Scanner, last_report
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -870,9 +870,13 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         book, version = _flow(file_id)
         with session(cfg.db_path) as con:
             fmt = con.execute("SELECT format FROM book_files WHERE id = ?", (file_id,)).fetchone()["format"]
-        return {"file_id": file_id, "format": fmt, "version": version,
-                "chapters": [{"title": c.title} for c in book.chapters],
-                "toc": [{"title": t.title, "chapter": t.chapter, "anchor": t.anchor, "level": t.level} for t in book.toc]}
+        outline = {"file_id": file_id, "format": fmt, "version": version,
+                   "chapters": [{"title": c.title} for c in book.chapters],
+                   "toc": [{"title": t.title, "chapter": t.chapter, "anchor": t.anchor, "level": t.level} for t in book.toc]}
+        if book.fixed:   # read as pages (js/fixed.js): each chapter is a page of this size
+            outline["fixed"] = {"sizes": [list(s) for s in book.fixed.sizes], "spread": book.fixed.spread}
+            outline["rtl"] = book.fixed.rtl
+        return outline
 
     @app.get("/api/files/{file_id}/chapters/{n}")
     def flow_chapter(file_id: int, n: int, _: User = Depends(current_user)):
@@ -884,6 +888,12 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             raw = book.read(chapter.href)
         except (KeyError, OSError, zipfile.BadZipFile):
             raise pages.Unreadable("damaged")
+        if book.fixed:   # a page of a picture book: the whole page, as its designer laid it out
+            body = fixedpage.page_document(txt.decode(raw), base=chapter.href, book=book,
+                                           resource_url=lambda p: f"/api/files/{file_id}/res/{quote(p)}")
+            return Response(body, media_type="text/html; charset=utf-8", headers={
+                "Cache-Control": "private, max-age=604800", "Content-Security-Policy": fixedpage.CSP,
+                "X-Content-Type-Options": "nosniff"})
         body = chapter_html(txt.decode(raw), base=chapter.href, book=book,
                             image_size=lambda p: flowbooks.image_size(file_id, version, book, p),
                             resource_url=lambda p: f"/api/files/{file_id}/res/{quote(p)}")
@@ -894,7 +904,8 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     @app.get("/api/files/{file_id}/res/{path:path}")
     def flow_resource(file_id: int, path: str, _: User = Depends(current_user)):
         book, _version = _flow(file_id)
-        resource = book.images().get(path)
+        # Pictures, and the fonts a fixed-layout page's CSS names; never the book's pages or stylesheets.
+        resource = book.images().get(path) or fixedpage.fonts(book).get(path)
         if resource is None:
             raise HTTPException(404, "No such picture")
         headers = {"Cache-Control": "private, max-age=604800", "X-Content-Type-Options": "nosniff"}

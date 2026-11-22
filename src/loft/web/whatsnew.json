@@ -1,5 +1,23 @@
 [
   {
+    "version": "0.1.6",
+    "date": "2026-11-22",
+    "new": [
+      {
+        "title": "Picture books, as designed",
+        "text": "Fixed-layout books (picture books and many children’s books, as EPUB or Kindle AZW3) are read as real pages: their pictures, fonts and words exactly where the book puts them, scaled to your screen. Page turning, two-page spreads, Scroll mode, zoom, bookmarks and downloads all work as they do for comics."
+      }
+    ],
+    "fixed": [
+      {
+        "text": "Fonts some EPUBs store scrambled (a standard way of packing fonts, not copy protection) now show as the book intended."
+      },
+      {
+        "text": "A picture book downloaded before this update is downloaded again by itself, with its real pages."
+      }
+    ]
+  },
+  {
     "version": "0.1.5",
     "date": "2026-11-21",
     "new": [

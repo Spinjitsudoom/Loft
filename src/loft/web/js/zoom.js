@@ -1,10 +1,12 @@
 // A page up close: pan by dragging, zoom by pinching, the wheel or the buttons. Turning pages here
 // keeps the zoom and starts at the top of the next page. Pinching back out past 1× closes it.
+// A page is a picture (src), or, for a fixed-layout book, the page itself in a frame (frame: its
+// size and a way to fill the frame).
 import { icon } from "./api.js";
 
 const MAX = 5;
 
-export function openZoom({ src, index, count, onClose, rtl = false }) {
+export function openZoom({ src, frame = null, index, count, onClose, rtl = false }) {
   const prev = `<button class="icon-btn" type="button" data-prev aria-label="Previous page">${icon(rtl ? "right" : "left")}</button>`;
   const next = `<button class="icon-btn" type="button" data-next aria-label="Next page">${icon(rtl ? "left" : "right")}</button>`;
   const turns = rtl ? next + prev : prev + next;  // a manga's next page is to the left
@@ -13,7 +15,8 @@ export function openZoom({ src, index, count, onClose, rtl = false }) {
   layer.setAttribute("role", "dialog");
   layer.setAttribute("aria-label", "Page close-up");
   layer.innerHTML = `
-    <img class="zoom-img" alt="" draggable="false">
+    ${frame ? `<div class="zoom-img zoom-frame"><iframe sandbox="allow-same-origin" tabindex="-1" scrolling="no" title="Page"></iframe></div>`
+      : `<img class="zoom-img" alt="" draggable="false">`}
     <div class="zoom-bar">
       <button class="zoom-btn" type="button" data-close>Back to book</button>
       <span class="zoom-page"></span>
@@ -23,13 +26,16 @@ export function openZoom({ src, index, count, onClose, rtl = false }) {
     </div>`;
   document.body.appendChild(layer);
   const img = layer.querySelector(".zoom-img");
+  const inner = frame && img.querySelector("iframe");
   const label = layer.querySelector(".zoom-page");
   let page = index, scale = 2, x = 0, y = 0;
+  const natural = () => (frame ? frame.size(page) : [img.naturalWidth, img.naturalHeight]);
 
   const fit = () => {
     const vw = innerWidth, vh = innerHeight;
-    const r = Math.min(vw / img.naturalWidth, vh / img.naturalHeight) || 1;
-    return { w: img.naturalWidth * r, h: img.naturalHeight * r, vw, vh };
+    const [nw, nh] = natural();
+    const r = Math.min(vw / nw, vh / nh) || 1;
+    return { w: nw * r, h: nh * r, r, vw, vh };
   };
   const clamp = () => {
     const { w, h, vw, vh } = fit();
@@ -38,8 +44,15 @@ export function openZoom({ src, index, count, onClose, rtl = false }) {
     y = sh <= vh ? (vh - sh) / 2 : Math.min(0, Math.max(vh - sh, y));
   };
   const draw = () => {
-    const { w, h } = fit();
+    const { w, h, r } = fit();
     clamp();
+    if (frame) {   // the frame stays at the page's own size and is scaled as a whole
+      const [nw, nh] = natural();
+      img.style.width = inner.style.width = `${nw}px`;
+      img.style.height = inner.style.height = `${nh}px`;
+      img.style.transform = `translate(${x}px, ${y}px) scale(${scale * r})`;
+      return;
+    }
     img.style.width = `${w}px`;
     img.style.height = `${h}px`;
     img.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
@@ -56,7 +69,9 @@ export function openZoom({ src, index, count, onClose, rtl = false }) {
     page = Math.max(0, Math.min(count - 1, i));
     label.textContent = `Page ${page + 1} of ${count}`;
     // A turned-to page starts where reading starts: top left, or top right in a manga.
-    img.onload = () => { if (top) { x = rtl ? -Infinity : 0; y = 0; } else { const { w, h, vw, vh } = fit(); x = (vw - w * scale) / 2; y = (vh - h * scale) / 2; } draw(); };
+    const ready = () => { if (top) { x = rtl ? -Infinity : 0; y = 0; } else { const { w, h, vw, vh } = fit(); x = (vw - w * scale) / 2; y = (vh - h * scale) / 2; } draw(); };
+    if (frame) { frame.fill(page, inner).then(ready, ready); return; }
+    img.onload = ready;
     img.src = src(page);
   };
   function close(silent = false) {

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import posixpath
+import re
 import zipfile
 from pathlib import Path
 from urllib.parse import unquote, urldefrag
 from xml.etree import ElementTree as ET
 
 from . import flow
-from .flow import Chapter, FlowBook, Resource, TocEntry, Unreadable
+from .flow import Chapter, FixedLayout, FlowBook, Resource, TocEntry, Unreadable
 
 NS = {
     "c": "urn:oasis:names:tc:opendocument:xmlns:container",
@@ -98,14 +99,18 @@ def _structure(z: zipfile.ZipFile, opf, opf_path: str, path: Path) -> FlowBook:
                 "application/xhtml+xml", "text/html", "application/x-dtbook+xml"):
             chapters.append(Chapter(p))
 
+    scrambled = _scrambled_fonts(z, opf)
+
     def read(member: str) -> bytes:
         try:
             with zipfile.ZipFile(path) as zz:
-                return _read(zz, member)
+                data = _read(zz, member)
         except (zipfile.BadZipFile, OSError) as e:  # the file changed or the share went away since opening
             raise Unreadable("damaged") from e
+        return _unscramble(data, *scrambled[member]) if member in scrambled else data
 
-    book = FlowBook(chapters=chapters, toc=[], resources=resources, read=read)
+    book = FlowBook(chapters=chapters, toc=[], resources=resources, read=read,
+                    fixed=_fixed_layout(z, opf, spine, chapters))
     entries = []
     # A contents file that isn't tidy XML (hand-made navs often use &nbsp;) shouldn't cost the whole book:
     # try the EPUB 3 nav, then the older NCX, then go without contents.
@@ -125,6 +130,115 @@ def _structure(z: zipfile.ZipFile, opf, opf_path: str, path: Path) -> FlowBook:
         if not book.chapters[entry.chapter].title:
             book.chapters[entry.chapter].title = entry.title
     return book
+
+
+FONT_MAGIC = (b"OTTO", b"\0\1\0\0", b"true", b"ttcf", b"wOFF", b"wOF2")
+
+
+def _scrambled_fonts(z: zipfile.ZipFile, opf) -> dict[str, tuple[str, list[str]]]:
+    """Fonts the book stores scrambled ("font obfuscation", not DRM: it keeps fonts from being lifted
+    out of books), by path: the method, and the book's identifiers, its own first, to make the key from."""
+    if "META-INF/encryption.xml" not in z.namelist():
+        return {}
+    try:
+        root = ET.fromstring(_read(z, "META-INF/encryption.xml"))
+    except (ET.ParseError, Unreadable):
+        return {}
+    found = {}
+    for data in root.iter(f"{{{NS['enc']}}}EncryptedData"):
+        method = data.find(f"{{{NS['enc']}}}EncryptionMethod")
+        ref = data.find(f".//{{{NS['enc']}}}CipherReference")
+        if method is not None and ref is not None and method.get("Algorithm") in FONT_OBFUSCATION and ref.get("URI"):
+            found[posixpath.normpath(unquote(ref.get("URI")))] = method.get("Algorithm")
+    if not found:
+        return {}
+    unique = opf.get("unique-identifier")
+    ids = [(el.get("id") == unique, (el.text or "").strip()) for el in opf.iter() if str(el.tag).endswith("}identifier")]
+    candidates = [text for own, text in sorted(ids, key=lambda i: not i[0]) if text]
+    return {path: (method, candidates) for path, method in found.items()}
+
+
+def _unscramble(data: bytes, method: str, identifiers: list[str]) -> bytes:
+    """The font as it was. IDPF: the first 1040 bytes XORed with the SHA-1 of the book's identifier.
+    Adobe: the first 1024 bytes XORed with the 16 bytes of its UUID. The key that gives a real font wins."""
+    import binascii
+    import hashlib
+
+    def xor(key: bytes, length: int) -> bytes:
+        head = bytes(b ^ key[i % len(key)] for i, b in enumerate(data[:length]))
+        return head + data[length:]
+
+    tried = []
+    for ident in identifiers:
+        if method == "http://www.idpf.org/2008/embedding":
+            tried.append(xor(hashlib.sha1(re.sub(r"[\x20\x09\x0d\x0a]", "", ident).encode()).digest(), 1040))
+        else:
+            digits = re.sub(r"[^0-9a-fA-F]", "", re.sub(r"^urn:uuid:", "", ident, flags=re.I))
+            digits = (digits + digits)[:32]
+            if len(digits) >= 2:
+                tried.append(xor(binascii.unhexlify(digits[: len(digits) // 2 * 2]), 1024))
+    return next((t for t in tried if t[:4] in FONT_MAGIC), tried[0] if tried else data)
+
+
+FALLBACK_PAGE = (1000, 1500)   # 2:3, when nothing says how big a fixed-layout page is
+META_TAG = re.compile(r"<meta\b[^>]*>", re.I)
+ATTR = re.compile(r"""([\w:-]+)\s*=\s*["']([^"']*)["']""")
+WIDTH = re.compile(r"width\s*=\s*(\d+(?:\.\d+)?)", re.I)
+HEIGHT = re.compile(r"height\s*=\s*(\d+(?:\.\d+)?)", re.I)
+
+
+def _viewport(text: str) -> tuple[int, int] | None:
+    """"width=706, height=1024", in either order."""
+    w, h = WIDTH.search(text or ""), HEIGHT.search(text or "")
+    return _size(w.group(1), h.group(1)) if w and h else None
+VIEWBOX = re.compile(r"""<svg\b[^>]*\bviewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)""", re.I)
+
+
+def _size(w, h) -> tuple[int, int] | None:
+    try:
+        w, h = round(float(w)), round(float(h))
+    except (TypeError, ValueError):
+        return None
+    return (w, h) if w > 0 and h > 0 else None
+
+
+def _fixed_layout(z: zipfile.ZipFile, opf, spine, chapters: list[Chapter]) -> FixedLayout | None:
+    """Fixed layout when the book says so: rendition:layout pre-paginated, or Kindle's older
+    <meta name="fixed-layout" content="true"/>. Each page's size from its viewport, else the book's
+    viewport or original resolution, else an SVG page's viewBox, else 2:3."""
+    props, names = {}, {}
+    metadata = opf.find("opf:metadata", NS)
+    for meta in (metadata if metadata is not None else []):
+        if not str(meta.tag).endswith("meta"):
+            continue
+        if meta.get("property"):
+            props[meta.get("property")] = (meta.text or "").strip()
+        if meta.get("name"):
+            names[meta.get("name")] = (meta.get("content") or "").strip()
+    if props.get("rendition:layout") != "pre-paginated" and names.get("fixed-layout", "").lower() != "true":
+        return None
+    book_size = None
+    book_size = _viewport(props.get("rendition:viewport", ""))
+    if not book_size and (m := re.fullmatch(r"(\d+)\s*x\s*(\d+)", names.get("original-resolution", ""))):
+        book_size = _size(*m.groups())
+    sizes = []
+    for chapter in chapters:
+        try:
+            text = _read(z, chapter.href).decode("utf-8", "replace")
+        except (KeyError, Unreadable, zipfile.BadZipFile, OSError):
+            text = ""
+        size = None
+        for tag in META_TAG.findall(text[:20000]):
+            attrs = {k.lower(): v for k, v in ATTR.findall(tag)}
+            if attrs.get("name", "").lower() == "viewport":
+                size = _viewport(attrs.get("content", ""))
+        if not size:
+            size = book_size
+        if not size and (m := VIEWBOX.search(text)):
+            size = _size(*m.groups())
+        sizes.append(size or FALLBACK_PAGE)
+    return FixedLayout(sizes=sizes, spread=props.get("rendition:spread") != "none",
+                       rtl=spine is not None and spine.get("page-progression-direction") == "rtl")
 
 
 def _resolve_target(doc_path: str, href: str) -> str:

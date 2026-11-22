@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.6 (2026-11-22)
+
+- Fixed-layout books (picture books, many children's books; EPUB, or Kindle AZW3) are read as pages,
+  each exactly as the book designed it: its pictures, fonts and words where they belong, scaled to
+  the screen, with the page curl, spreads, Scroll mode, zoom, bookmarks and offline downloads. Such
+  as Geronimo Stilton's *Wedding Crashers*, which showed as stray lines of text on empty pages.
+- Fonts stored scrambled in EPUBs (the standard font obfuscation, not DRM) are unscrambled.
+
 ## 0.1.5 (2026-11-21)
 
 - Backups: Loft backs up its library by itself (Library settings, Backups): the database, covers

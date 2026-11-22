@@ -1,7 +1,8 @@
 // Downloads: books kept on this device, to read with no connection (the way Shelf keeps music).
 //
 // Everything lives in IndexedDB, which works over plain http (service workers don't):
-//   books   { key: "user:book", user, bookId, fileId, kind: "pages"|"flow", version, width,
+//   books   { key: "user:book", user, bookId, fileId, kind: "pages"|"flow", layout: kind or "fixed"
+//             (a picture book's real pages: fixedfit.js downloadFits), version, width,
 //             book, manifest, bookmarks, done, total, size, savedAt, complete }
 //   blobs   { key: "file:what", fileId, blob }   what: p<page>, c<chapter>, r<picture path>, cover
 //   outbox  { user, method, path, body, at, tag } progress and bookmark changes made while the
@@ -9,6 +10,7 @@
 // Downloads belong to the account that made them; another account on this browser never sees them.
 //
 // No imports from the app's screens: they import this.
+import { downloadFits, pageUrl } from "./fixedfit.js";   // pure, imports nothing
 
 const DB_NAME = "loft-offline";
 const WIDTHS = [600, 900, 1200, 1800];
@@ -191,7 +193,7 @@ export async function download(book) {
   try { bookmarks = await fetchOk(`/api/books/${book.id}/bookmarks`, undefined, "json"); } catch { /* none kept */ }
   await clearFile(file.id);
   await put("books", {
-    key: bookKey(book.id), user, bookId: book.id, fileId: file.id, kind, version: manifest.version,
+    key: bookKey(book.id), user, bookId: book.id, fileId: file.id, kind, layout: manifest.fixed ? "fixed" : kind, version: manifest.version,
     width: pageWidth(), book, manifest, bookmarks, done: 0, total: 0, size: 0, savedAt: Date.now(), complete: false,
   });
   emit(book.id);
@@ -221,7 +223,7 @@ async function fetchAll(bookId) {
         let text;
         if (have.has(key)) text = await (await get("blobs", key)).blob.text();
         else {
-          text = await fetchOk(`/api/files/${fileId}/chapters/${n}?v=${manifest.version}`, controller.signal, "text");
+          text = await fetchOk(pageUrl(fileId, n, manifest), controller.signal, "text");
           await put("blobs", { key, fileId, blob: new Blob([text], { type: "text/html" }) });
           have.add(key);
         }
@@ -398,7 +400,9 @@ export async function resume() {
     try {
       const url = r.kind === "flow" ? `/api/files/${r.fileId}/flow` : `/api/files/${r.fileId}/manifest`;
       const [manifest, book] = await Promise.all([fetchOk(url, undefined, "json"), fetchOk(`/api/books/${r.bookId}`, undefined, "json")]);
-      if (manifest.version !== r.version || readerFile(book)?.id !== r.fileId) await download(book);
+      // Changed on the server, or downloaded for another kind of reader (a picture book downloaded
+      // before Loft read such books as pages): download it again.
+      if (manifest.version !== r.version || readerFile(book)?.id !== r.fileId || !downloadFits(r, manifest)) await download(book);
       else await refreshBook(book);
     } catch (err) {
       if (unreachable(err)) { setOffline(true); return; }

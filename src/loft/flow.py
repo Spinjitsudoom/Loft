@@ -1,5 +1,7 @@
 """Flow books: books whose text is laid out to fit the screen (EPUB, Kindle, FB2, plain text).
 
+A fixed-layout EPUB (or Kindle book) is one too, with `fixed` set: its chapters are its pages.
+
 Every such format is turned into the same shape: chapters in reading order (XHTML, sanitised before
 it reaches the browser), a table of contents pointing at chapters and anchors, and the images the
 chapters use. Paths are the book's own (for EPUB, paths inside the zip).
@@ -42,11 +44,20 @@ class Resource:
 
 
 @dataclass
+class FixedLayout:
+    """A book laid out page by page (a picture book): each chapter is a page of this size, in CSS px."""
+    sizes: list[tuple[int, int]]
+    spread: bool = True    # two pages side by side when there's room (false: the book says none)
+    rtl: bool = False      # pages turn right to left
+
+
+@dataclass
 class FlowBook:
     chapters: list[Chapter]
     toc: list[TocEntry]
     resources: dict[str, Resource]
     read: Callable[[str], bytes]
+    fixed: FixedLayout | None = None
     _index: dict[str, int] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
