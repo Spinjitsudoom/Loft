@@ -48,7 +48,7 @@ def test_a_big_library_is_quick():
     ix.rank("quick brwn foxes jumped", 40)
     took = time.perf_counter() - start
     print(f"search over 20000 books: {took * 1000:.0f} ms")
-    assert took < 1.0
+    assert took < 3.0   # about 0.5 s on a desktop PC, 1.3 s on GitHub's runners: this catches a search gone slow
 
 
 # ---------- found in review: ranking and limits ----------

@@ -14,8 +14,26 @@ permissions:
   contents: read
   packages: write
 
+env:
+  UV_PYTHON_PREFERENCE: only-system
+
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v6
+      - run: bash test.sh -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test tests/js/*.test.mjs
+
   image:
+    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
