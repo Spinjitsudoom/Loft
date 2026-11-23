@@ -26,6 +26,7 @@ COPY src ./src
 RUN uv sync --frozen --no-dev --no-editable && rm -rf /root/.cache
 
 COPY docker/config.toml /etc/loft/config.toml
+COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/loft-entrypoint
 RUN mkdir -p /data /books && chown 1000:1000 /data
 
 ENV PATH=/opt/loft/bin:$PATH \
@@ -34,11 +35,17 @@ ENV PATH=/opt/loft/bin:$PATH \
     LOFT_HOST=0.0.0.0 \
     LOFT_PORT=4545
 
-# Not root. To match the owner of your books, run it as another user (compose: `user: "1000:1000"`).
-USER 1000:1000
+# Loft itself never runs as root: the entrypoint gives it /data and runs it as PUID:PGID (1000:1000
+# unless set; set them to the owner of your books). Started as another user (compose `user:`), it
+# runs as that user instead.
+ENV PUID=1000 PGID=1000
+LABEL org.opencontainers.image.source="https://github.com/Spinjitsudoom/Loft" \
+      org.opencontainers.image.title="Loft" \
+      org.opencontainers.image.description="Your own ebook and comic library, read in the browser" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later"
 VOLUME /data
 EXPOSE 4545
 HEALTHCHECK --interval=60s --timeout=5s --start-period=30s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4545/api/status', timeout=4)"
-ENTRYPOINT ["tini", "--"]
+ENTRYPOINT ["tini", "--", "loft-entrypoint"]
 CMD ["loft"]

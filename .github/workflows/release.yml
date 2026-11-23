@@ -183,6 +183,9 @@ jobs:
         run: |
           # The release's "What's new", so servers can show it before they update.
           cp src/loft/web/whatsnew.json files/
+          # Loft in Docker (the image is published by docker.yml): for Compose, and for ZimaOS and CasaOS.
+          cp compose.yaml files/loft-compose.yaml
+          sed "s/^  version: \".*\"$/  version: \"${TAG#v}\"/" docker/zimaos.yaml > files/loft-zimaos.yaml
           cd files && sha256sum * > SHA256SUMS.txt && cd ..
           notes="docs/releases/${TAG#v}.md"
           gh release create "$TAG" files/* --draft --verify-tag --title "Loft ${TAG#v}" \

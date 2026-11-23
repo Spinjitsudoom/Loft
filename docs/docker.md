@@ -6,10 +6,13 @@ work with it the same way.
 
 ## Start it
 
-In a copy of Loft's folder, change the books path in `compose.yaml` to yours, then:
+Loft's image is `ghcr.io/spinjitsudoom/loft` (`latest`, or a version such as `0.1.7`). Take
+`compose.yaml` (from this folder, or `loft-compose.yaml` from a
+[release](https://github.com/Spinjitsudoom/Loft/releases/latest)), change the books path in it to
+yours, then:
 
 ```bash
-docker compose up -d          # builds the image the first time (a few minutes)
+docker compose up -d
 ```
 
 Open `http://<that computer's address>:4545`. The first person to open it makes the admin
@@ -19,13 +22,25 @@ account. Loft starts reading `/books` straight away and looks for new books ever
 Without Compose:
 
 ```bash
-docker build -t loft .
 docker run -d --name loft --restart unless-stopped -p 4545:4545 \
-  -v ./loft-data:/data -v /path/to/your/books:/books -e TZ=Europe/Brussels loft
+  -v ./loft-data:/data -v /path/to/your/books:/books -e TZ=Europe/Brussels \
+  ghcr.io/spinjitsudoom/loft:latest
 ```
 
-Podman works the same (`podman build`, `podman run`; add `--userns=keep-id` so files Loft saves
-belong to you).
+Podman works the same (`podman run`; add `--userns=keep-id` so files Loft saves belong to you). To
+build the image yourself from this folder: `docker build -t loft .`, or `build: .` in `compose.yaml`.
+
+## ZimaOS and CasaOS
+
+1. Download `loft-zimaos.yaml` from the [latest release](https://github.com/Spinjitsudoom/Loft/releases/latest)
+   (it's `docker/zimaos.yaml` here).
+2. On the dashboard choose **+ → Install a customized app**, then **Import**, and upload or paste it.
+3. Before installing, change the books folder (`/DATA/Media/Books`) to where your books are, and
+   the time zone. Loft's own data goes in `/DATA/AppData/loft`.
+4. Install, then open Loft from its tile.
+
+To add books from Loft, the books folder must be writable by the user Loft runs as (`PUID` and
+`PGID`, 1000). If ZimaOS's folders belong to root, set both to `0`.
 
 ## Your books, and who owns the files
 
@@ -33,9 +48,9 @@ belong to you).
 - Books you **add in Loft** are saved into the books folder as `Author/Title/file`, so the
   folder needs to be writable for that. If you'll never add books in the app, mount it read-only
   (`/path/to/your/books:/books:ro`).
-- Loft runs as user 1000, not as root. The books must be readable by it, and `loft-data`
-  writable. If your files belong to someone else, add `user: "1001:1001"` (their user and group
-  numbers, from `id`) under `loft:` in `compose.yaml`.
+- Loft runs as user 1000, not as root. The books must be readable by it. It makes `loft-data` its
+  own when it starts. If your books belong to someone else, set `PUID` and `PGID` in
+  `compose.yaml` to their user and group numbers (from `id`).
 
 **More than one books folder:** mount each under `/books` (for example `/books/comics`), then add
 them in **Library settings → Books folders**.
@@ -69,7 +84,10 @@ That gives `https://<server>.<tailnet>.ts.net` on every device signed in to your
 ## Updating
 
 ```bash
-git pull && docker compose up -d --build
+docker compose pull && docker compose up -d
 ```
+
+On ZimaOS and CasaOS, update Loft from its app settings (it pulls `latest` again). Loft tells
+admins when a new version is out.
 
 Everything you keep (accounts, the library, covers, settings) is in `loft-data`; back that up.

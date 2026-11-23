@@ -1,0 +1,66 @@
+name: Docker image
+
+# Builds Loft's container image for PCs and servers (amd64) and ARM boards such as the Raspberry Pi
+# (arm64), and publishes it as ghcr.io/spinjitsudoom/loft: tagged with the version and "latest" for
+# every release tag, or by hand (Actions → Docker image → Run workflow) from the branch chosen.
+# compose.yaml and docker/zimaos.yaml use it.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tags
+        id: tags
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml | head -1)
+          image=ghcr.io/$(echo "${{ github.repository_owner }}" | tr A-Z a-z)/loft
+          echo "list=$image:$version,$image:latest" >> "$GITHUB_OUTPUT"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      # Before publishing: it starts with a data folder owned by root (as ZimaOS makes it), and the
+      # library it saves there belongs to Loft's user.
+      - name: Build for trying
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: loft:trial
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Try it
+        run: |
+          sudo mkdir data
+          docker run -d --name loft -p 4545:4545 -v "$PWD/data:/data" loft:trial
+          for i in $(seq 60); do curl -fsS http://127.0.0.1:4545/api/ping && break; sleep 2; done
+          docker logs loft
+          curl -fsS http://127.0.0.1:4545/api/ping
+          test "$(sudo stat -c %u:%g data/loft.db)" = 1000:1000
+          docker top loft -eo uid,args
+          test "$(docker top loft -eo uid,args | awk '/bin\/loft/ {print $1}' | sort -u)" = 1000
+      - name: Publish
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.list }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -5,6 +5,7 @@ __pycache__/
 .pytest_cache/
 /data/
 config.toml
+!docker/config.toml
 /dist/
 /build/
 desktop/dist/

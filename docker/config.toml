@@ -1,0 +1,13 @@
+# Loft's settings in the container. Environment variables win over these (LOFT_BOOKS_DIRS,
+# LOFT_PORT, ...), and once you change folders or other settings in Library settings, those are
+# kept instead.
+#
+# The books folder mounted at /books. To add more, mount them under /books (for example
+# /books/comics) and add them in Library settings → Books folders.
+books_dirs = ["/books"]
+
+# Look for new, changed and removed books this often.
+scan_interval_minutes = 10
+
+# How much disk the reader's page images may take up (MB).
+page_cache_mb = 2048

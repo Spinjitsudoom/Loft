@@ -1,0 +1,54 @@
+# Loft on ZimaOS (or CasaOS): on the dashboard choose + → Install a customized app → Import, and
+# paste this file (or upload it). Before installing, change the books folder if yours isn't
+# /DATA/Media/Books. Then open Loft from its tile: the first person to open it makes the admin account.
+name: loft
+services:
+  loft:
+    image: ghcr.io/spinjitsudoom/loft:latest
+    container_name: loft
+    restart: unless-stopped
+    ports:
+      - target: 4545
+        published: "4545"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /DATA/AppData/loft          # accounts, library database, covers: keep this
+        target: /data
+      - type: bind
+        source: /DATA/Media/Books           # your books (Loft never changes them, only saves new ones you add)
+        target: /books
+    environment:
+      TZ: Europe/Brussels                   # your time zone
+      PUID: "1000"                          # the user and group Loft runs as; to add books from Loft,
+      PGID: "1000"                          # they need to be able to write to the books folder
+x-casaos:
+  id: io.github.spinjitsudoom.loft
+  main: loft
+  index: /
+  port_map: "4545"
+  scheme: http
+  title:
+    en_US: Loft
+  tagline:
+    en_US: Your own ebook and comic library
+  description:
+    en_US: >-
+      A self-hosted ebook library with pages that turn like paper. Loft reads your ebooks and comics
+      (EPUB, Kindle, FB2, PDF, CBZ and CBR) from the books folder, never changing them, shelves them,
+      and lets everyone you invite read them on a phone, tablet or computer, each keeping their own
+      place.
+  category: Media
+  version: "0.1.6"
+  architectures:
+    - amd64
+    - arm64
+  author: Spinjitsudoom
+  developer: Spinjitsudoom
+  icon: https://raw.githubusercontent.com/Spinjitsudoom/Loft/master/desktop/app/icon.png
+  website: https://github.com/Spinjitsudoom/Loft
+  tips:
+    before_install:
+      en_US: >-
+        Change the books folder (/DATA/Media/Books) to where your books are. The first person to open
+        Loft makes the admin account.

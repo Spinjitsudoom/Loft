@@ -1,8 +1,10 @@
 # Loft with Docker Compose:   docker compose up -d   then open http://<this computer>:4545
 # The first person to open it makes the admin account. See docs/docker.md for more.
+# On ZimaOS or CasaOS, import docker/zimaos.yaml instead (it's attached to every release too).
 services:
   loft:
-    build: .                          # or, once there's a published image: image: <registry>/loft:latest
+    image: ghcr.io/spinjitsudoom/loft:latest
+    # build: .                        # to build it from this folder instead
     container_name: loft
     restart: unless-stopped
     ports:
@@ -11,7 +13,8 @@ services:
       - ./loft-data:/data           # accounts, library database, covers: keep this
       - /path/to/your/books:/books    # your books; add :ro if you won't add books in Loft
                                       # (it never changes a file that's there, only saves new ones)
-    # user: "1000:1000"               # run as the owner of the books and ./loft-data
     environment:
       TZ: Europe/Brussels             # your time zone
+      PUID: "1000"                    # the user and group Loft runs as: the owner of your books
+      PGID: "1000"                    # (`id` shows yours); 1000 is the first user on most systems
       # FORWARDED_ALLOW_IPS: "*"      # behind a reverse proxy or `tailscale serve`: see docs/docker.md
