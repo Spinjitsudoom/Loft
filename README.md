@@ -4,6 +4,8 @@ A self-hosted ebook library with pages that turn like paper. Your books stay whe
 Loft reads them, shelves them, and lets everyone you invite read them on a phone, tablet or
 computer.
 
+**[Website and interactive demo →](https://spinjitsudoom.github.io/my-portfolio/loft.html)**
+
 - **A library that looks like one.** A cover wall at home, and **the stacks**: every book standing
   spine-out on bookcases, shelved by series, section or author.
 - **A reader that turns like paper.** Comics and PDFs page by page, EPUB, Kindle and FB2 laid out
