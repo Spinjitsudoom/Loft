@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.8 (2026-11-23)
+
+- Windows: Restart to update (and Update in the tray's menu) installs the new version and starts
+  Loft Server again; before, a copy installed with the setup closed and stayed closed, still on the
+  old version. Loft now starts the setup and keeps running; the setup closes Loft, installs over it
+  and starts it again, and writes what it did to `%LOCALAPPDATA%\Loft\update-setup.log`. If the
+  setup can't start, Loft stays running as it was.
+- What an installed update leaves beside Loft is cleared when it next starts, and a download cut
+  short (Loft closed in the middle of it) no longer shows as "downloading" in Library settings.
+- Loft's last log lines before it restarts into a new version are no longer lost.
+
 ## 0.1.7 (2026-11-23)
 
 - Reading status for every book: Want to read, Not started, Reading, Incomplete (after 15 days

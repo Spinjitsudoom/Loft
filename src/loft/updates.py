@@ -6,7 +6,9 @@ for this system, checks it against the release's SHA256SUMS.txt, unpacks it next
 tells the admins it's ready. Nothing changes until an admin chooses Restart to update: then the
 new folder takes the old one's place (the old one is kept beside it as "<name>.previous") and
 Loft starts again from it. On Windows a copy installed with the setup is updated by the next setup
-instead, run silently, so Windows' list of installed apps stays right. Loft installed any other way (Docker, from source) is only told a new
+instead, run silently, so Windows' list of installed apps stays right: Loft starts it and keeps
+running, and the setup closes Loft, installs over it and starts it again (writing what it did to
+%LOCALAPPDATA%\\Loft\\update-setup.log). Loft installed any other way (Docker, from source) is only told a new
 version is out, since it's updated the way it was installed.
 
 Only Loft's own release address is asked, and nothing about the library is sent.
@@ -47,6 +49,8 @@ MAX_ARCHIVE = 400_000_000
 PROGRAM = "loft-server.exe" if sys.platform == "win32" else "loft-server"
 TRAY = "Loft Server.exe"        # on Windows, what runs the server hidden (packaging/windows/tray.py)
 UPDATING = 75                   # the exit code that tells the tray the server stopped to be updated
+BREAKAWAY = 0x01000000         # CREATE_BREAKAWAY_FROM_JOB: the setup outlives whatever started Loft
+DETACHED = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
 VERSION = re.compile(r"^v?(\d{1,4})\.(\d{1,4})\.(\d{1,6})$")
 
 _lock = threading.Lock()        # one check or download at a time
@@ -360,8 +364,11 @@ def _restart_into(version: str) -> None:
     argv = [str(home / PROGRAM), *sys.argv[1:]]
     env = {**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1"}
     log.warning("Restarting into Loft %s", version)
+    if sys.platform == "win32" and by_setup():
+        _start_setup(version, env)
+        return
     if sys.platform == "win32":
-        _restart_windows(home, stage, previous, argv, env, setup=_staged(version) if by_setup() else None)
+        _restart_windows(home, stage, previous, argv, env)
         return
     try:
         shutil.rmtree(previous, ignore_errors=True)
@@ -377,14 +384,34 @@ def _restart_into(version: str) -> None:
         if not home.exists() and previous.exists():
             previous.rename(home)
         return
+    _flush_logs()
     os.execve(argv[0], argv, env)
 
 
-def _restart_windows(home: Path, stage: Path, previous: Path, argv: list[str], env: dict,
-                     setup: Path | None = None) -> None:
+def _start_setup(version: str, env: dict) -> None:
+    """Run the downloaded setup silently. It stops Loft (and the tray) itself, installs over it and
+    starts the tray again, so Loft carries on until then; if the setup can't start, nothing stops."""
+    setup = _staged(version)
+    log_file = Path(os.environ.get("LOCALAPPDATA") or install_dir().parent) / "Loft" / "update-setup.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    args = [str(setup), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", f"/LOG={log_file}"]
+    env = {k: v for k, v in env.items() if k != "LOFT_TRAY_PID"}
+    for flags in (DETACHED | BREAKAWAY, DETACHED):  # breaking away is refused inside some job objects
+        try:
+            subprocess.Popen(args, env=env, creationflags=flags, close_fds=True, cwd=str(setup.parent.parent))
+            log.warning("Started the setup for Loft %s; it closes Loft and starts it again", version)
+            return
+        except PermissionError:
+            continue
+        except OSError as e:
+            log.error("Couldn’t start the setup for Loft %s: %s", version, e)
+            return
+    log.error("Couldn’t start the setup for Loft %s: Windows refused", version)
+
+
+def _restart_windows(home: Path, stage: Path, previous: Path, argv: list[str], env: dict) -> None:
     # A running program's folder can't be moved on Windows: a small script waits for Loft to
-    # stop, swaps the folders (or runs the next setup, for a copy the setup installed) and starts
-    # the new one in a window of its own.
+    # stop, swaps the folders and starts the new one in a window of its own.
     script = home.parent / f".{home.name}.update.cmd"
     args = subprocess.list2cmdline(argv[1:])
     here = Path.cwd().resolve()
@@ -397,31 +424,58 @@ def _restart_windows(home: Path, stage: Path, previous: Path, argv: list[str], e
         start = f'start "" /D "{home}" "{home / TRAY}" --background'
     else:
         start = f'start "Loft" /D "{cwd}" "{home / PROGRAM}" {args}'
-    if setup:
-        replace = [
-            f'start "" /wait "{setup}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-',
-            f'rmdir /s /q "{stage}" 2>nul',
-        ]
-    else:
-        replace = [
-            f'rmdir /s /q "{previous}" 2>nul',
-            f'move "{home}" "{previous}" >nul || goto start',
-            f'move "{stage}" "{home}" >nul || move "{previous}" "{home}" >nul',
-            f'if exist "{previous}\\config.toml" if not exist "{home}\\config.toml" copy /y "{previous}\\config.toml" "{home}\\" >nul',
-        ]
     script.write_text("\r\n".join([
         "@echo off",
         ":wait",
-        *[f'tasklist /FI "PID eq {pid}" | find "{pid}" >nul && (timeout /t 1 /nobreak >nul & goto wait)' for pid in pids],
-        *replace,
+        # ping, not timeout: timeout quits at once without a console, as this script has none.
+        *[f'tasklist /FI "PID eq {pid}" | find "{pid}" >nul && (ping -n 2 127.0.0.1 >nul & goto wait)' for pid in pids],
+        f'rmdir /s /q "{previous}" 2>nul',
+        f'move "{home}" "{previous}" >nul || goto start',
+        f'move "{stage}" "{home}" >nul || move "{previous}" "{home}" >nul',
+        f'if exist "{previous}\\config.toml" if not exist "{home}\\config.toml" copy /y "{previous}\\config.toml" "{home}\\" >nul',
         ":start",
         start,
         '(goto) 2>nul & del "%~f0"',
     ]) + "\r\n")
-    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     env = {k: v for k, v in env.items() if k != "LOFT_TRAY_PID"}
-    subprocess.Popen(["cmd", "/c", str(script)], env=env, creationflags=flags, close_fds=True, cwd=str(home.parent))
+    for flags in (DETACHED | BREAKAWAY, DETACHED):
+        try:
+            subprocess.Popen(["cmd", "/c", str(script)], env=env, creationflags=flags, close_fds=True,
+                             cwd=str(home.parent))
+            break
+        except PermissionError:
+            continue
+    else:
+        log.error("Couldn’t start the update script for Loft: Windows refused")
+        return
+    _flush_logs()
     os._exit(UPDATING)
+
+
+def _flush_logs() -> None:
+    """os._exit skips Python's own clean-up, which would lose the last lines of server.log."""
+    logging.shutdown()
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except Exception:
+            pass
+
+
+def tidy(cfg: Config) -> None:
+    """When Loft starts: a download that was cut short isn't still "downloading", and what an
+    installed update left beside Loft (the setup it ran, an old script) is cleared away."""
+    if _load(cfg).get("downloading"):
+        _save(cfg, downloading=False)
+    home = install_dir()
+    if not home:
+        return
+    current = parse(current_version())
+    for left in home.parent.glob(f".{home.name}.update-*"):
+        version = parse(left.name.rsplit("-", 1)[-1])
+        if version and current and version <= current:
+            shutil.rmtree(left, ignore_errors=True)
+    (home.parent / f".{home.name}.update.cmd").unlink(missing_ok=True)
 
 
 # ---------- the daily check ----------
@@ -443,6 +497,10 @@ class UpdateChecker:
         self._wake.set()
 
     def _loop(self) -> None:
+        try:
+            tidy(self.cfg)
+        except Exception:
+            log.exception("Couldn’t tidy up after the last update")
         self._wake.wait(timeout=60)
         while True:
             self._wake.clear()

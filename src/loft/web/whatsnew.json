@@ -1,5 +1,19 @@
 [
   {
+    "version": "0.1.8",
+    "date": "2026-11-23",
+    "fixed": [
+      {
+        "text": "On Windows, Restart to update installs the new version and starts Loft Server again, instead of only closing it. Loft keeps running until the new version takes over, and if the update can’t start, Loft stays as it was.",
+        "admin": true
+      },
+      {
+        "text": "Library settings no longer says a new version is still downloading after Loft was closed in the middle of the download.",
+        "admin": true
+      }
+    ]
+  },
+  {
     "version": "0.1.7",
     "date": "2026-11-23",
     "new": [

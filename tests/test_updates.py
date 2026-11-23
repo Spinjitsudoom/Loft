@@ -186,15 +186,56 @@ def restart_script(monkeypatch, version) -> str:
     return script.read_text()
 
 
-def test_restarting_a_setup_install_runs_the_setup_silently(cfg, windows_setup_install, monkeypatch):
+def start_setup(monkeypatch, version, refuse_breakaway=False) -> list:
+    """Restart into `version` on a setup install; returns each Popen call as (args, kwargs)."""
+    calls = []
+    def popen(args, **kw):
+        calls.append((args, kw))
+        if refuse_breakaway and kw.get("creationflags", 0) & updates.BREAKAWAY:
+            raise PermissionError(5, "Access is denied")
+    monkeypatch.setattr(updates.subprocess, "Popen", popen)
+    monkeypatch.setattr(updates.os, "_exit", lambda code: calls.append(("exit", code)))
+    updates._restart_into(version)
+    return calls
+
+
+def test_restarting_a_setup_install_starts_the_setup_and_lets_it_do_the_rest(cfg, windows_setup_install, monkeypatch, tmp_path):
+    # Like Shelf: the setup itself closes Loft, installs over it and starts it again. No script is
+    # left running after Loft, and Loft keeps answering until the setup closes it.
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    monkeypatch.setenv("LOFT_TRAY_PID", "4242")
     updates.check(cfg)
     home, stage = windows_setup_install["home"], updates.staging_dir("0.1.2")
-    script = restart_script(monkeypatch, "0.1.2")
-    setup = stage / windows_setup_install["name"]
-    assert f'start "" /wait "{setup}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-' in script
-    assert f'"{home / "loft-server.exe"}"' in script.split("/VERYSILENT")[1]   # started again afterwards
-    assert f'rmdir /s /q "{stage}"' in script and " move " not in script
-    assert (home / "loft-server.exe").read_text() == "old"   # the setup does the replacing
+    calls = start_setup(monkeypatch, "0.1.2")
+    assert len(calls) == 1                                  # one start, and no exit
+    args, kw = calls[0]
+    log = tmp_path / "local" / "Loft" / "update-setup.log"
+    assert args == [str(stage / windows_setup_install["name"]), "/VERYSILENT", "/SUPPRESSMSGBOXES",
+                    "/NORESTART", "/SP-", f"/LOG={log}"]
+    assert kw["creationflags"] & updates.BREAKAWAY          # outlives Loft whatever started Loft
+    assert kw["env"]["PYINSTALLER_RESET_ENVIRONMENT"] == "1" and "LOFT_TRAY_PID" not in kw["env"]
+    assert log.parent.is_dir()
+    assert not list(home.parent.glob("*.cmd"))
+    assert (home / "loft-server.exe").read_text() == "old"  # the setup does the replacing
+
+
+def test_when_windows_wont_let_the_setup_break_away_it_still_starts(cfg, windows_setup_install, monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    updates.check(cfg)
+    calls = start_setup(monkeypatch, "0.1.2", refuse_breakaway=True)
+    assert [bool(kw["creationflags"] & updates.BREAKAWAY) for _, kw in calls] == [True, False]
+    assert ("exit", updates.UPDATING) not in calls
+
+
+def test_a_setup_that_cant_start_leaves_loft_running(cfg, windows_setup_install, monkeypatch, tmp_path, caplog):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    updates.check(cfg)
+    def popen(args, **kw):
+        raise OSError(2, "The system cannot find the file specified")
+    monkeypatch.setattr(updates.subprocess, "Popen", popen)
+    monkeypatch.setattr(updates.os, "_exit", lambda code: pytest.fail("Loft stopped"))
+    updates._restart_into("0.1.2")
+    assert "Couldn’t start the setup for Loft 0.1.2" in caplog.text
 
 
 def test_restarting_an_unpacked_windows_copy_still_swaps_folders(cfg, release, monkeypatch):
@@ -202,18 +243,6 @@ def test_restarting_an_unpacked_windows_copy_still_swaps_folders(cfg, release, m
     updates.check(cfg)
     script = restart_script(monkeypatch, "0.1.2")
     assert "/VERYSILENT" not in script and f'move "{updates.staging_dir("0.1.2")}"' in script
-
-
-def test_with_the_tray_the_script_waits_for_it_and_starts_it_again(cfg, windows_setup_install, monkeypatch):
-    home = windows_setup_install["home"]
-    (home / "Loft Server.exe").write_text("tray")
-    monkeypatch.setenv("LOFT_TRAY_PID", "4242")
-    updates.check(cfg)
-    script = restart_script(monkeypatch, "0.1.2")
-    assert 'PID eq 4242' in script and f'PID eq {os.getpid()}' in script
-    after = script.split("/VERYSILENT")[1]
-    assert f'"{home / "Loft Server.exe"}" --background' in after
-    assert f'"{home / "loft-server.exe"}"' not in after   # the tray starts the server, hidden
 
 
 def test_an_unpacked_copy_run_by_the_tray_comes_back_with_the_tray(cfg, release, monkeypatch):
@@ -224,6 +253,36 @@ def test_an_unpacked_copy_run_by_the_tray_comes_back_with_the_tray(cfg, release,
     script = restart_script(monkeypatch, "0.1.2")
     assert f'move "{updates.staging_dir("0.1.2")}"' in script
     assert f'"{release["home"] / "Loft Server.exe"}" --background' in script
+
+
+def test_the_folder_swap_script_waits_without_a_console(cfg, release, monkeypatch):
+    # "timeout" quits at once when there's no console (as for a script Loft starts in the
+    # background), so waiting for Loft to stop used it to spin; ping waits anywhere.
+    monkeypatch.setattr(updates.sys, "platform", "win32")
+    updates.check(cfg)
+    script = restart_script(monkeypatch, "0.1.2")
+    assert "timeout" not in script and "ping -n 2 127.0.0.1 >nul" in script
+
+
+def test_leftovers_of_an_installed_update_are_cleared(cfg, windows_setup_install):
+    home = windows_setup_install["home"]
+    done = home.parent / f".{home.name}.update-0.1.1"      # the version running now: installed
+    done.mkdir()
+    (done / "loft-server-0.1.1-windows-x64-setup.exe").write_bytes(b"MZ")
+    waiting = updates.staging_dir("0.1.2")                  # newer: still to be installed
+    waiting.mkdir()
+    script = home.parent / f".{home.name}.update.cmd"
+    script.write_text("@echo off")
+    updates.tidy(cfg)
+    assert not done.exists() and not script.exists() and waiting.is_dir()
+
+
+def test_a_download_cut_short_doesnt_say_downloading_forever(cfg, release):
+    updates.check(cfg, download=False)
+    updates._save(cfg, downloading=True)                    # Loft stopped in the middle of it
+    assert updates.status(cfg)["downloading"]
+    updates.tidy(cfg)
+    assert not updates.status(cfg)["downloading"]
 
 
 def zip_with(entries) -> Path:
