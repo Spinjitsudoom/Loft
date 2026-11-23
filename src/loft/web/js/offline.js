@@ -323,6 +323,15 @@ export async function space() {
   try { return navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate() : null; } catch { return null; }
 }
 
+// A picture book's page settings changed (its outline's layout_v): keep the new page order with the
+// download. The pages themselves are the same, so nothing is downloaded again.
+export async function keepOutline(bookId, outline) {
+  const r = await record(bookId);
+  if (!r || !r.complete || r.version !== outline.version || !outline.fixed) return;
+  if (r.manifest && r.manifest.fixed && r.manifest.fixed.layout_v === outline.fixed.layout_v) return;
+  await put("books", { ...r, manifest: outline });
+}
+
 // Keep the stored copy's details and bookmarks in step while online.
 export async function refreshBook(book, bookmarks) {
   const r = await record(book.id);
@@ -403,7 +412,7 @@ export async function resume() {
       // Changed on the server, or downloaded for another kind of reader (a picture book downloaded
       // before Loft read such books as pages): download it again.
       if (manifest.version !== r.version || readerFile(book)?.id !== r.fileId || !downloadFits(r, manifest)) await download(book);
-      else await refreshBook(book);
+      else { await keepOutline(r.bookId, manifest); await refreshBook(book); }
     } catch (err) {
       if (unreachable(err)) { setOffline(true); return; }
     }

@@ -29,6 +29,7 @@ from .pdfium import open_pdf
 log = logging.getLogger(__name__)
 
 READABLE = {"pdf", "cbz", "cbr", "cb7"}
+FIXED_FORMATS = {"epub", "azw3", "azw", "mobi"}  # flowing formats a fixed-layout book (a picture book) can come in
 PAGE_WIDTHS = (200, 600, 900, 1200, 1800, 2400)  # 200: thumbnails for arranging pages
 MAX_ENTRIES = 20_000
 
@@ -143,9 +144,39 @@ def _comic_manifest(path: Path) -> list[list[int]]:
     return sizes
 
 
+def fixed_layout_of(cfg: Config, row):
+    """A fixed-layout book's pages (FlowBook.fixed: their sizes, spreads, direction), or None for any
+    other file. Opens the book (kept open in flowbooks' cache); Unreadable if it can't be opened."""
+    if row["format"] not in FIXED_FORMATS:
+        return None
+    return _fixed_book(cfg, row).fixed
+
+
+def _fixed_book(cfg: Config, row):
+    from . import flowbooks  # here, not at the top: flow imports Unreadable from this module
+    return flowbooks.open_flow(cfg, row["id"])[0]
+
+
+def has_pages(cfg: Config, row) -> bool:
+    """Whether a file is read as pages, and so has page settings: a PDF, a comic, or a picture book."""
+    if row["format"] in READABLE:
+        return True
+    try:
+        return fixed_layout_of(cfg, row) is not None
+    except Unreadable:
+        return False
+
+
 def _measured(cfg: Config, f) -> tuple[list[list[float]], list[dict], bool]:
     """What the file itself says: each page's size, its contents, whether it's a scan. Kept, so a
-    layout or order change only reworks the plan: measuring a big comic on a network share takes seconds."""
+    layout or order change only reworks the plan: measuring a big comic on a network share takes seconds.
+    A picture book's pages are its own (never a scan, so Automatic never splits them); the book is
+    already kept open, so nothing is stored."""
+    if f["format"] not in READABLE:
+        book = _fixed_book(cfg, f)
+        toc = [{"title": t.title, "chapter": t.chapter, "anchor": t.anchor, "level": t.level, "page": t.chapter}
+               for t in book.toc if 0 <= t.chapter < len(book.fixed.sizes)]
+        return [list(s) for s in book.fixed.sizes], toc, False
     with session(cfg.db_path) as con:
         row = con.execute("SELECT * FROM page_info WHERE file_id = ?", (f["id"],)).fetchone()
     known = json.loads(row["sizes"]) if row is not None and row["mtime"] == f["mtime"] else None
@@ -166,8 +197,8 @@ def _measured(cfg: Config, f) -> tuple[list[list[float]], list[dict], bool]:
     return source, source_toc, scanned
 
 
-def _natural(f, source, scanned) -> list[Entry]:
-    layout = file_layout(f)
+def _natural(f, source, scanned, default_rtl: bool = False) -> list[Entry]:
+    layout = file_layout(f, default_rtl)
     return split_plan(source, scanned, split=layout["split"], wraparound=layout["wraparound"], rtl=layout["rtl"])
 
 
@@ -250,10 +281,12 @@ def is_arranged(row) -> bool:
 
 def manifest(cfg: Config, file_id: int) -> dict:
     f = _file(cfg, file_id)
-    if f["format"] not in READABLE:
+    fixed = None if f["format"] in READABLE else fixed_layout_of(cfg, f)
+    if f["format"] not in READABLE and fixed is None:
         raise Unreadable("format")
+    default_rtl = bool(fixed and fixed.rtl)
     source, source_toc, scanned = _measured(cfg, f)
-    natural = _natural(f, source, scanned)
+    natural = _natural(f, source, scanned, default_rtl)
     plan, every, hidden = arrange(natural, *_arrangement(f))
 
     # A chapter starts on its page, or the next one shown if that page is hidden.
@@ -274,19 +307,25 @@ def manifest(cfg: Config, file_id: int) -> dict:
             sizes.append([source[src][0] / 2, source[src][1]] if half is not None else source[src])
     first_real = next((x for x in sizes if x), source[0])
     sizes = [[round(w), round(h)] for w, h in (x or first_real for x in sizes)]
-    return {"file_id": file_id, "format": f["format"], "count": len(sizes), "sizes": sizes, "toc": toc,
-            "version": int(f["mtime"]) + f["layout_rev"], "rtl": file_layout(f)["rtl"],
-            "plan": [list(p) for p in plan], "source": source,
-            "arranged": [list(p) for p in every], "hidden": [list(p) for p in hidden],
-            "custom": is_arranged(f), "file_v": int(f["mtime"])}
+    layout = file_layout(f, default_rtl)
+    m = {"file_id": file_id, "format": f["format"], "count": len(sizes), "sizes": sizes, "toc": toc,
+         "version": int(f["mtime"]) + f["layout_rev"], "rtl": layout["rtl"],
+         "plan": [list(p) for p in plan], "source": source,
+         "arranged": [list(p) for p in every], "hidden": [list(p) for p in hidden],
+         "custom": is_arranged(f), "file_v": int(f["mtime"])}
+    if fixed is not None:  # a picture book: its pages are documents (fixed.js), not pictures
+        m.update({"fixed": True, "spread": fixed.spread, "layout": layout, "layout_v": f["layout_rev"]})
+    return m
 
 
-def file_layout(row) -> dict:
+def file_layout(row, default_rtl: bool = False) -> dict:
     """The admin's page-layout choices for a file: split and wraparound are True, False or None
-    (automatic); rtl (pages read right to left, as in manga) is True or False."""
+    (automatic); rtl (pages read right to left, as in manga) is True or False, and until the admin
+    chooses, default_rtl (a picture book's own direction; comics and PDFs read left to right)."""
     stored = _stored_layout(row)
     layout = {k: stored.get(k) if isinstance(stored.get(k), bool) else None for k in ("split", "wraparound")}
-    return {**layout, "rtl": stored.get("rtl") is True}
+    rtl = stored.get("rtl")
+    return {**layout, "rtl": rtl if isinstance(rtl, bool) else default_rtl}
 
 
 def set_layout(cfg: Config, file_id: int, split: bool | None, wraparound: bool | None,
@@ -295,10 +334,11 @@ def set_layout(cfg: Config, file_id: int, split: bool | None, wraparound: bool |
     Returns the new manifest; for a file that can't be opened (damaged, protected) the change is
     still kept, and the reply has no pages (count None)."""
     f = _file(cfg, file_id)
-    if f["format"] not in READABLE:
-        raise ValueError("Only PDFs and comics have page layouts")
+    if not has_pages(cfg, f):
+        raise ValueError("Only books with pages have page layouts")
     if rtl is None:
-        rtl = file_layout(f)["rtl"]
+        fixed = None if f["format"] in READABLE else fixed_layout_of(cfg, f)
+        rtl = file_layout(f, bool(fixed and fixed.rtl))["rtl"]
     _store(cfg, f, {"split": split, "wraparound": wraparound, "rtl": rtl})  # the page order stays
     try:
         return manifest(cfg, file_id)
@@ -316,12 +356,13 @@ def set_arrangement(cfg: Config, file_id: int, order, hidden) -> dict:
     """The admin's own page order (every page, hidden ones too, as the app shows them) and the pages
     to hide. order None (with nothing hidden) puts the file's own order back. Returns the manifest."""
     f = _file(cfg, file_id)
-    if f["format"] not in READABLE:
-        raise ValueError("Only PDFs and comics have pages to arrange")
+    if not has_pages(cfg, f):
+        raise ValueError("Only books with pages have pages to arrange")
     order = None if order is None else _entries(order, blanks=True)
     hidden = list(dict.fromkeys(_entries(hidden or [])))  # a blank is taken out, never hidden
     source, _, scanned = _measured(cfg, f)
-    natural = _natural(f, source, scanned)
+    fixed = None if f["format"] in READABLE else fixed_layout_of(cfg, f)
+    natural = _natural(f, source, scanned, bool(fixed and fixed.rtl))
     known = set(natural)
     changed = "The pages have changed since this was opened; close it and open it again"
     if order is not None:
@@ -351,6 +392,8 @@ def snap_width(width: int) -> int:
 def render_page(cfg: Config, file_id: int, index: int, width: int) -> Path:
     """Page `index` as the reader shows it."""
     m = manifest(cfg, file_id)
+    if m.get("fixed"):
+        raise Unreadable("format")  # a picture book's pages are documents, sent by the chapter route
     if not 0 <= index < m["count"]:
         raise IndexError(index)
     src, half = m["plan"][index]
@@ -362,6 +405,8 @@ def render_page(cfg: Config, file_id: int, index: int, width: int) -> Path:
 def render_piece(cfg: Config, file_id: int, src: int, half: int | None, width: int) -> Path:
     """One piece of the file (a page, or half of one), hidden or not: for arranging pages."""
     m = manifest(cfg, file_id)
+    if m.get("fixed"):
+        raise Unreadable("format")
     if [src, half] not in m["arranged"]:
         raise IndexError((src, half))
     if src < 0:

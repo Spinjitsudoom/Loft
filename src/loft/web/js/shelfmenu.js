@@ -1,4 +1,5 @@
 // The Shelves button on a book's page: tick the shelves this book is on, or start a new one.
+// Want to read is also a reading status, so a change here tells the Status button ("loft:shelves").
 import { api, esc, icon } from "./api.js";
 
 export function shelfButtonHTML(book) {
@@ -22,6 +23,18 @@ export function wireShelfMenu(root, book) {
     toggle.innerHTML = `${icon("shelf")}${mine.size ? "On your shelves" : "Add to a shelf"}`;
   };
 
+  const changed = () => {
+    book.shelves = [...mine];
+    root.dispatchEvent(new CustomEvent("loft:shelves", { detail: { from: "shelf" } }));
+  };
+  // The Status button put the book on Want to read or took it off.
+  root.addEventListener("loft:shelves", (e) => {
+    if (e.detail?.from === "shelf") return;
+    mine = new Set(book.shelves || []);
+    label();
+    if (!pop.hidden) draw();
+  });
+
   async function draw() {
     const shelves = await api("/shelves");
     pop.innerHTML = `<ul class="shelf-choices">${shelves.map((s) => `<li>
@@ -39,6 +52,7 @@ export function wireShelfMenu(root, book) {
         await api(`/shelves/${id}/books/${book.id}`, { method: c.checked ? "PUT" : "DELETE" });
         c.checked ? mine.add(id) : mine.delete(id);
         label();
+        changed();
       } catch (e) {
         c.checked = !c.checked;
         error.textContent = e.message;
@@ -54,6 +68,7 @@ export function wireShelfMenu(root, book) {
         await api(`/shelves/${shelf.id}/books/${book.id}`, { method: "PUT" });
         mine.add(shelf.id);
         label();
+        changed();
         await draw();
       } catch (err) {
         error.textContent = err.message;

@@ -4,6 +4,7 @@ import { coverHTML } from "./cover.js";
 import { canRead, shelfHTML, wireShelves } from "./home.js";
 import { clearErrors, detailFields, fillEmpty, readDetails, showError, showLookup } from "./edit.js";
 import { shelfButtonHTML, wireShelfMenu } from "./shelfmenu.js";
+import { statusButtonHTML, wireStatusMenu } from "./statusmenu.js";
 import { state } from "./main.js";
 import { wireDownload } from "./downloads.js";
 import { wireDiscussion } from "./discussion.js";
@@ -61,6 +62,7 @@ export async function renderBook(main, id, params = new URLSearchParams()) {
         ${b.files.map((f) => `<a class="btn ${!canRead(b) && f === b.files[0] ? "btn-primary" : ""}" href="/api/files/${f.id}" download
           title="Save the ${esc(f.format.toUpperCase())} file itself, to read in another app">
           ${icon("file")}Save ${esc(f.format.toUpperCase())} file<span class="file-size">${size(f.size)}</span></a>`).join("")}
+        ${statusButtonHTML(b)}
         ${shelfButtonHTML(b)}
         ${state.me.admin ? `<a class="btn" href="#/book/${b.id}?edit=1">${icon("edit")}Edit</a>` : ""}
       </div>
@@ -76,6 +78,7 @@ export async function renderBook(main, id, params = new URLSearchParams()) {
   ${b.series_books.length ? shelfHTML({ title: `More in ${b.series}`, kind: "series", value: b.series, books: b.series_books, trail: false }) : ""}`;
   wireShelves(main);
   wireTrail(main);
+  wireStatusMenu(main, b);
   wireShelfMenu(main, b);
   const slot = main.querySelector("[data-download]");
   if (slot) wireDownload(slot, b);
@@ -86,23 +89,31 @@ export async function renderBook(main, id, params = new URLSearchParams()) {
 const SPLIT = [[null, "Automatic"], [true, "Split them"], [false, "Don’t split"]];
 const WRAP = [[null, "Automatic"], [true, "Front first"], [false, "As scanned"]];
 const DIRECTION = [[false, "Left to right"], [true, "Right to left (manga)"]];
+// A picture book's pages are designed, not scanned: Loft never splits them by itself, so splitting
+// is off (null, or false from before) or on.
+const SPLIT_FIXED = [[null, "Don’t split"], [true, "Split them"]];
+const WRAP_FIXED = [[null, "Automatic"], [true, "Front first"], [false, "As the book has it"]];
+const PICTURE_BOOK_FORMATS = ["epub", "azw3", "azw", "mobi"];  // flowing formats a picture book can come in
 
 const arrangedNote = (f) => f.arranged ? "You’ve moved or hidden pages in this book." : "As the file has them.";
 
 function layoutHTML(b) {
   const files = b.files.filter((f) => f.layout);
   if (!files.length) return "";
-  const seg = (f, key, options) => `<div class="segmented" role="radiogroup">${options.map(([v, label]) =>
-    `<button type="button" role="radio" aria-checked="${f.layout[key] === v}" data-file="${f.id}" data-layout="${key}" data-value="${v}">${label}</button>`).join("")}</div>`;
+  const seg = (f, key, options, on = (v) => f.layout[key] === v) => `<div class="segmented" role="radiogroup">${options.map(([v, label]) =>
+    `<button type="button" role="radio" aria-checked="${on(v)}" data-file="${f.id}" data-layout="${key}" data-value="${v}">${label}</button>`).join("")}</div>`;
+  const split = (f) => (f.fixed ? seg(f, "split", SPLIT_FIXED, (v) => (v === true) === (f.layout.split === true)) : seg(f, "split", SPLIT));
   return `<section class="edit-pages">
     <h2>Pages</h2>
-    <p class="muted">Which way the pages turn, and fixes for when Loft guesses a scan’s layout wrong. Changes save at once.</p>
+    <p class="muted">${files.every((f) => f.fixed) ? "Which way the pages turn, their order, and splitting pages that hold two printed pages."
+      : "Which way the pages turn, and fixes for when Loft guesses a scan’s layout wrong."} Changes save at once.</p>
     ${files.map((f) => `
       ${files.length > 1 ? `<h3>${esc(f.format.toUpperCase())}</h3>` : ""}
       <h3>Reading direction</h3>${seg(f, "rtl", DIRECTION)}
-      <h3>Two printed pages in one scan</h3>${seg(f, "split", SPLIT)}
-      <p class="muted seg-hint">Split them cuts only the wide scans in two; ordinary pages stay whole.</p>
-      <h3>Wraparound cover (back and front in one scan)</h3>${seg(f, "wraparound", WRAP)}
+      <h3>${f.fixed ? "Two printed pages on one page" : "Two printed pages in one scan"}</h3>${split(f)}
+      <p class="muted seg-hint">${f.fixed ? "For books made from scans: cuts only the wide pages in two."
+        : "Split them cuts only the wide scans in two; ordinary pages stay whole."}</p>
+      <h3>${f.fixed ? "Wraparound cover (back and front on one page)" : "Wraparound cover (back and front in one scan)"}</h3>${seg(f, "wraparound", f.fixed ? WRAP_FIXED : WRAP)}
       <h3>Page order</h3>
       <div class="arrange-row">
         <span class="muted" data-arranged-note="${f.id}">${arrangedNote(f)}</span>
@@ -145,7 +156,7 @@ function renderEditor(main, b, coversFirst) {
       </div>
       <p class="form-error" data-form-error role="alert" hidden></p>
       <div class="lookup" data-fill-picks hidden></div>
-      ${layoutHTML(b)}
+      <div data-pages-slot>${layoutHTML(b)}</div>
     </form>
   </article>`;
 
@@ -204,13 +215,24 @@ function renderEditor(main, b, coversFirst) {
     catch (err) { fail(coverError, err.message); }
   });
 
-  // The pressed button lights up at once; saves go one after another, in the order pressed, so a slow
-  // one can't land after a later one and undo it. A save that fails puts the old choice back.
-  let saving = Promise.resolve();
+  const slot = main.querySelector("[data-pages-slot]");
+  const queue = { saving: Promise.resolve() };
+  wirePages(slot, b, queue);
+  findPictureBooks(slot, b, queue);
+
+  if (coversFirst) main.querySelector("[data-cover-find]").click();
+  else form.elements.title.focus();
+}
+
+// The Pages section's buttons. The pressed button lights up at once; saves go one after another, in
+// the order pressed (queue.saving), so a slow one can't land after a later one and undo it. A save
+// that fails puts the old choice back.
+function wirePages(slot, b, queue) {
+  const fail = (box, message) => { box.textContent = message; box.hidden = false; };
   const choose = (group, value) => group.querySelectorAll("button").forEach((x) =>
     x.setAttribute("aria-checked", String(JSON.parse(x.dataset.value) === value)));
-  main.querySelectorAll("[data-layout]").forEach((btn) => btn.addEventListener("click", () => {
-    const layoutError = main.querySelector("[data-layout-error]");
+  slot.querySelectorAll("[data-layout]").forEach((btn) => btn.addEventListener("click", () => {
+    const layoutError = slot.querySelector("[data-layout-error]");
     const f = b.files.find((x) => x.id === Number(btn.dataset.file));
     const key = btn.dataset.layout;
     const value = JSON.parse(btn.dataset.value);
@@ -220,7 +242,7 @@ function renderEditor(main, b, coversFirst) {
     f.layout = { ...f.layout, [key]: value };
     choose(btn.parentElement, value);
     const layout = f.layout;
-    saving = saving.then(() => api(`/files/${f.id}/layout`, { method: "PATCH", body: layout }).catch((err) => {
+    queue.saving = queue.saving.then(() => api(`/files/${f.id}/layout`, { method: "PATCH", body: layout }).catch((err) => {
       if (f.layout[key] === value) {
         f.layout = { ...f.layout, [key]: before };
         choose(btn.parentElement, before);
@@ -229,8 +251,8 @@ function renderEditor(main, b, coversFirst) {
     }));
   }));
 
-  main.querySelectorAll("[data-arrange]").forEach((btn) => btn.addEventListener("click", async () => {
-    const layoutError = main.querySelector("[data-layout-error]");
+  slot.querySelectorAll("[data-arrange]").forEach((btn) => btn.addEventListener("click", async () => {
+    const layoutError = slot.querySelector("[data-layout-error]");
     const f = b.files.find((x) => x.id === Number(btn.dataset.arrange));
     layoutError.hidden = true;
     btn.disabled = true;
@@ -238,12 +260,27 @@ function renderEditor(main, b, coversFirst) {
       const { openArrange } = await import("./arrange.js");
       await openArrange(f, { onClose: (custom) => {
         f.arranged = custom;
-        main.querySelector(`[data-arranged-note="${f.id}"]`).textContent = arrangedNote(f);
+        slot.querySelector(`[data-arranged-note="${f.id}"]`).textContent = arrangedNote(f);
       } });
     } catch (err) { fail(layoutError, err.message); }
     btn.disabled = false;
   }));
+}
 
-  if (coversFirst) main.querySelector("[data-cover-find]").click();
-  else form.elements.title.focus();
+// Which of the book's EPUB and Kindle files are picture books (fixed-layout), read as pages and so
+// with page settings too. Only the edit page asks (opening the book to find out); a file that can't
+// be opened simply has none.
+async function findPictureBooks(slot, b, queue) {
+  const files = b.files.filter((f) => f.readable === "flow" && PICTURE_BOOK_FORMATS.includes(f.format) && !f.layout);
+  const found = await Promise.all(files.map(async (f) => {
+    try {
+      const outline = await api(`/files/${f.id}/flow`);
+      if (!outline.fixed) return false;
+      Object.assign(f, { layout: outline.layout, arranged: outline.arranged, fixed: true });
+      return true;
+    } catch { return false; }
+  }));
+  if (!found.some(Boolean) || !slot.isConnected) return;
+  slot.innerHTML = layoutHTML(b);
+  wirePages(slot, b, queue);
 }

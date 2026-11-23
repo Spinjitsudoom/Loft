@@ -96,13 +96,13 @@ def _file(cfg, book_id):
 def test_home_rows_for_shelves(cfg, people, add):
     etta, _ = people
     a = add("Alpha")
-    add("Beta")
+    b = add("Beta")
     want = shelves.list_shelves(cfg, etta.id)[0]["id"]
     shelves.create(cfg, etta.id, "Empty")
-    shelves.add(cfg, etta.id, want, a)
+    shelves.add(cfg, etta.id, want, b)
     rows = [(r["kind"], r["title"]) for r in library.home(cfg, etta)["rows"]]
     assert ("shelf", "Want to read") in rows and ("shelf", "Empty") not in rows
-    reading.save_progress(cfg, etta.id, a, file_id=_file(cfg, a), page=9, pages=10)
+    reading.save_progress(cfg, etta.id, a, file_id=_file(cfg, a), page=9, pages=10)   # (reading b would take it off Want to read)
     rows = [(r["kind"], r["title"]) for r in library.home(cfg, etta)["rows"]]
     assert rows.index(("shelf", "Want to read")) < rows.index(("finished", "Finished")) < rows.index(("recent", "Recently added"))
 

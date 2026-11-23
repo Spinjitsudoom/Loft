@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from loft import auth, library, reading
@@ -39,11 +41,14 @@ def test_progress_is_per_person(cfg, sam, add):
     assert reading.get_progress(cfg, other.id, b) is None
 
 
+NOW = time.time() - 3600   # an hour ago: recent enough to be Reading (statuses.py)
+
+
 def test_in_progress(cfg, sam, add):
     a, b, c = add("A"), add("B"), add("C")
-    reading.save_progress(cfg, sam.id, a, file_id=fid(cfg, a), page=1, pages=10, at=10.0)
-    reading.save_progress(cfg, sam.id, b, file_id=fid(cfg, b), page=9, pages=10, at=20.0)  # finished
-    reading.save_progress(cfg, sam.id, c, file_id=fid(cfg, c), page=3, pages=10, at=30.0)
+    reading.save_progress(cfg, sam.id, a, file_id=fid(cfg, a), page=1, pages=10, at=NOW + 10)
+    reading.save_progress(cfg, sam.id, b, file_id=fid(cfg, b), page=9, pages=10, at=NOW + 20)  # finished
+    reading.save_progress(cfg, sam.id, c, file_id=fid(cfg, c), page=3, pages=10, at=NOW + 30)
     assert [card["title"] for card, _ in reading.in_progress(cfg, sam.id)] == ["C", "A"]
 
 
@@ -82,8 +87,8 @@ def test_home_continues_reading(cfg, sam, add):
 
 def test_continue_row_with_two_books(cfg, sam, add):
     a, b = add("A"), add("B")
-    reading.save_progress(cfg, sam.id, a, file_id=fid(cfg, a), page=3, pages=10, at=1.0)
-    reading.save_progress(cfg, sam.id, b, file_id=fid(cfg, b), page=4, pages=10, at=2.0)
+    reading.save_progress(cfg, sam.id, a, file_id=fid(cfg, a), page=3, pages=10, at=NOW + 1)
+    reading.save_progress(cfg, sam.id, b, file_id=fid(cfg, b), page=4, pages=10, at=NOW + 2)
     rows = library.home(cfg, sam)["rows"]
     assert rows[0]["kind"] == "continue" and rows[0]["title"] == "Continue reading"
     assert [(c["title"], c["progress"]["page"]) for c in rows[0]["books"]] == [("B", 4), ("A", 3)]

@@ -77,3 +77,23 @@ def test_search(cfg, add):
     assert library.search(cfg, '"); DROP TABLE books; --') == []
     assert library.search(cfg, "   ") == []
     assert library.search(cfg, "AND OR NOT *") == []
+
+
+def test_search_forgives(cfg, add):
+    add("Wedding Crashers", authors=["Geronimo Stilton"], description="A mouse wedding goes wrong")
+    add("Assassin's Creed: Odyssey", authors=["Gordon Doherty"])
+    add("Spider-Man: Blue", authors=["Jeph Loeb"])
+    add("Mouse Island", authors=["Geronimo Stilton"])
+    assert titles(library.search(cfg, "weding crashers"))[0] == "Wedding Crashers"
+    assert titles(library.search(cfg, "crashers geronimo mouse"))[0] == "Wedding Crashers"
+    assert titles(library.search(cfg, "geronimo stilton wedding book"))[0] == "Wedding Crashers"
+    assert titles(library.search(cfg, "assassins creed")) == ["Assassin's Creed: Odyssey"]
+    assert titles(library.search(cfg, "spiderman")) == ["Spider-Man: Blue"]
+    assert titles(library.search(cfg, "mouse"))[:2] == ["Mouse Island", "Wedding Crashers"]
+
+
+def test_search_sees_changes(cfg, add):
+    add("Tide Line")
+    assert titles(library.search(cfg, "atlas")) == []
+    add("Night Atlas")
+    assert titles(library.search(cfg, "atlas")) == ["Night Atlas"]

@@ -54,6 +54,8 @@ export async function renderReader(app, bookId, params, isCurrent = () => true) 
   let book;
   try {
     book = await api(`/books/${bookId}`);
+    // A book that had stopped (Incomplete, Abandoned) is Reading again once it's opened (statuses.py).
+    if (book.status === "incomplete" || book.status === "abandoned") api(`/books/${bookId}/opened`, { method: "POST" }).catch(() => {});
   } catch (e) {
     if (!offline.unreachable(e) || !kept || !kept.complete) throw e;
     offline.setOffline(true);
@@ -90,6 +92,7 @@ export async function renderReader(app, bookId, params, isCurrent = () => true) 
   const Cls = flowing ? (manifest.fixed && FixedReaderClass ? FixedReaderClass : FlowReaderClass) : Reader;
   const r = new Cls(app, book, file, manifest, prefs.reading);
   r.stored = stored;
+  if (stored && manifest.fixed) offline.keepOutline(book.id, manifest);  // new page settings, same pages
   if (stored && !flowing) r.storedPages = await offline.pageUrls(book.id, file.id, manifest.version);
   if (stale()) return () => {};
   const fromLink = params.get("page");

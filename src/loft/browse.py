@@ -2,7 +2,7 @@
 
 Cases are signed by series (then books in no series, by author), by section, or by author (by
 surname, as libraries shelve). Filters narrow it: reading status, section, author, format; each
-filter's choices come with how many books they'd show given the other filters. Each book carries
+filter's choices come with how many books they'd show given the other filters (statuses.py). Each book carries
 what its spine needs: its cover colour, and its size (pages when known, else the file's size).
 """
 
@@ -13,11 +13,12 @@ from collections import defaultdict
 
 from .config import Config
 from .db import session
+from . import statuses
 from .libsettings import get_library
 from .library import book_card
 
 KINDS = ("series", "section", "author")
-STATUSES = ("unread", "reading", "finished")
+STATUSES = statuses.STATUSES   # want, unread, reading, incomplete, abandoned, finished
 OTHER = "Other"
 
 
@@ -50,6 +51,7 @@ def _books(cfg: Config, user) -> list[dict]:
             files[f["book_id"]].append(f)
         progress = {r["book_id"]: r for r in con.execute(
             "SELECT book_id, page, pages, position, finished FROM progress WHERE user_id = ?", (user.id,))}
+        my_statuses = statuses.statuses_for(con, user.id)
     books = []
     for r in rows:
         card = book_card(r)
@@ -64,7 +66,7 @@ def _books(cfg: Config, user) -> list[dict]:
             "pages": max((f["count"] for f in mine if f["count"]), default=None),
             "progress": {"page": p["page"], "pages": p["pages"], "position": p["position"], "finished": bool(p["finished"])}
             if p else None,
-            "status": "finished" if p and p["finished"] else "reading" if p else "unread",
+            "status": my_statuses.get(r["id"], ("unread",))[0],
             "_title": (r["sort_title"] or r["title"] or "").casefold(),
         })
     return books

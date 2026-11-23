@@ -101,12 +101,17 @@ phone keep the app itself for opening offline), run `sudo tailscale serve --bg 4
 ## Finding books
 
 - **Home**: what you're reading, your shelves, what's new, and rows for series and sections.
+- **Reading status**, each person's own for each book: Want to read, Not started, Reading,
+  Incomplete, Abandoned or Finished. Loft keeps it up to date as you read (Incomplete after 15 days
+  unread, Abandoned after 30, Finished at the last page); set any of them by hand on the book's page.
+  Continue reading shows only what you're reading, and books you stopped get an Incomplete row.
 - **The stacks** (the shelf icon): bookcases shelved by **Series**, **Sections** or **Authors**
   (by surname, with name cards between them), narrowed by reading status, section, author or
   format. Tap a spine and the book slides out. Switch to **Covers** to see them face-out.
 - **Sections** are the library's categories. Loft suggests them from your books' tags; arrange
   them in **Library settings → Sections** (a book stands in the first section it matches).
-- **Search** finds titles, authors, series and tags.
+- **Search** finds books from the words you remember, in any order: in titles, series, authors, tags
+  and descriptions, forgiving typos, apostrophes and hyphens, with the best matches first.
 
 ## Reading
 
@@ -118,7 +123,10 @@ phone keep the app itself for opening offline), run `sudo tailscale serve --bg 4
 - Fixed-layout books (picture books and many children's books, EPUB or Kindle) are read as pages,
   each as the book designed it, with its pictures and fonts: the page curl, two pages side by side
   when there's room, zoom, and downloads. Their text size can't change; zoom instead. Pages are
-  shown in a sealed frame: nothing in a book runs, and nothing outside it is loaded.
+  shown in a sealed frame: nothing in a book runs, and nothing outside it is loaded. Their edit page
+  has the same page settings as comics: reading direction (starting at the book's own), **Arrange
+  pages**, splitting pages that hold two printed pages (for books made from scans), and the
+  wraparound cover.
 - Your place and bookmarks follow you between devices.
 
 ## Adding and editing books (admins)

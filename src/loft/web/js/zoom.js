@@ -48,8 +48,18 @@ export function openZoom({ src, frame = null, index, count, onClose, rtl = false
     clamp();
     if (frame) {   // the frame stays at the page's own size and is scaled as a whole
       const [nw, nh] = natural();
-      img.style.width = inner.style.width = `${nw}px`;
-      img.style.height = inner.style.height = `${nh}px`;
+      // The source page it shows: all of it, or a half (the frame is the whole page, shifted so that
+      // half is in view, and the rest clipped); none for a blank page.
+      const source = frame.source ? frame.source(page) : { size: [nw, nh], shiftX: 0 };
+      img.classList.toggle("zoom-blank", !source);
+      img.style.width = `${nw}px`;
+      img.style.height = `${nh}px`;
+      inner.hidden = !source;
+      if (source) {
+        inner.style.width = `${source.size[0]}px`;
+        inner.style.height = `${source.size[1]}px`;
+        inner.style.left = `${-source.shiftX}px`;
+      }
       img.style.transform = `translate(${x}px, ${y}px) scale(${scale * r})`;
       return;
     }

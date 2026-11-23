@@ -116,3 +116,16 @@ def test_discussion_routes(client, add):
     assert client.delete(f"/api/messages/{mid}").status_code == 200
     assert sam.get(f"/api/books/{book}/discussion").json()["messages"] == []
     assert sam.post(f"/api/books/{book}/discussion", json={"body": ""}).status_code == 400
+
+
+def test_finished_by_hand_sees_everything(cfg, people, add):
+    from loft import statuses
+
+    _, sam, bob = people
+    book = add("Gyo")
+    at(cfg, sam, book, 79)
+    discussion.post(cfg, sam, book, "The ending!")
+    at(cfg, bob, book, 19)
+    assert discussion.thread(cfg, bob, book)["messages"][0]["ahead"] is True
+    statuses.set_status(cfg, bob.id, book, "finished")
+    assert discussion.thread(cfg, bob, book)["messages"][0]["ahead"] is False

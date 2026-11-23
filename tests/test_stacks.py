@@ -95,7 +95,7 @@ def test_filters_and_counts(cfg, shelves):
     reading.save_progress(cfg, admin.id, shelves["promise"], file_id=fid, page=3, pages=10)
     got = browse.stacks(cfg, admin, by="section", status="reading")
     assert got["total"] == 1 and got["cases"][0]["books"][0]["progress"]["page"] == 3
-    assert got["facets"]["status"] == {"unread": 5, "reading": 1, "finished": 0}
+    assert got["facets"]["status"] == {"want": 0, "unread": 5, "reading": 1, "incomplete": 0, "abandoned": 0, "finished": 0}
     got = browse.stacks(cfg, admin, by="series", section="Graphic novels", author="Gene Luen Yang")
     assert got["total"] == 2
     assert got["facets"]["section"]["Graphic novels"] == 2 and got["facets"]["section"]["Manga"] == 0
@@ -134,3 +134,19 @@ def test_sections_route_is_for_admins(client, add):
     add("Uzumaki", ["Junji Ito"], tags=["Manga"])
     assert client.get("/api/sections").json()["sections"][0]["name"] == "Manga"
     assert member(client).get("/api/sections").status_code == 403
+
+
+def test_stacks_filter_by_status(cfg, shelves):
+    from loft import statuses
+
+    ann = auth.create_user(cfg, "ann", "annannann", admin=True)
+    with session(cfg.db_path) as con:
+        fid = con.execute("SELECT id FROM book_files WHERE book_id = ?", (shelves["uzumaki"],)).fetchone()["id"]
+    import time
+    reading.save_progress(cfg, ann.id, shelves["uzumaki"], file_id=fid, page=2, pages=50, at=time.time() - 20 * 86400)
+    statuses.set_status(cfg, ann.id, shelves["odd"], "want")
+    got = browse.stacks(cfg, ann)
+    assert list(got["facets"]["status"]) == ["want", "unread", "reading", "incomplete", "abandoned", "finished"]
+    assert got["facets"]["status"]["incomplete"] == 1 and got["facets"]["status"]["want"] == 1
+    only = browse.stacks(cfg, ann, status="incomplete")
+    assert [b["title"] for c in only["cases"] for b in c["books"]] == ["Uzumaki"]

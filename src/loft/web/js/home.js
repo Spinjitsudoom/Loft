@@ -71,7 +71,7 @@ function heroHTML(home, detail) {
         <span>Page ${p.page + 1} of ${p.pages}</span></div>`
         : description ? `<p class="hero-blurb">${esc(description.split("\n\n")[0])}</p>` : ""}
       <div class="hero-actions">
-        ${readable ? `<a class="btn btn-primary" href="#/read/${book.id}">${p ? "Continue" : "Read"}</a>` : ""}
+        ${readable ? `<a class="btn btn-primary" href="#/read/${book.id}${p ? "" : "?page=0"}">${p ? "Continue" : "Read"}</a>` : ""}
         <a class="btn ${readable ? "" : "btn-primary"}" href="#/book/${book.id}">About this book</a>
       </div>
     </div>

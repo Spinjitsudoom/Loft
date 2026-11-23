@@ -39,7 +39,7 @@ x-casaos:
       and lets everyone you invite read them on a phone, tablet or computer, each keeping their own
       place.
   category: Media
-  version: "0.1.6"
+  version: "0.1.7"
   architectures:
     - amd64
     - arm64

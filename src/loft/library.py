@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
-import re
+import threading
 
+from . import fuzzy
 from .config import Config
 from .db import session
 from .flow import READABLE_FLOW
@@ -12,6 +13,7 @@ from .pages import READABLE as PAGE_FORMATS, file_layout, is_arranged
 from .reading import get_progress, in_progress
 from .settings import DEFAULTS, get_settings
 from . import shelves as shelf_store
+from . import statuses
 
 RECENT = 15
 SERIES_ROWS = 8
@@ -90,20 +92,45 @@ def _shelf_rows(cfg: Config, user) -> list[dict]:
                     "SELECT b.* FROM shelf_books sb JOIN books b ON b.id = sb.book_id WHERE sb.shelf_id = ? "
                     "ORDER BY sb.added_at DESC LIMIT ?", (shelf["id"], SHELF_ROW_BOOKS))]
                 rows.append({"title": shelf["name"], "kind": "shelf", "value": str(shelf["id"]), "books": books})
-        finished = [book_card(r) for r in con.execute(
-            "SELECT b.* FROM progress p JOIN books b ON b.id = p.book_id WHERE p.user_id = ? AND p.finished = 1 "
-            "ORDER BY p.updated_at DESC LIMIT ?", (user.id, SHELF_ROW_BOOKS))]
+        mine = statuses.statuses_for(con, user.id)
+
+        def having(status: str) -> list[dict]:
+            ids = sorted((bid for bid, (s, _) in mine.items() if s == status), key=lambda bid: -mine[bid][1])
+            return _cards(con, ids[:SHELF_ROW_BOOKS])
+
+        incomplete, finished = having("incomplete"), having("finished")
+    # Books stopped partway, to pick up again; then the ones read to the end.
+    if incomplete:
+        rows.append({"title": "Incomplete", "kind": "status", "value": "incomplete", "books": incomplete})
     if finished:
         rows.append({"title": "Finished", "kind": "finished", "value": "", "books": finished})
     return rows
 
 
-def _filter(kind: str | None, value: str | None, user=None) -> tuple[str, tuple]:
-    if kind in ("shelf", "finished"):
+def _cards(con, ids: list[int]) -> list[dict]:
+    """Book cards for these ids, in this order."""
+    if not ids:
+        return []
+    rows = {r["id"]: r for r in con.execute(f"SELECT * FROM books WHERE id IN ({','.join('?' * len(ids))})", ids)}
+    return [book_card(rows[i]) for i in ids if i in rows]
+
+
+def _filter(kind: str | None, value: str | None, user=None, cfg: Config | None = None) -> tuple[str, tuple]:
+    if kind in ("shelf", "finished", "status"):
         if user is None:
             raise LookupError(kind)
-        if kind == "finished":
-            return "WHERE id IN (SELECT book_id FROM progress WHERE user_id = ? AND finished = 1)", (user.id,)
+        if kind in ("finished", "status"):
+            # This person's books with a reading status ("finished" is the older way to ask for Finished).
+            status = "finished" if kind == "finished" else value
+            if status not in statuses.STATUSES:
+                raise ValueError(f"Unknown reading status {status!r}")
+            with session(cfg.db_path) as con:
+                mine = statuses.statuses_for(con, user.id)
+            if status == "unread":   # Not started: also every book with no status at all
+                others = [bid for bid, (s, _) in mine.items() if s != "unread"]
+                return "WHERE id NOT IN (SELECT value FROM json_each(?))", (json.dumps(others),)
+            return ("WHERE id IN (SELECT value FROM json_each(?))",
+                    (json.dumps([bid for bid, (s, _) in mine.items() if s == status]),))
         # Only the person's own shelf: someone else's matches nothing (and list_books says it doesn't exist).
         return ("WHERE id IN (SELECT sb.book_id FROM shelf_books sb JOIN shelves s ON s.id = sb.shelf_id "
                 "WHERE s.id = ? AND s.user_id = ?)", (value, user.id))
@@ -120,7 +147,7 @@ def _filter(kind: str | None, value: str | None, user=None) -> tuple[str, tuple]
 
 def list_books(cfg: Config, *, kind: str | None, value: str | None, sort: str = "title",
                offset: int = 0, limit: int = 60, user=None) -> dict:
-    where, args = _filter(kind, value, user)
+    where, args = _filter(kind, value, user, cfg)
     if kind == "shelf":
         with session(cfg.db_path) as con:
             if not con.execute("SELECT 1 FROM shelves WHERE id = ? AND user_id = ?", (value, user.id)).fetchone():
@@ -161,6 +188,7 @@ def get_book(cfg: Config, book_id: int, user=None) -> dict | None:
         "series_books": series_books,
         "progress": get_progress(cfg, user.id, book_id) if user else None,
         "shelves": shelf_store.for_book(cfg, user.id, book_id) if user else [],
+        "status": statuses.get_status(cfg, user.id, book_id)["status"] if user else "unread",
     }
 
 
@@ -171,23 +199,44 @@ def readable(fmt: str) -> str | None:
     return "flow" if fmt in READABLE_FLOW else None
 
 
-FTS_KEYWORDS = {"AND", "OR", "NOT", "NEAR"}
+_indexes: dict[str, tuple[tuple, fuzzy.Index]] = {}   # per database: (what the books were like, the index)
+_index_lock = threading.Lock()
+
+
+def _search_index(cfg: Config, con) -> fuzzy.Index:
+    """The word index of the library, built again only when its books have changed (added, removed, or
+    any detail edited: every change stamps updated_at)."""
+    signature = tuple(con.execute("SELECT count(*), max(updated_at), max(id) FROM books").fetchone())
+    key = str(cfg.db_path)
+    with _index_lock:
+        kept = _indexes.get(key)
+        if kept and kept[0] == signature:
+            return kept[1]
+        rows = con.execute("SELECT id, title, sort_title, series, authors, tags, description FROM books").fetchall()
+        index = fuzzy.Index({"id": r["id"], "title": r["title"], "sort_title": r["sort_title"], "series": r["series"],
+                             "authors": json.loads(r["authors"] or "[]"), "tags": json.loads(r["tags"] or "[]"),
+                             "description": r["description"]} for r in rows)
+        _indexes[key] = (signature, index)
+        return index
 
 
 def search(cfg: Config, q: str, limit: int = 40) -> list[dict]:
-    words = [w for w in re.findall(r"\w+", q or "") if w.upper() not in FTS_KEYWORDS]
-    if not words:
+    """Books for the words typed, best match first (fuzzy.py): in any order, with typos, from the title,
+    series, authors, tags or description."""
+    if not fuzzy.words(q or ""):
         return []
-    match = " ".join(f'"{w}"*' for w in words)
     with session(cfg.db_path) as con:
-        return [book_card(r) for r in con.execute(
-            "SELECT books.* FROM books_fts JOIN books ON books.id = books_fts.rowid "
-            "WHERE books_fts MATCH ? ORDER BY bm25(books_fts), books.sort_title LIMIT ?", (match, limit))]
+        ids = _search_index(cfg, con).rank(q, limit)
+        if not ids:
+            return []
+        rows = {r["id"]: r for r in con.execute(
+            f"SELECT * FROM books WHERE id IN ({','.join('?' * len(ids))})", ids)}
+    return [book_card(rows[i]) for i in ids if i in rows]
 
 
 def merge_books(cfg: Config, into: int, other: int) -> None:
-    """Make one book of two: other's files, shelf places, bookmarks and reading progress move to into
-    (the newer progress wins when someone has both), and other goes. Every detail of into is locked,
+    """Make one book of two: other's files, shelf places, bookmarks, reading progress and statuses move
+    to into (the newer progress or status wins when someone has both), and other goes. Every detail of into is locked,
     so a Calibre change can't pull them apart again. The files themselves are untouched."""
     import time
 
@@ -212,6 +261,10 @@ def merge_books(cfg: Config, into: int, other: int) -> None:
                             "finished, updated_at, locator) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                             (p["user_id"], into, p["file_id"], p["page"], p["pages"], p["position"], p["finished"],
                              p["updated_at"], p["locator"]))
+        con.execute("INSERT INTO book_status(user_id, book_id, status, set_at) "
+                    "SELECT user_id, ?, status, set_at FROM book_status WHERE book_id = ? AND true "
+                    "ON CONFLICT(user_id, book_id) DO UPDATE SET status = excluded.status, set_at = excluded.set_at "
+                    "WHERE excluded.set_at > book_status.set_at", (into, other))
         _delete_book(cfg, con, other)
         con.execute("UPDATE books SET locked = ?, updated_at = ? WHERE id = ?",
                     (json.dumps(sorted([*FIELDS, "cover"])), time.time(), into))

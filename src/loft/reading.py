@@ -11,6 +11,7 @@ import math
 import time
 
 from .config import Config
+from . import statuses
 from .db import session
 
 CLOCK_SLACK = 60  # seconds a device's clock may run ahead of the server's
@@ -65,22 +66,26 @@ def save_progress(cfg: Config, user_id: int, book_id: int, *, file_id: int, page
             "WHERE excluded.updated_at >= progress.updated_at",
             (user_id, book_id, file_id, page, pages, position, int(finished), at,
              json.dumps(locator) if locator else None))
+        statuses.read_now(con, user_id, book_id, at)
     return get_progress(cfg, user_id, book_id)
 
 
-def in_progress(cfg: Config, user_id: int, limit: int = 20) -> list[tuple[dict, dict]]:
+def in_progress(cfg: Config, user_id: int, limit: int = 20) -> list[tuple[dict, dict | None]]:
+    """The books this person is reading (status Reading), the latest read or set first, with their
+    progress: None for a book set to Reading by hand that has no place to continue from (never opened,
+    or read to the end before)."""
     from .library import book_card
 
     with session(cfg.db_path) as con:
-        rows = con.execute(
-            "SELECT b.*, p.file_id AS p_file_id, p.page AS p_page, p.pages AS p_pages, p.position AS p_position, "
-            "p.finished AS p_finished, p.updated_at AS p_updated_at, p.locator AS p_locator FROM progress p JOIN books b ON b.id = p.book_id "
-            "WHERE p.user_id = ? AND p.finished = 0 ORDER BY p.updated_at DESC LIMIT ?", (user_id, limit)).fetchall()
-    def value(r, k):
-        v = r[f"p_{k}"]
-        return bool(v) if k == "finished" else _locator(v) if k == "locator" else v
-
-    return [(book_card(r), {k: value(r, k) for k in PROGRESS_FIELDS}) for r in rows]
+        mine = statuses.statuses_for(con, user_id)
+        ids = sorted((bid for bid, (s, _) in mine.items() if s == "reading"), key=lambda bid: -mine[bid][1])[:limit]
+        if not ids:
+            return []
+        marks = ",".join("?" * len(ids))
+        books = {r["id"]: r for r in con.execute(f"SELECT * FROM books WHERE id IN ({marks})", ids)}
+        places = {r["book_id"]: r for r in con.execute(
+            f"SELECT * FROM progress WHERE user_id = ? AND finished = 0 AND book_id IN ({marks})", (user_id, *ids))}
+    return [(book_card(books[bid]), _progress(places[bid]) if bid in places else None) for bid in ids if bid in books]
 
 
 def _bookmark(row) -> dict:

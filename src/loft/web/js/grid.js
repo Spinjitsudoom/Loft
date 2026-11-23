@@ -28,7 +28,8 @@ export async function renderGrid(main, { kind, value, title, query }) {
   const heading = title || "All books";
   const shelf = kind === "shelf" ? (await api("/shelves")).find((x) => String(x.id) === String(value)) : null;
   const empty = kind === "shelf" ? "Nothing on this shelf yet. Add books from their pages."
-    : kind === "finished" ? "Books you read to the end show up here." : "";
+    : kind === "finished" ? "Books you read to the end show up here."
+    : kind === "status" ? "No books have this status yet. Loft sets it as you read, or set it on a book’s page." : "";
   main.innerHTML = `<section class="page">
     <header class="page-head"><h1>${esc(shelf ? shelf.name : heading)}</h1>
       <p class="muted">${first.total || !empty ? `${first.total} ${first.total === 1 ? "book" : "books"}` : empty}</p>

@@ -1,7 +1,7 @@
 """Talking about a book, without spoiling it. Each message is stamped with where its writer was
 (their reading progress when they wrote it). A message from further into the book than the person
 reading it is marked `ahead`, and the app blurs it until they get there (they can tap to read it
-anyway). Nothing is hidden from its own writer, or from anyone who has finished the book.
+anyway). Nothing is hidden from its own writer, or from anyone who has finished the book (or says so: statuses.py).
 One level of replies; writers edit or remove their own, admins remove any."""
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 import time
 
 from .config import Config
+from . import statuses
 from .db import session
 from .notifications import notify
 
@@ -20,9 +21,9 @@ def _where(con, user_id: int, book_id: int) -> tuple[float, str, bool]:
     """(position 0..1, a label like "Page 34" or "12%", finished) for someone's place in a book."""
     row = con.execute("SELECT page, position, finished, locator FROM progress WHERE user_id = ? AND book_id = ?",
                       (user_id, book_id)).fetchone()
-    if row is None:
+    if row is None and statuses.status_for(con, user_id, book_id) != "finished":
         return 0.0, "", False
-    if row["finished"]:
+    if row is None or row["finished"] or statuses.status_for(con, user_id, book_id) == "finished":
         return 1.0, "Finished", True
     label = f"{round(row['position'] * 100)}%" if row["locator"] else f"Page {row['page'] + 1}"
     return float(row["position"]), label, False

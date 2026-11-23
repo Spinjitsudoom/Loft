@@ -105,7 +105,9 @@ def add_to_library(cfg, name: str, **kw) -> int:
 def test_the_outline_says_so(client, cfg):
     file_id = add_to_library(cfg, "Pictures.epub", pages=[("Text/p1.xhtml", "<p>One</p>", VP), ("Text/p2.xhtml", "<p>Two</p>", VP)])
     outline = client.get(f"/api/files/{file_id}/flow").json()
-    assert outline["fixed"] == {"sizes": [[706, 1024], [706, 1024]], "spread": True}
+    assert outline["fixed"]["sizes"] == [[706, 1024], [706, 1024]] and outline["fixed"]["spread"] is True
+    assert outline["fixed"]["plan"] == [[0, None], [1, None]] and outline["fixed"]["page_sizes"] == [[706, 1024]] * 2
+    assert outline["layout"] == {"split": None, "wraparound": None, "rtl": False} and outline["arranged"] is False
     assert outline["rtl"] is False and len(outline["chapters"]) == 2
     with session(cfg.db_path) as con:
         flowing = con.execute("SELECT id FROM book_files WHERE path LIKE '%Tale.epub'").fetchone()["id"]
@@ -300,3 +302,64 @@ def test_a_viewport_written_height_first(tmp_path):
     meta = FIXED + '<meta property="rendition:viewport">height=700, width=500</meta>'
     book = open_epub(fixed_epub(tmp_path / "b.epub", metadata=meta, pages=[("Text/p1.xhtml", "<p>One</p>", None)]))
     assert book.fixed.sizes == [(500, 700)]
+
+
+# ---------- page settings (direction, order, splitting, wraparound) ----------
+
+from loft import pages  # noqa: E402
+
+WIDE = "width=1412, height=1024"
+
+
+def test_a_fixed_book_has_a_page_manifest(cfg):
+    fid = add_to_library(cfg, "M.epub", pages=[(f"Text/p{i}.xhtml", f"<p>{i}</p>", VP) for i in range(3)])
+    m = pages.manifest(cfg, fid)
+    assert m["fixed"] is True and m["plan"] == [[0, None], [1, None], [2, None]]
+    assert m["sizes"] == [[706, 1024]] * 3 and m["layout"] == {"split": None, "wraparound": None, "rtl": False}
+
+
+def test_automatic_never_splits_a_fixed_book_but_split_them_does(cfg):
+    fid = add_to_library(cfg, "W.epub", pages=[("Text/a.xhtml", "<p>a</p>", WIDE), ("Text/b.xhtml", "<p>b</p>", WIDE)])
+    assert pages.manifest(cfg, fid)["plan"] == [[0, None], [1, None]]
+    m = pages.set_layout(cfg, fid, True, None)
+    assert m["plan"] == [[0, 1], [1, 0], [1, 1], [0, 0]]          # wraparound: front first, back last
+    assert m["sizes"][0] == [706, 1024]
+    assert pages.set_layout(cfg, fid, True, False)["plan"] == [[0, 0], [0, 1], [1, 0], [1, 1]]
+
+
+def test_split_them_leaves_portrait_pages_whole(cfg):
+    fid = add_to_library(cfg, "P.epub", pages=[("Text/a.xhtml", "<p>a</p>", VP)])
+    assert pages.set_layout(cfg, fid, True, None)["plan"] == [[0, None]]
+
+
+def test_direction_starts_at_the_books_own(cfg):
+    fid = add_to_library(cfg, "R.epub", pages=[("Text/a.xhtml", "<p>a</p>", VP)],
+                         spine_attrs=' page-progression-direction="rtl"')
+    assert pages.manifest(cfg, fid)["rtl"] is True
+    assert pages.set_layout(cfg, fid, None, None, rtl=False)["rtl"] is False
+
+
+def test_a_fixed_book_can_be_arranged(cfg):
+    fid = add_to_library(cfg, "A.epub", pages=[(f"Text/p{i}.xhtml", f"<p>{i}</p>", VP) for i in range(3)])
+    m = pages.set_arrangement(cfg, fid, [[2, None], [-1, None], [0, None], [1, None]], [[1, None]])
+    assert m["plan"] == [[2, None], [-1, None], [0, None]] and m["custom"] is True
+    assert m["layout_v"] > 0
+
+
+def test_flowing_books_have_no_page_settings(client, cfg):
+    with session(cfg.db_path) as con:
+        flowing = con.execute("SELECT id FROM book_files WHERE path LIKE '%Tale.epub'").fetchone()["id"]
+    with pytest.raises(ValueError, match="Only books with pages have page layouts"):
+        pages.set_layout(cfg, flowing, True, None)
+    with pytest.raises(ValueError, match="Only books with pages have pages to arrange"):
+        pages.set_arrangement(cfg, flowing, None, [])
+
+
+def test_a_layout_change_keeps_the_version_and_moves_layout_v(client, cfg):
+    fid = add_to_library(cfg, "V.epub", pages=[("Text/a.xhtml", "<p>a</p>", VP), ("Text/b.xhtml", "<p>b</p>", VP)])
+    before = client.get(f"/api/files/{fid}/flow").json()
+    r = client.patch(f"/api/files/{fid}/arrangement", json={"order": [[1, None], [0, None]], "hidden": []})
+    assert r.status_code == 200
+    after = client.get(f"/api/files/{fid}/flow").json()
+    assert after["version"] == before["version"] and after["fixed"]["layout_v"] > before["fixed"]["layout_v"]
+    assert after["fixed"]["plan"] == [[1, None], [0, None]] and after["arranged"] is True

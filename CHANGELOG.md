@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.7 (2026-11-23)
+
+- Reading status for every book: Want to read, Not started, Reading, Incomplete (after 15 days
+  unread), Abandoned (after 30), Finished; set any by hand from the book's page. Continue reading shows
+  only what you're reading; a new Incomplete row on home; the stacks filter by every status.
+- Search finds books from the words you remember: in any order, with typos, without apostrophes or
+  hyphens, and from the description too; the best matches first.
+- Picture books get the Pages settings on their edit page: reading direction (starting at the book's
+  own), page order (move, hide, blank pages), splitting pages that hold two printed pages, and the
+  wraparound cover. A setting change doesn't download a book again, and your place and bookmarks stay
+  on their pages.
+- Docker: the image is published as `ghcr.io/spinjitsudoom/loft` (amd64 and arm64) with every
+  release, and `compose.yaml` uses it. It makes `/data` Loft's when it starts, then runs Loft as
+  `PUID`:`PGID` (1000). Each release has `loft-compose.yaml`, and `loft-zimaos.yaml` to install
+  Loft on ZimaOS or CasaOS as a custom app.
+
 ## 0.1.6 (2026-11-22)
 
 - Fixed-layout books (picture books, many children's books; EPUB, or Kindle AZW3) are read as pages,

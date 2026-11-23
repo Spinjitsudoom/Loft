@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
-from . import auth, browse, check, discussion, editing, flowbooks, joining, libsettings, library, lookups, notifications, openlibrary, book_requests, submissions, pages, reading, settings, shelves, txt, uploads
+from . import auth, browse, statuses, check, discussion, editing, flowbooks, joining, libsettings, library, lookups, notifications, openlibrary, book_requests, submissions, pages, reading, settings, shelves, txt, uploads
 from .auth import User, admin_user, current_user
 from .config import Config
 from .covers import cover_path
@@ -118,6 +118,10 @@ class LayoutIn(BaseModel):
 class ArrangementIn(BaseModel):
     order: list[list] | None = None  # every page as [source page, half]; None puts the file's order back
     hidden: list[list] = []
+
+
+class StatusIn(BaseModel):
+    status: str
 
 
 class ProgressIn(BaseModel):
@@ -873,9 +877,17 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         outline = {"file_id": file_id, "format": fmt, "version": version,
                    "chapters": [{"title": c.title} for c in book.chapters],
                    "toc": [{"title": t.title, "chapter": t.chapter, "anchor": t.anchor, "level": t.level} for t in book.toc]}
-        if book.fixed:   # read as pages (js/fixed.js): each chapter is a page of this size
-            outline["fixed"] = {"sizes": [list(s) for s in book.fixed.sizes], "spread": book.fixed.spread}
-            outline["rtl"] = book.fixed.rtl
+        if book.fixed:
+            # Read as pages (js/fixed.js): each chapter is a page of the book, of this size; the plan says
+            # which one (or which half, or a blank) each reader page shows, after the admin's page settings.
+            # `version` stays the file's: pages and downloads don't change with the layout; layout_v does.
+            m = pages.manifest(cfg, file_id)
+            outline["fixed"] = {"sizes": [list(s) for s in book.fixed.sizes], "spread": book.fixed.spread,
+                                "plan": m["plan"], "page_sizes": m["sizes"], "layout_v": m["layout_v"]}
+            outline["rtl"] = m["rtl"]
+            outline["toc"] = m["toc"]
+            outline["layout"] = m["layout"]
+            outline["arranged"] = m["custom"]
         return outline
 
     @app.get("/api/files/{file_id}/chapters/{n}")
@@ -916,6 +928,29 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         except (KeyError, OSError, zipfile.BadZipFile):
             raise pages.Unreadable("damaged")
         return Response(data, media_type=resource.media_type, headers=headers)
+
+    @app.get("/api/books/{book_id}/status")
+    def get_status(book_id: int, user: User = Depends(current_user)):
+        try:
+            return statuses.get_status(cfg, user.id, book_id)
+        except LookupError:
+            raise HTTPException(404, "No such book")
+
+    @app.put("/api/books/{book_id}/status")
+    def put_status(book_id: int, body: StatusIn, user: User = Depends(current_user)):
+        try:
+            return statuses.set_status(cfg, user.id, book_id, body.status)
+        except LookupError:
+            raise HTTPException(404, "No such book")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.post("/api/books/{book_id}/opened")
+    def opened(book_id: int, user: User = Depends(current_user)):
+        try:
+            return statuses.opened(cfg, user.id, book_id)
+        except LookupError:
+            raise HTTPException(404, "No such book")
 
     @app.put("/api/books/{book_id}/progress")
     def put_progress(book_id: int, body: ProgressIn, user: User = Depends(current_user)):

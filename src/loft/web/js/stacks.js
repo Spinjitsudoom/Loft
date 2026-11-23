@@ -4,10 +4,10 @@
 import { api, authorLine, esc, seriesLine } from "./api.js";
 import { coverHTML } from "./cover.js";
 import { spineTitle } from "./titles.js";
+import { STATUS_LABELS as STATUS } from "./statusmenu.js";
 
 const KEPT = "loft-stacks";
 const BY = [["series", "Series"], ["section", "Sections"], ["author", "Authors"]];
-const STATUS = { unread: "Not started", reading: "Reading", finished: "Finished" };
 const FORMATS = { pdf: "PDF", epub: "EPUB", cbz: "Comic (CBZ)", cbr: "Comic (CBR)", cb7: "Comic (CB7)",
   mobi: "Kindle (MOBI)", azw: "Kindle (AZW)", azw3: "Kindle (AZW3)", fb2: "FB2", txt: "Text" };
 const FILTERS = ["status", "section", "author", "format"];

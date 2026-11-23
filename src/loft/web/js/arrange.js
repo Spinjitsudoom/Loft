@@ -2,6 +2,7 @@
 // them. Made for touch first (tap to choose, then a button); on a computer pages can also be dragged,
 // and shift-click chooses a run of pages. Every change saves at once; the book file is never touched.
 import { api, esc } from "./api.js";
+import { halfBox, pageScale, pageUrl } from "./fixedfit.js";
 
 const key = (e) => `${e[0]}:${e[1] ?? "w"}`;
 
@@ -67,11 +68,56 @@ export async function openArrange(file, { onClose = () => {} } = {}) {
     const [w, h] = m.source[isBlank(e) ? 0 : e[0]] || [2, 3];
     return `${e[1] == null ? w : w / 2} / ${h}`;
   };
+  // A picture book's pages are documents, not pictures: each tile is the page itself in a sandboxed
+  // frame (nothing in it runs), scaled down to the tile (and clipped to its half), filled once in view.
+  const frameTile = (e) => {
+    const [w, h] = m.source[e[0]] || [1000, 1500];
+    return `<span class="arrange-frame" data-src="${e[0]}" data-half="${e[1] ?? ""}" style="aspect-ratio: ${aspect(e)}"><iframe
+      sandbox="allow-same-origin" tabindex="-1" scrolling="no" title="" style="width:${w}px;height:${h}px"></iframe></span>`;
+  };
   const tile = (e, label) => `<li><button type="button" class="arrange-page${selected.has(key(e)) ? " is-selected" : ""}"
       data-key="${key(e)}" aria-pressed="${selected.has(key(e))}" draggable="${!hidden.has(key(e))}" aria-label="${esc(label)}">
       ${isBlank(e) ? `<span class="arrange-blank" style="aspect-ratio: ${aspect(e)}">Blank</span>`
+        : m.fixed ? frameTile(e)
         : `<img src="${thumb(e)}" alt="" loading="lazy" draggable="false" style="aspect-ratio: ${aspect(e)}">`}
       <span class="arrange-num">${esc(label)}</span></button></li>`;
+
+  const docs = new Map();   // source page → its document (a promise), fetched once
+  const doc = (src) => {
+    if (!docs.has(src)) {
+      const p = fetch(pageUrl(file.id, src, { version: m.file_v, fixed: true }), { credentials: "same-origin" })
+        .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))));
+      docs.set(src, p);
+      p.catch(() => docs.delete(src));
+    }
+    return docs.get(src);
+  };
+  const fitFrame = (holder) => {
+    const src = Number(holder.dataset.src);
+    const half = holder.dataset.half === "" ? null : Number(holder.dataset.half);
+    const box = halfBox(m.source[src] || [1000, 1500], half);
+    const s = pageScale([box.width, box.height], [holder.clientWidth, holder.clientHeight]);
+    holder.querySelector("iframe").style.transform = `translate(${-box.shiftX * s}px, 0) scale(${s})`;
+  };
+  const sizer = m.fixed ? new ResizeObserver((entries) => entries.forEach((x) => fitFrame(x.target))) : null;
+  // Filled when near the screen and emptied again when well away from it: each frame is a whole page
+  // (its full-size pictures too), and a long comic would otherwise keep every one of them alive.
+  const seen = m.fixed ? new IntersectionObserver((entries) => entries.forEach((x) => {
+    const holder = x.target, frame = holder.querySelector("iframe");
+    if (!x.isIntersecting) {
+      delete holder.dataset.near;
+      if (frame.srcdoc) frame.srcdoc = "";
+      return;
+    }
+    holder.dataset.near = "1";
+    // Still near (and still on the page) once it arrives: a quick scroll past doesn't fill it.
+    doc(Number(holder.dataset.src)).then((d) => { if (frame.isConnected && holder.dataset.near) frame.srcdoc = d; }, () => {});
+  }), { rootMargin: "600px" }) : null;
+  const watchFrames = () => {
+    if (!m.fixed) return;
+    sizer.disconnect(); seen.disconnect();
+    layer.querySelectorAll(".arrange-frame").forEach((x) => { sizer.observe(x); seen.observe(x); });
+  };
 
   function render() {
     const visible = shown();
@@ -92,6 +138,7 @@ export async function openArrange(file, { onClose = () => {} } = {}) {
     $("[data-before] input").placeholder = String(visible.length);
     $("[data-undo]").disabled = !undo.length;
     layer.classList.toggle("has-bar", chosen.length > 0);
+    watchFrames();
   }
 
   function save(body) {
@@ -257,6 +304,7 @@ export async function openArrange(file, { onClose = () => {} } = {}) {
 
   async function close() {
     await saving;
+    if (m.fixed) { sizer.disconnect(); seen.disconnect(); }
     document.removeEventListener("keydown", onKey);
     document.body.classList.remove("arranging");
     layer.remove();

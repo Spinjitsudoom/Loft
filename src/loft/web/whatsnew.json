@@ -1,5 +1,34 @@
 [
   {
+    "version": "0.1.7",
+    "date": "2026-11-23",
+    "new": [
+      {
+        "title": "Reading status",
+        "text": "Every book has a status of your own: Want to read, Not started, Reading, Incomplete, Abandoned or Finished. Loft keeps it up to date as you read: opening a book makes it Reading, the last page Finished, and a book left unread turns Incomplete after 15 days and Abandoned after 30. Set any status by hand with the Status button on the book’s page. Home has an Incomplete row, and the stacks filter by status."
+      },
+      {
+        "title": "Search that finds what you mean",
+        "text": "Search finds books from the words you remember: in any order, with typos, without apostrophes or hyphens, and from the description too. The best matches come first."
+      },
+      {
+        "title": "Page settings for picture books",
+        "text": "A picture book’s edit page has Pages settings: the reading direction, the order of pages (move, hide or add blank ones), splitting pages that hold two printed pages, and the wraparound cover. Your place and bookmarks stay on their pages.",
+        "admin": true
+      },
+      {
+        "title": "Loft on ZimaOS and CasaOS",
+        "text": "Loft’s Docker image is published for PCs and ARM boards, and each release has a file that installs it on ZimaOS or CasaOS as a custom app.",
+        "admin": true
+      }
+    ],
+    "fixed": [
+      {
+        "text": "Continue reading shows only the books you’re reading, not ones you stopped weeks ago."
+      }
+    ]
+  },
+  {
     "version": "0.1.6",
     "date": "2026-11-22",
     "new": [

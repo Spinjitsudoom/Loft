@@ -299,3 +299,29 @@ def test_ping_says_this_is_loft(app_lib):
     r = app_lib.get("/api/ping")
     assert r.status_code == 200 and r.json()["app"] == "loft" and r.json()["version"]
     assert r.headers["access-control-allow-origin"] == "*"   # asked from the app's own start page
+
+
+def test_status_api(client):
+    bid = book_id(client, "Three Pages")
+    r = client.put(f"/api/books/{bid}/status", json={"status": "abandoned"})
+    assert r.status_code == 200 and r.json()["status"] == "abandoned"
+    assert client.get(f"/api/books/{bid}").json()["status"] == "abandoned"
+    assert client.get(f"/api/books/{bid}/status").json() == {"status": "abandoned", "shelves": []}
+    assert client.put(f"/api/books/{bid}/status", json={"status": "nope"}).status_code == 400
+    assert client.put("/api/books/99999/status", json={"status": "finished"}).status_code == 404
+    assert client.get("/api/books/99999/status").status_code == 404
+    assert client.get("/api/books?kind=status&value=abandoned").json()["total"] == 1
+    assert client.get("/api/books?kind=status&value=nope").status_code == 400
+    # Someone else has their own, and can't change this one's.
+    from test_members import member
+    sam = member(client)
+    assert sam.get(f"/api/books/{bid}").json()["status"] == "unread"
+    sam.put(f"/api/books/{bid}/status", json={"status": "finished"})
+    assert client.get(f"/api/books/{bid}/status").json()["status"] == "abandoned"
+
+
+def test_opened_api(client):
+    bid = book_id(client, "Three Pages")
+    client.put(f"/api/books/{bid}/status", json={"status": "abandoned"})
+    assert client.post(f"/api/books/{bid}/opened").json()["status"] == "reading"
+    assert client.post("/api/books/99999/opened").status_code == 404

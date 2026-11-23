@@ -114,6 +114,15 @@ CREATE TABLE IF NOT EXISTS shelf_books (
 );
 CREATE INDEX IF NOT EXISTS shelf_books_book ON shelf_books(book_id);
 
+-- A reading status set by hand (statuses.py); the rest are worked out from progress and Want to read.
+CREATE TABLE IF NOT EXISTS book_status (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    status  TEXT NOT NULL,  -- unread, reading, incomplete, abandoned, finished
+    set_at  REAL NOT NULL,
+    PRIMARY KEY (user_id, book_id)
+);
+
 CREATE TABLE IF NOT EXISTS check_ignored (
     kind TEXT NOT NULL,
     key  TEXT NOT NULL,
