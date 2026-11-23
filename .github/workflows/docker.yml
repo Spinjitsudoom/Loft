@@ -53,8 +53,8 @@ jobs:
           docker logs loft
           curl -fsS http://127.0.0.1:4545/api/ping
           test "$(sudo stat -c %u:%g data/loft.db)" = 1000:1000
-          docker top loft -eo uid,args
-          test "$(docker top loft -eo uid,args | awk '/bin\/loft/ {print $1}' | sort -u)" = 1000
+          docker top loft -eo pid,uid,args
+          test "$(docker top loft -eo pid,uid,args | awk '/bin\/loft/ {print $2}' | sort -u)" = 1000
       - name: Publish
         uses: docker/build-push-action@v6
         with:
