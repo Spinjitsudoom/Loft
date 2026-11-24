@@ -21,6 +21,10 @@ API = "https://api.hardcover.app/v1/graphql"
 COVER_HOST = "assets.hardcover.app"
 QUERY = ('query Find($q: String!, $n: Int!) { search(query: $q, query_type: "Book", per_page: $n, page: 1) '
          '{ results } }')
+# The search index has no publisher: the books' default editions do (the ebook first, then print).
+EDITIONS = ('query Eds($ids: [Int!]) { books(where: {id: {_in: $ids}}) { id '
+            'default_ebook_edition { publisher { name } language { code2 } } '
+            'default_physical_edition { publisher { name } language { code2 } } } }')
 FAILED = "Hardcover didn’t answer; try again in a moment, or fill the details in by hand"
 REFUSED = "Hardcover refused the token saved in Library settings (they expire); make a new one there"
 LIMIT = "Hardcover’s limit for this token is used up for now; try again later"
@@ -63,6 +67,39 @@ def _ask(q: str, token: str, most: int) -> list[dict]:
     except (KeyError, TypeError, AttributeError, ValueError):
         raise LookupFailed(FAILED) from None
     return [h["document"] for h in hits if isinstance(h, dict) and isinstance(h.get("document"), dict)]
+
+
+def _book_id(doc: dict) -> int | None:
+    value = doc.get("id")
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    return int(value) if isinstance(value, str) and value.isdigit() else None
+
+
+def _editions(ids: list[int], token: str) -> dict[int, tuple[str, str]]:
+    """Book id → (publisher, language) from its default ebook edition, else its print one. Asked once
+    for all the books found; if it fails, the matches simply come without a publisher."""
+    if not ids:
+        return {}
+    try:
+        body = json.dumps({"query": EDITIONS, "variables": {"ids": ids}}).encode()
+        books = json.loads(_post(API, body, token, MAX_JSON))["data"]["books"]
+    except Exception:
+        return {}
+    found = {}
+    for book in books if isinstance(books, list) else []:
+        if not isinstance(book, dict) or _book_id(book) is None:
+            continue
+        for kind in ("default_ebook_edition", "default_physical_edition"):
+            ed = book.get(kind) if isinstance(book.get(kind), dict) else {}
+            publisher = ed.get("publisher") if isinstance(ed.get("publisher"), dict) else {}
+            language = ed.get("language") if isinstance(ed.get("language"), dict) else {}
+            if _str(publisher.get("name")):
+                found[_book_id(book)] = (_str(publisher.get("name")), _str(language.get("code2")))
+                break
+    return found
 
 
 def _str(value) -> str:
@@ -131,7 +168,13 @@ def search(cfg: Config, *, title: str = "", author: str = "", isbn: str = "") ->
     token = key(cfg)
     if not token:
         raise LookupFailed("Hardcover needs a token; add one in Library settings")
-    found = [_candidate(d) for d in _ask(q, token, RESULTS)[:RESULTS]]
+    docs = _ask(q, token, RESULTS)[:RESULTS]
+    editions = _editions([i for i in (_book_id(d) for d in docs) if i is not None], token)
+    found = []
+    for d in docs:
+        c = _candidate(d)
+        c["publisher"], c["language"] = editions.get(_book_id(d), ("", ""))
+        found.append(c)
     return [c for c in found if c["title"]]
 
 

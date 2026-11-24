@@ -29,6 +29,10 @@ def hc(monkeypatch, cfg):
 
     def post(url, body, token, limit):
         sent.append((url, json.loads(body), token))
+        if "books(" in json.loads(body)["query"]:        # the editions of the books found
+            if isinstance(answers.get("editions"), Exception):
+                raise answers["editions"]
+            return json.dumps({"data": {"books": answers.get("editions") or []}}).encode()
         if isinstance(answers["reply"], Exception):
             raise answers["reply"]
         return json.dumps(answers["reply"]).encode()
@@ -187,3 +191,31 @@ def test_the_app_never_gets_the_token_or_key_back(client, hc, idb):
     body = r.text + client.get("/api/library").text
     assert TOKEN not in body and "12345_abcdefghij" not in body and "isbndb_host" not in body
     assert r.json()["hardcover"] is True and r.json()["isbndb"] is True
+
+
+def edition(publisher=None, language=None):
+    return {"publisher": {"name": publisher} if publisher else None, "language": {"code2": language} if language else None}
+
+
+def test_hardcover_matches_bring_their_editions_publisher(cfg, hc):
+    # The search index has no publisher; one more question asks for the books' default editions.
+    sent, answers = hc
+    libsettings.update_library(cfg, {"hardcover_token": TOKEN})
+    answers["editions"] = [{"id": int(HC_DOC["id"]), "default_ebook_edition": edition("Penguin Books", "en"),
+                            "default_physical_edition": edition("Penguin", "sk")}]
+    found = hardcover.search(cfg, title="Revelations", author="Oliver Bowden")
+    assert (found[0]["publisher"], found[0]["language"]) == ("Penguin Books", "en")   # the ebook first
+    assert sent[-1][1]["variables"] == {"ids": [int(HC_DOC["id"])]} and sent[-1][2] == TOKEN
+    answers["editions"] = [{"id": int(HC_DOC["id"]), "default_ebook_edition": edition(None, "nl"),
+                            "default_physical_edition": edition("Penguin", "en")}]
+    found = hardcover.search(cfg, title="Revelations", author="Oliver Bowden")
+    assert (found[0]["publisher"], found[0]["language"]) == ("Penguin", "en")         # else the print edition
+
+
+@pytest.mark.parametrize("trouble", [http_error(500), OSError("down"), [{"id": "nonsense"}]])
+def test_hardcover_matches_come_without_a_publisher_when_editions_fail(cfg, hc, trouble):
+    _, answers = hc
+    libsettings.update_library(cfg, {"hardcover_token": TOKEN})
+    answers["editions"] = trouble
+    found = hardcover.search(cfg, title="Revelations", author="Oliver Bowden")
+    assert found[0]["title"] == "Revelations" and found[0]["publisher"] == ""
