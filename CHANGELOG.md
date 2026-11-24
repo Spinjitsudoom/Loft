@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.0 (2026-11-24)
+
+- The stacks: every spine looks bound (cloth, raised ribs, a title label) in two colours picked
+  from its own cover, and the whole title fits, smaller or on two or three lines. Existing books
+  get their colours in the background after updating.
+- Checking out: opening a book checks it out to you; finishing it, leaving it for 30 days, or
+  Return on its page returns it. It never locks a book: others can still read it, and its page
+  says who has it out. Your library card (`#/card`, from Your settings) lists your loans.
+- Ratings: one to five stars per person on a book's page, or when you reach its end; everyone
+  sees the average. Book lists can be sorted, Highest rated among the choices.
+- Go to a page: tap "Page x of y" in the reader (or press G) and type a page.
+- Activity (`#/activity`, admins): sign-ins, people, books added, edited and removed, loans,
+  ratings, requests, comments and Loft's own work (scans, backups, updates), kept for a year.
+- Fixed: long one-word titles pushed pages wider than a phone; Kindle books took their title from
+  the file name; a new library's first scan could fail with "database is locked"; the Windows
+  tray's Restart could start two servers; an empty library's stacks offered Clear filters.
+
 ## 0.1.8 (2026-11-23)
 
 - Windows: Restart to update (and Update in the tray's menu) installs the new version and starts

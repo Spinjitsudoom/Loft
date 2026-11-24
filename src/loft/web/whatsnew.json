@@ -1,5 +1,44 @@
 [
   {
+    "version": "0.2.0",
+    "date": "2026-11-24",
+    "new": [
+      {
+        "title": "Bound spines in their covers’ colours",
+        "text": "In the stacks, every book stands like a bound hardback: cloth, raised ribs and a title label, in two colours taken from its own cover. The whole title fits, smaller or on two or three lines."
+      },
+      {
+        "title": "Check books out",
+        "text": "Opening a book checks it out to you, and finishing it returns it (so does leaving it for 30 days, or Return on its page). Everyone can still read a book someone has out. Your library card, in Your settings, lists what you have out and everything you’ve returned."
+      },
+      {
+        "title": "Ratings",
+        "text": "Give a book one to five stars on its page, or when you reach the end. Everyone sees the library’s average, and book lists can be sorted by Highest rated."
+      },
+      {
+        "title": "Go to a page",
+        "text": "In the reader, tap “Page 12 of 340” (or press G) and type the page you want."
+      },
+      {
+        "title": "Activity",
+        "text": "Library settings has an Activity page: sign-ins, people joining, books added, edited and removed, loans, ratings, requests and Loft’s own work, newest first, for a year.",
+        "admin": true
+      }
+    ],
+    "fixed": [
+      "Long titles no longer push a book’s page wider than a phone’s screen.",
+      "Kindle books (MOBI, AZW, AZW3) show the title and author stored in the file.",
+      {
+        "text": "A brand-new library’s first scan no longer fails, and an empty library says so plainly.",
+        "admin": true
+      },
+      {
+        "text": "On Windows, Restart the server in the tray’s menu can no longer start a second server.",
+        "admin": true
+      }
+    ]
+  },
+  {
     "version": "0.1.8",
     "date": "2026-11-23",
     "fixed": [
