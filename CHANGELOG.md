@@ -13,6 +13,8 @@
 - Go to a page: tap "Page x of y" in the reader (or press G) and type a page.
 - Activity (`#/activity`, admins): sign-ins, people, books added, edited and removed, loans,
   ratings, requests, comments and Loft's own work (scans, backups, updates), kept for a year.
+- Open Library matches fill in the publisher and language from the edition that matches the search;
+  before, a work with several editions (most books) left them empty.
 - Fixed: long one-word titles pushed pages wider than a phone; Kindle books took their title from
   the file name; a new library's first scan could fail with "database is locked"; the Windows
   tray's Restart could start two servers; an empty library's stacks offered Clear filters.

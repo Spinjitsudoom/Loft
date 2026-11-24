@@ -146,3 +146,25 @@ def test_lookup_routes(client, cfg, calls):
     assert r.status_code == 502 and "by hand" in r.json()["detail"]
     client.patch("/api/library", json={"online_lookups": False})
     assert client.get("/api/lookup?title=Long").status_code == 403
+
+
+def test_the_matched_editions_publisher_and_language_fill_in(cfg, calls):
+    # A work lists every edition's publishers (The Hobbit: 227 of them), so the work can't say which;
+    # Open Library also sends the edition that best matches the search, which can.
+    doc = {"title": "The Hobbit", "publisher": ["Allen & Unwin", "Houghton Mifflin Company", "Ballantine Books"],
+           "language": ["eng", "fre"],
+           "editions": {"docs": [{"key": "/books/OL51709286M", "publisher": ["Houghton Mifflin Company"],
+                                  "language": ["eng"]}]}}
+    c = openlibrary._candidate(doc)
+    assert (c["publisher"], c["language"]) == ("Houghton Mifflin Company", "eng")
+    # Without an edition (or with an empty one), the work's own still count when there's only one.
+    assert openlibrary._candidate({"title": "One", "publisher": ["Tor"], "editions": {"docs": []}})["publisher"] == "Tor"
+    assert openlibrary._candidate({"title": "Odd", "editions": "nonsense"})["publisher"] == ""
+
+
+def test_the_search_asks_for_the_matched_edition(cfg, calls):
+    from urllib.parse import unquote
+    seen, responses = calls
+    responses[openlibrary.SEARCH] = {"docs": []}
+    openlibrary.search(cfg, title="The Hobbit")
+    assert "editions.publisher" in unquote(seen[0]) and "editions.language" in unquote(seen[0])

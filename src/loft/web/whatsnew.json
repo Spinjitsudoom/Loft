@@ -28,6 +28,7 @@
     "fixed": [
       "Long titles no longer push a book’s page wider than a phone’s screen.",
       "Kindle books (MOBI, AZW, AZW3) show the title and author stored in the file.",
+      "Details found on Open Library fill in the publisher and language again: they come from the edition that matches, not the whole work.",
       {
         "text": "A brand-new library’s first scan no longer fails, and an empty library says so plainly.",
         "admin": true

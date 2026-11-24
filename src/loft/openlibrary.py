@@ -22,7 +22,10 @@ COVER_HOST = "covers.openlibrary.org"
 # host: where its covers live
 COVER_HOSTS = {COVER_HOST: "/b/", "s4.anilist.co": "/file/anilistcdn/", "books.google.com": "/books/content",
                "assets.hardcover.app": "/", "images.isbndb.com": "/"}
-FIELDS = "key,title,author_name,first_publish_year,publisher,language,subject,isbn,cover_i"
+# With the work, the edition that best matches the search (Open Library's "editions" fields): a work
+# lists every edition's publishers and languages, the edition just its own.
+FIELDS = ("key,title,author_name,first_publish_year,publisher,language,subject,isbn,cover_i,"
+          "editions,editions.key,editions.publisher,editions.language")
 RESULTS = 6
 MAX_TAGS = 8
 MAX_JSON = 2 * 1024 * 1024
@@ -80,15 +83,18 @@ def _candidate(doc: dict) -> dict:
     cover = doc.get("cover_i")
     year = doc.get("first_publish_year")
     publishers, languages, isbns = (_text_list(doc.get(k)) for k in ("publisher", "language", "isbn"))
+    editions = doc.get("editions") if isinstance(doc.get("editions"), dict) else {}
+    edition = next((e for e in editions.get("docs") or [] if isinstance(e, dict)), {})
+    edition_publishers, edition_languages = (_text_list(edition.get(k)) for k in ("publisher", "language"))
     key = doc.get("key") if isinstance(doc.get("key"), str) and WORK_KEY.match(doc.get("key")) else ""
     return {
         "key": key,
         "title": doc.get("title").strip() if isinstance(doc.get("title"), str) else "",
         "authors": _text_list(doc.get("author_name")),
         "published": str(year) if isinstance(year, int) and not isinstance(year, bool) else "",
-        # A work lists every edition's publishers and languages; only one of each says something.
-        "publisher": publishers[0] if len(publishers) == 1 else "",
-        "language": languages[0] if len(languages) == 1 else "",
+        # The matched edition's own publisher and language; else the work's, when it has only one.
+        "publisher": edition_publishers[0] if edition_publishers else publishers[0] if len(publishers) == 1 else "",
+        "language": edition_languages[0] if edition_languages else languages[0] if len(languages) == 1 else "",
         "tags": _text_list(doc.get("subject"))[:MAX_TAGS],
         "isbn": next((i for i in isbns if len(normal_isbn(i)) == 13), isbns[0] if isbns else ""),
         "cover_url": (f"https://{COVER_HOST}/b/id/{cover}-L.jpg?default=false"
