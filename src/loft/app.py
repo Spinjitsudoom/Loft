@@ -215,9 +215,14 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     @app.post("/api/login")
     def login(body: Credentials, request: Request, response: Response):
         ip = request.client.host if request.client else "?"
+        locked = auth._locked_out(ip)   # tries while locked out aren't checked, so aren't logged either
         user = auth.authenticate(cfg, body.username, body.password, ip)
         if user is None:
+            if not locked:
+                activity.note(cfg, "sign_in.failed", "couldn’t sign in",
+                              user_name=" ".join((body.username or "").split())[:100], details={"ip": ip})
             raise HTTPException(401, "That name and password don’t match (or there were too many tries; wait 15 minutes)")
+        activity.note(cfg, "sign_in.ok", "signed in", user_id=user.id, user_name=user.username)
         return _signed_in(cfg, request, response, user)
 
     @app.post("/api/logout")
@@ -269,6 +274,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             joining.ask(cfg, body.username, body.password, body.note)
         except ValueError as e:
             raise HTTPException(403 if "isn’t taking" in str(e) else 400, str(e))
+        activity.note(cfg, "people.asked", "asked to join", user_name=auth.check_username(body.username))
         return {"ok": True}
 
     @app.get("/api/join-requests")
@@ -276,13 +282,16 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         return joining.waiting(cfg)
 
     @app.post("/api/join-requests/{request_id}/approve")
-    def approve_join(request_id: int, _: User = Depends(admin_user)):
+    def approve_join(request_id: int, me: User = Depends(admin_user)):
         try:
-            return joining.approve(cfg, request_id).json()
+            person = joining.approve(cfg, request_id)
         except LookupError:
             raise HTTPException(404, "No such request")
         except ValueError as e:
             raise HTTPException(400, str(e))
+        activity.note(cfg, "people.approved", f"approved {person.username}", user_id=me.id, user_name=me.username,
+                      details={"person": person.username})
+        return person.json()
 
     @app.delete("/api/join-requests/{request_id}")
     def decline_join(request_id: int, _: User = Depends(admin_user)):
@@ -306,30 +315,43 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         return [u.json() for u in auth.list_users(cfg)]
 
     @app.post("/api/users")
-    def add_user(body: Credentials, _: User = Depends(admin_user)):
+    def add_user(body: Credentials, me: User = Depends(admin_user)):
         try:
-            return auth.create_user(cfg, body.username, body.password).json()
+            person = auth.create_user(cfg, body.username, body.password)
         except ValueError as e:
             raise HTTPException(400, str(e))
+        activity.note(cfg, "people.added", f"added {person.username}", user_id=me.id, user_name=me.username,
+                      details={"person": person.username})
+        return person.json()
 
     @app.delete("/api/users/{user_id}")
     def remove_user(user_id: int, me: User = Depends(admin_user)):
         if user_id == me.id:
             raise HTTPException(400, "You can’t remove your own account")
+        person = auth.get_user(cfg, user_id)
         try:
             auth.delete_user(cfg, user_id)
         except ValueError as e:
             raise HTTPException(400, str(e))
+        if person is not None:
+            activity.note(cfg, "people.removed", f"removed {person.username}", user_id=me.id,
+                          user_name=me.username, details={"person": person.username})
         return {"ok": True}
 
     @app.patch("/api/users/{user_id}")
-    def change_user(user_id: int, body: AdminFlag, _: User = Depends(admin_user)):
+    def change_user(user_id: int, body: AdminFlag, me: User = Depends(admin_user)):
+        before = auth.get_user(cfg, user_id)
         try:
-            return auth.set_admin(cfg, user_id, body.admin).json()
+            person = auth.set_admin(cfg, user_id, body.admin)
         except LookupError:
             raise HTTPException(404, "No such person")
         except ValueError as e:
             raise HTTPException(400, str(e))
+        if before is not None and before.admin != person.admin:
+            activity.note(cfg, "people.admin",
+                          f"made {person.username} {'an admin' if person.admin else 'a member'}",
+                          user_id=me.id, user_name=me.username, details={"person": person.username})
+        return person.json()
 
     @app.post("/api/users/{user_id}/password")
     def reset_password(user_id: int, body: NewPassword, _: User = Depends(admin_user)):
@@ -357,11 +379,15 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         return libsettings.get_library(cfg)
 
     @app.patch("/api/library")
-    def change_library(patch: dict = Body(...), _: User = Depends(admin_user)):
+    def change_library(patch: dict = Body(...), me: User = Depends(admin_user)):
         try:
-            return libsettings.update_library(cfg, patch)
+            updated = libsettings.update_library(cfg, patch)
         except ValueError as e:
             raise HTTPException(400, str(e))
+        if patch:   # which settings, never what they were set to (some are keys)
+            activity.note(cfg, "loft.settings", "changed library settings", user_id=me.id, user_name=me.username,
+                          details={"fields": sorted(patch)})
+        return updated
 
     # ---------- the activity log ----------
 
@@ -392,11 +418,13 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         return backups.status(cfg)
 
     @app.post("/api/backups")
-    def back_up_now(_: User = Depends(admin_user)):
+    def back_up_now(me: User = Depends(admin_user)):
         try:
             made = backups.make_now(cfg)
         except (OSError, sqlite3.Error):
             raise HTTPException(500, backups.status(cfg)["error"] or "Loft couldn’t back up the library")
+        activity.note(cfg, "loft.backup", "made a backup", user_id=me.id, user_name=me.username,
+                      details={"name": made.name})
         return {"name": made.name, **backups.status(cfg)}
 
     @app.get("/api/backups/{name}")
@@ -408,19 +436,25 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         return FileResponse(p, media_type="application/zip", filename=name)
 
     @app.post("/api/backups/{name}/restore")
-    def restore_backup(name: str, _: User = Depends(admin_user)):
+    def restore_backup(name: str, me: User = Depends(admin_user)):
         """Put the library back as it was. What's there now is backed up first, so this can be undone."""
         try:
             safety = backups.restore(cfg, name)
         except backups.BackupError as e:
             raise HTTPException(400, str(e))
+        # Written into the library as restored. The admin is named as they were; linked only when the
+        # restored library still has them under the same number.
+        same = auth.get_user(cfg, me.id)
+        activity.note(cfg, "loft.restore", "restored a backup",
+                      user_id=me.id if same and same.username == me.username else None, user_name=me.username,
+                      details={"name": name, "before": safety.name})
         scanner.trigger()   # the books may have changed since the backup
         return {"before": safety.name, **backups.status(cfg)}
 
     @app.post("/api/updates/install", status_code=202)
-    def install_update(_: User = Depends(admin_user)):
+    def install_update(me: User = Depends(admin_user)):
         try:
-            return {"version": updates.install(cfg)}
+            return {"version": updates.install(cfg, by=me)}
         except LookupError as e:
             raise HTTPException(409, str(e))
 
@@ -462,6 +496,10 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             raise HTTPException(404, "No such book")
         except ValueError as e:
             raise HTTPException(400, str(e))
+        fields = [k for k in editing.FIELDS if k in patch]
+        if fields:
+            activity.note(cfg, "books.edited", "edited the details", user_id=user.id, user_name=user.username,
+                          book_id=book_id, details={"fields": fields})
         return _edited(book_id, user)
 
     async def _body(request: Request, limit: int) -> bytes:
@@ -481,7 +519,11 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             raise HTTPException(404, "No such book")
         except ValueError as e:
             raise HTTPException(400, str(e))
+        await run_in_threadpool(_cover_logged, user, book_id, "changed the cover")
         return await run_in_threadpool(_edited, book_id, user)
+
+    def _cover_logged(user: User, book_id: int, text: str) -> None:
+        activity.note(cfg, "books.cover", text, user_id=user.id, user_name=user.username, book_id=book_id)
 
     @app.delete("/api/books/{book_id}/cover")
     def delete_cover(book_id: int, user: User = Depends(admin_user)):
@@ -489,6 +531,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             editing.clear_cover(cfg, book_id)
         except LookupError:
             raise HTTPException(404, "No such book")
+        _cover_logged(user, book_id, "removed the cover")
         return _edited(book_id, user)
 
     def _lookup(call, *args, **kwargs):
@@ -518,6 +561,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             editing.set_cover(cfg, book_id, image)
         except ValueError as e:
             raise HTTPException(400, str(e))
+        _cover_logged(user, book_id, "changed the cover")
         return _edited(book_id, user)
 
     # ---------- adding books ----------
@@ -561,20 +605,25 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     def save_upload(token: str, body: SaveUpload, user: User = Depends(admin_user)):
         _draft_call(uploads.draft_cover, token, user=user)  # theirs to save
         try:
-            return {"book_id": _draft_call(uploads.save, token, body.details, cover_url=body.cover_url or None,
-                                             right_to_left=body.right_to_left)}
+            new = _draft_call(uploads.save, token, body.details, cover_url=body.cover_url or None,
+                              right_to_left=body.right_to_left)
         except openlibrary.LookupFailed as e:
             raise HTTPException(502, str(e))
         except ValueError as e:
             raise HTTPException(400, str(e))
+        activity.note(cfg, "books.added", "added (upload)", user_id=user.id, user_name=user.username, book_id=new)
+        return {"book_id": new}
 
     @app.post("/api/uploads/{token}/submit")
     def submit_upload(token: str, body: SaveUpload, user: User = Depends(current_user)):
         try:
-            return {"id": _draft_call(submissions.submit, user, token, body.details,
-                                      cover_url=body.cover_url or None, right_to_left=body.right_to_left)}
+            sid = _draft_call(submissions.submit, user, token, body.details,
+                              cover_url=body.cover_url or None, right_to_left=body.right_to_left)
         except ValueError as e:
             raise HTTPException(400, str(e))
+        activity.note(cfg, "requests.submitted", "suggested a book", user_id=user.id, user_name=user.username,
+                      details={"title": " ".join(str(body.details.get("title", "")).split())})
+        return {"id": sid}
 
     @app.delete("/api/uploads/{token}")
     def discard_upload(token: str, user: User = Depends(current_user)):
@@ -605,9 +654,15 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         return submissions.waiting(cfg)
 
     @app.post("/api/submissions/{sub_id}/approve")
-    def approve_submission(sub_id: int, body: SaveUpload, _: User = Depends(admin_user)):
-        return {"book_id": _submission_call(submissions.approve, sub_id, body.details or None,
-                                            cover_url=body.cover_url, right_to_left=body.right_to_left)}
+    def approve_submission(sub_id: int, body: SaveUpload, me: User = Depends(admin_user)):
+        new = _submission_call(submissions.approve, sub_id, body.details or None,
+                               cover_url=body.cover_url, right_to_left=body.right_to_left)
+        with activity.writing(cfg) as con:
+            by = con.execute("SELECT COALESCE(u.username, 'someone') FROM submissions s "
+                             "LEFT JOIN users u ON u.id = s.user_id WHERE s.id = ?", (sub_id,)).fetchone()[0]
+            activity.record(con, "books.added", f"added (from {by}’s suggestion)", user_id=me.id,
+                            user_name=me.username, book_id=new)
+        return {"book_id": new}
 
     @app.post("/api/submissions/{sub_id}/decline")
     def decline_submission(sub_id: int, body: ReasonIn, _: User = Depends(admin_user)):
@@ -635,7 +690,11 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
 
     @app.post("/api/requests")
     def ask_for_book(body: RequestIn, user: User = Depends(current_user)):
-        return {"id": _request_call(book_requests.ask, user, body.title, body.author, body.note)}
+        rid = _request_call(book_requests.ask, user, body.title, body.author, body.note)
+        with activity.writing(cfg) as con:
+            title = con.execute("SELECT title FROM requests WHERE id = ?", (rid,)).fetchone()[0]
+            activity.record(con, "requests.asked", f"asked for {title}", user_id=user.id, user_name=user.username)
+        return {"id": rid}
 
     @app.post("/api/requests/{rid}/vote")
     def vote_request(rid: int, body: VoteIn, user: User = Depends(current_user)):
@@ -648,8 +707,12 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         return {"ok": True}
 
     @app.post("/api/requests/{rid}/fulfil")
-    def fulfil_request(rid: int, body: FulfilIn, _: User = Depends(admin_user)):
+    def fulfil_request(rid: int, body: FulfilIn, me: User = Depends(admin_user)):
         _request_call(book_requests.fulfil, rid, body.book_id)
+        with activity.writing(cfg) as con:
+            title = con.execute("SELECT title FROM requests WHERE id = ?", (rid,)).fetchone()[0]
+            activity.record(con, "requests.fulfilled", f"fulfilled the request for {title}", user_id=me.id,
+                            user_name=me.username, book_id=body.book_id)
         return {"ok": True}
 
     @app.post("/api/requests/{rid}/decline")
@@ -687,7 +750,11 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
 
     @app.post("/api/books/{book_id}/discussion")
     def post_message(book_id: int, body: MessageIn, user: User = Depends(current_user)):
-        return _talk_call(discussion.post, user, book_id, body.body, body.parent_id)
+        posted = _talk_call(discussion.post, user, book_id, body.body, body.parent_id)
+        # That they commented, never what they said.
+        activity.note(cfg, "discussion.comment", "commented on", user_id=user.id, user_name=user.username,
+                      book_id=book_id)
+        return posted
 
     @app.patch("/api/messages/{mid}")
     def edit_message(mid: int, body: MessageIn, user: User = Depends(current_user)):
@@ -742,9 +809,9 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         return {**autofill.overview(cfg), "running": scanner.filler.running}
 
     @app.post("/api/autofill/{book_id}/undo")
-    def undo_autofill(book_id: int, _: User = Depends(admin_user)):
+    def undo_autofill(book_id: int, me: User = Depends(admin_user)):
         try:
-            autofill.undo(cfg, book_id)
+            autofill.undo(cfg, book_id, by=me)
         except LookupError:
             raise HTTPException(404, "Nothing to undo for that book")
         return {"ok": True}
@@ -784,12 +851,15 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
 
     @app.post("/api/books/{book_id}/merge")
     def merge(book_id: int, body: MergeIn, user: User = Depends(admin_user)):
+        other = library.get_book(cfg, body.other, user)
         try:
             library.merge_books(cfg, book_id, body.other)
         except LookupError:
             raise HTTPException(404, "No such book")
         except ValueError as e:
             raise HTTPException(400, str(e))
+        activity.note(cfg, "books.edited", "merged in another copy", user_id=user.id, user_name=user.username,
+                      book_id=book_id, details={"other": other["title"] if other else ""})
         return _edited(book_id, user)
 
     @app.get("/api/search")

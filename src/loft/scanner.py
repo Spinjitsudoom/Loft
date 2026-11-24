@@ -28,6 +28,7 @@ from .pages import prune_page_cache
 log = logging.getLogger(__name__)
 
 ARTICLES = ("the ", "a ", "an ")
+LOGGED_EACH = 50   # books added (and removed) named one by one in the activity log per scan
 
 
 @dataclass(frozen=True)
@@ -220,6 +221,8 @@ class _RootReport:
     unreachable: bool = False
     unreadable: list[str] = field(default_factory=list)
     calibre_missing: list[str] = field(default_factory=list)
+    added_books: list[tuple[int, str]] = field(default_factory=list)     # (id, title), for the activity log
+    removed_books: list[tuple[int, str]] = field(default_factory=list)
 
 
 def _scan_root(cfg: Config, con: sqlite3.Connection, root: Path, allow_txt: bool = False) -> _RootReport:
@@ -250,6 +253,7 @@ def _scan_root(cfg: Config, con: sqlite3.Connection, root: Path, allow_txt: bool
     calibre_missing = sorted(str(p) for p in calibre if p not in found and not _protected(p, unreadable))
 
     added = updated = 0
+    added_books: list[tuple[int, str]] = []
     done: set[int] = set()  # Calibre books already written this scan (several formats, one book)
     con.commit()
     for path, f in sorted(found.items()):
@@ -272,6 +276,11 @@ def _scan_root(cfg: Config, con: sqlite3.Connection, root: Path, allow_txt: bool
             continue
         if outcome == "added":
             added += 1
+            if len(added_books) < LOGGED_EACH:
+                new = con.execute("SELECT b.id, b.title FROM book_files f JOIN books b ON b.id = f.book_id "
+                                  "WHERE f.path = ?", (str(path),)).fetchone()
+                if new:
+                    added_books.append((new["id"], new["title"]))
         else:
             updated += 1
     if calibre_ok:
@@ -279,16 +288,19 @@ def _scan_root(cfg: Config, con: sqlite3.Connection, root: Path, allow_txt: bool
                     (meta_key, cal_mtime))
 
     removed = 0
+    removed_books: list[tuple[int, str]] = []
     gone = [k for p, k in known.items() if p not in found and not _protected(p, unreadable)]
     for k in gone:
         con.execute("DELETE FROM book_files WHERE id = ?", (k["id"],))
     # Any book left without a file (gone, or whose file moved to another book) goes too.
-    for r in con.execute("SELECT id FROM books b WHERE NOT EXISTS "
+    for r in con.execute("SELECT id, title FROM books b WHERE NOT EXISTS "
                          "(SELECT 1 FROM book_files f WHERE f.book_id = b.id)").fetchall():
         _delete_book(cfg, con, r["id"])
         removed += 1
+        if len(removed_books) < LOGGED_EACH:
+            removed_books.append((r["id"], r["title"]))
     return _RootReport(added, updated, removed, unreadable=sorted(str(p) for p in unreadable),
-                       calibre_missing=calibre_missing)
+                       calibre_missing=calibre_missing, added_books=added_books, removed_books=removed_books)
 
 
 _scan_lock = threading.Lock()  # one scan at a time; library changes that touch book files wait for it
@@ -310,6 +322,8 @@ REPORT_KEY = "last_scan"
 def scan(cfg: Config) -> ScanResult:
     report = {"at": 0.0, "added": 0, "updated": 0, "removed": 0, "unreachable": [], "unreadable": [],
               "calibre_missing": []}
+    added_books: list[tuple[int, str]] = []
+    removed_books: list[tuple[int, str]] = []
     with _scan_lock:
         txt = libsettings.allow_txt(cfg)
         roots = libsettings.books_dirs(cfg)
@@ -327,13 +341,35 @@ def scan(cfg: Config) -> ScanResult:
                 report["unreachable"].append(str(root))
             report["unreadable"] += r.unreadable
             report["calibre_missing"] += r.calibre_missing
+            added_books += r.added_books
+            removed_books += r.removed_books
         report["at"] = time.time()
         with session(cfg.db_path) as con:
             con.execute("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                         (REPORT_KEY, json.dumps(report)))
+            _log_scan(con, report, added_books, removed_books)
     result = ScanResult(report["added"], report["updated"], report["removed"])
     log.info("Scan finished: %s added, %s updated, %s removed", result.added, result.updated, result.removed)
     return result
+
+
+def _log_scan(con: sqlite3.Connection, report: dict, added: list[tuple[int, str]],
+              removed: list[tuple[int, str]]) -> None:
+    """The activity log: each book added or removed, up to LOGGED_EACH of each (a first scan can add
+    thousands), then how many more; and the scan itself, when it changed anything."""
+    from .activity import record
+
+    for books, count, kind, text, more in ((added, report["added"], "books.added", "added (scan)", "added"),
+                                           (removed, report["removed"], "books.removed",
+                                            "removed (gone from the folder)", "removed")):
+        for book_id, title in books[:LOGGED_EACH]:
+            record(con, kind, text, book_id=book_id, book_title=title)
+        rest = count - min(len(books), LOGGED_EACH)
+        if rest > 0:
+            record(con, kind, f"{more} {rest} more {'book' if rest == 1 else 'books'}")
+    if report["added"] or report["updated"] or report["removed"]:
+        record(con, "loft.scan", "scanned the library",
+               details={k: report[k] for k in ("added", "updated", "removed")})
 
 
 def last_report(cfg: Config) -> dict | None:

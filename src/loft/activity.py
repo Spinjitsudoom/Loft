@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from contextlib import contextmanager
 
 from .config import Config
 from .db import session
@@ -43,6 +44,23 @@ def record(con, kind: str, text: str, *, user_id: int | None = None, user_name: 
         trim(con, now)
     except Exception:
         log.exception("Couldn’t write to the activity log (%s: %s)", kind, text)
+
+
+@contextmanager
+def writing(cfg: Config):
+    """A short session for writing entries, for callers without one of their own. Whatever goes
+    wrong inside it (looking up a name for the entry, say) goes to the server's log, never further."""
+    try:
+        with session(cfg.db_path) as con:
+            yield con
+    except Exception:
+        log.exception("Couldn’t write to the activity log")
+
+
+def note(cfg: Config, kind: str, text: str, **kw) -> None:
+    """record() in a short session of its own. Never raises."""
+    with writing(cfg) as con:
+        record(con, kind, text, **kw)
 
 
 def trim(con, now: float) -> int:

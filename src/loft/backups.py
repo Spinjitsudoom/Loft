@@ -398,9 +398,12 @@ def step(cfg: Config, now: float | None = None) -> Path | None:
     if not due(regular, now, every):
         return None
     try:
-        return make_now(cfg, now)
+        made = make_now(cfg, now)
     except (OSError, sqlite3.Error):
         return None
+    from .activity import note
+    note(cfg, "loft.backup", "made a backup (scheduled)", details={"name": made.name})
+    return made
 
 
 def status(cfg: Config) -> dict:
