@@ -3,13 +3,18 @@
 
 export const GILT = "#e2c27a", INK = "#1d150e", PAPER = "#f4ede2", BRONZE = "#4a3a22";
 const SHADE = 0.45;           // a label without a second colour: a deep shade of the spine
-const TRIM_CONTRAST = 3;      // gilt fainter than this on the spine gives way to bronze
 
 export const LINE_HEIGHT = 1.12;
 const SPACING = 0.05;         // letter-spacing, in ems
-const LABEL_PADDING = 12;     // the label's length less this is what the lettering may use
-const WIDTH_MARGIN = 5;       // the spine's width less this is what the lines may use
+const LABEL_PADDING = 13;     // the label's length less this is what the lettering may use (a pixel to spare)
+const WIDTH_MARGIN = 6;       // the spine's width less this is what the lines may use (a pixel to spare)
 const BIGGEST = 12, SMALLEST = 7, STEP = 0.5, MOST_LINES = 3;
+
+// Curly quotes as straight ones: in vertical lettering browsers stand curly quotes upright, a whole
+// em tall, which the fitting (measured on a line) can't foresee; straight ones lie with the text.
+export function plainQuotes(text) {
+  return String(text).replace(/[\u2018\u2019\u201a\u201b\u2032]/g, "'").replace(/[\u201c\u201d\u201e\u201f\u2033]/g, '"');
+}
 
 export function hash(text) {
   let h = 2166136261;
@@ -51,7 +56,7 @@ const clearest = (on, ...choices) => choices.reduce((best, c) => (contrast(on, c
 // With a palette from the cover, the label takes the cover's second colour; without one, a deep shade
 // of the cover's colour (or of a colour made from the title, for a book with no cover).
 export function spineColours(b) {
-  const trimOn = (c) => (contrast(c, GILT) < TRIM_CONTRAST ? BRONZE : GILT);
+  const trimOn = (c) => clearest(c, GILT, BRONZE);
   if (b.spine && b.spine.length === 2) {
     const [c, label] = b.spine;
     return { c, label, letter: clearest(label, GILT, INK, PAPER), trim: trimOn(c) };

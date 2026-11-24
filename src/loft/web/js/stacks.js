@@ -5,7 +5,7 @@ import { api, authorLine, esc, seriesLine } from "./api.js";
 import { coverHTML } from "./cover.js";
 import { spineTitle } from "./titles.js";
 import { STATUS_LABELS as STATUS } from "./statusmenu.js";
-import { LINE_HEIGHT, fitTitle, hash, spineColours } from "./spines.js";
+import { LINE_HEIGHT, fitTitle, hash, plainQuotes, spineColours } from "./spines.js";
 
 const KEPT = "loft-stacks";
 const BY = [["series", "Series"], ["section", "Sections"], ["author", "Authors"]];
@@ -38,7 +38,7 @@ function spineHTML(b, inSeries = false) {
     <span class="spine-rib spine-rib-top"></span><span class="spine-rib spine-rib-foot"></span>
     <span class="spine-orn" aria-hidden="true">✦</span>
     <span class="spine-label"></span>
-    <span class="spine-title">${esc(spineTitle(b, inSeries))}</span>
+    <span class="spine-title">${esc(plainQuotes(spineTitle(b, inSeries)))}</span>
     ${b.series_index ? `<span class="spine-no">${esc(number(b.series_index))}</span>` : ""}
   </button>`;
 }

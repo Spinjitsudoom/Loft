@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BRONZE, GILT, INK, PAPER, contrast, fitTitle, spineColours } from "../../src/loft/web/js/spines.js";
+import { BRONZE, GILT, INK, PAPER, contrast, fitTitle, plainQuotes, spineColours } from "../../src/loft/web/js/spines.js";
 
 const measure = (text, size) => text.length * size * 0.6;   // a stand-in for the canvas
 
@@ -54,4 +54,24 @@ test("a book with no palette still gets a whole spine", () => {
   assert.match(bare.label, /^#[0-9a-f]{6}$/);
   assert.ok([GILT, INK].includes(bare.letter));
   assert.ok([GILT, BRONZE].includes(bare.trim));
+});
+
+test("curly quotes become straight ones: browsers stand curly ones upright, a whole em tall", () => {
+  assert.equal(plainQuotes("Assassin\u2019s Creed \u201cThe Chain\u201d \u2018x\u2019"), "Assassin's Creed \"The Chain\" 'x'");
+  assert.equal(plainQuotes("Plain's \"fine\""), "Plain's \"fine\"");
+});
+
+test("the series number takes whichever of gilt and bronze reads better on the spine", () => {
+  for (const c of ["#747474", "#6a6a6a", "#808080", "#efe6d2", "#2a1010"]) {
+    const { trim } = spineColours({ title: "x", spine: [c, "#101010"] });
+    const other = trim === GILT ? BRONZE : GILT;
+    assert.ok(contrast(c, trim) >= contrast(c, other), c);
+  }
+});
+
+test("a title just about fitting keeps a pixel to spare", () => {
+  const measure = (text, size) => text.length * size * 0.6;
+  // "ABCDEFGHIJ" at 12px: 10 * 12 * 0.6 + 10 * 12 * 0.05 = 78px of lettering.
+  assert.equal(fitTitle("ABCDEFGHIJ", 78 + 12, 30, measure).size < 12, true);
+  assert.equal(fitTitle("ABCDEFGHIJ", 78 + 13, 30, measure).size, 12);
 });

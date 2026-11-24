@@ -474,3 +474,13 @@ def test_backups_stay_out_of_lofts_own_folders(cfg):
         with pytest.raises(ValueError, match="Loft’s own"):
             libsettings.update_library(cfg, {"backup_dir": str(place)})
     assert libsettings.update_library(cfg, {"backup_dir": str(cfg.data_dir / "backups")})["backup_dir"]
+
+
+def test_a_restored_library_gets_its_spine_colours_straight_away(client, monkeypatch):
+    # A backup from before 0.2.0 has no spine colours; the fill-in otherwise only runs when Loft starts.
+    from loft import covers
+    started = []
+    monkeypatch.setattr(covers.SpineFiller, "start", lambda self: started.append(self.cfg))
+    name = client.post("/api/backups").json()["name"]
+    assert client.post(f"/api/backups/{name}/restore").status_code == 200
+    assert len(started) == 1

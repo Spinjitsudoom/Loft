@@ -86,7 +86,7 @@ def test_spine_colours_reads_the_stored_cover(cfg):
     assert spine_colours(cfg, 7) is None
     store_cover(cfg, 7, jpg((160, 20, 20), (600, 900)))
     assert _near(spine_colours(cfg, 7).split()[0], (160, 20, 20))
-    (cfg.cover_dir / "7-480.jpg").write_bytes(b"junk")
+    (cfg.cover_dir / "7-240.jpg").write_bytes(b"junk")
     assert spine_colours(cfg, 7) is None
 
 
@@ -102,6 +102,7 @@ def test_fill_spines_fills_books_missing_a_palette(cfg, add):
     with session(cfg.db_path) as con:
         con.execute("UPDATE books SET has_cover = 1 WHERE id IN (?, ?, ?)", (a, b, c))   # c: cover file missing
         con.execute("UPDATE books SET spine_colors = '#010101 #020202' WHERE id = ?", (b,))
+        con.execute("INSERT INTO meta(key, value) VALUES ('spine_recipe', ?)", (covers.SPINE_RECIPE,))   # made this way
     assert fill_spines(cfg, batch=1) == 1
     spines = {r["id"]: r["spine_colors"] for r in rows(cfg)}
     assert re.fullmatch(r"#[0-9a-f]{6} #[0-9a-f]{6}", spines[a])
@@ -136,3 +137,30 @@ def test_spine_filler_runs_in_the_background(cfg, add):
     filler._thread.join(10)
     assert filler._thread.name == "loft-spines" and filler._thread.daemon
     assert rows(cfg)[0]["spine_colors"]
+
+
+def test_spine_colours_come_from_the_240_copy_shrunk_to_fit_72(cfg, monkeypatch):
+    # The prototype the user approved: Loft's 240px copy, shrunk to fit 72×72 (Pillow's thumbnail).
+    store_cover(cfg, 8, jpg((160, 20, 20), (600, 900)))
+    (cfg.cover_dir / "8-480.jpg").unlink()
+    assert spine_colours(cfg, 8) is not None
+    sizes = []
+    real = Image.Image.quantize
+    monkeypatch.setattr(Image.Image, "quantize", lambda self, *a, **k: sizes.append(self.size) or real(self, *a, **k))
+    spine_colours(cfg, 8)
+    assert sizes == [(48, 72)]
+
+
+def test_palettes_from_before_are_worked_out_again_once(cfg, add):
+    from loft.covers import fill_spines
+    from loft.db import session
+    bid = add("Brotherhood")
+    store_cover(cfg, bid, jpg((160, 20, 20), (600, 900)))
+    with session(cfg.db_path) as con:
+        con.execute("UPDATE books SET has_cover = 1, spine_colors = '#000000 #111111' WHERE id = ?", (bid,))
+        con.execute("DELETE FROM meta WHERE key = 'spine_recipe'")
+    assert fill_spines(cfg) == 1                      # the old recipe's colours were thrown away
+    with session(cfg.db_path) as con:
+        assert con.execute("SELECT spine_colors FROM books WHERE id = ?", (bid,)).fetchone()[0] != "#000000 #111111"
+        con.execute("UPDATE books SET spine_colors = '#000000 #111111' WHERE id = ?", (bid,))
+    assert fill_spines(cfg) == 0                      # only once

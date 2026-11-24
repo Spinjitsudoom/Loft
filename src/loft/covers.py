@@ -100,7 +100,9 @@ def store_cover(cfg: Config, book_id: int, image: bytes) -> str:
     return "#" + "".join(f"{round(c * 255):02x}" for c in (r, g, b))
 
 
-SPINE_THUMB_WIDTH = 72
+SPINE_THUMB = 72              # the cover is shrunk to fit 72×72 before its colours are counted
+SPINE_SOURCE = 240            # from Loft's 240px copy (the recipe of the approved mockup)
+SPINE_RECIPE = "2"            # when the recipe changes, palettes made the old way are made again, once
 SPINE_COLOURS = 8
 ACCENT_DISTANCE = 70  # an accent this far from the base (in RGB) reads as a second colour
 SHADE = 0.45  # a one-colour cover's label: a deep shade of its spine
@@ -117,8 +119,8 @@ def spine_palette(img: Image.Image) -> str:
         rgba = img.convert("RGBA")
         img = Image.alpha_composite(Image.new("RGBA", rgba.size, (0, 0, 0, 255)), rgba)
     img = img.convert("RGB")
-    h = max(1, round(img.height * SPINE_THUMB_WIDTH / img.width))
-    small = img.resize((SPINE_THUMB_WIDTH, h), Image.Resampling.BOX)
+    small = img.copy()
+    small.thumbnail((SPINE_THUMB, SPINE_THUMB))
     quant = small.quantize(SPINE_COLOURS, method=Image.Quantize.MEDIANCUT)
     palette = quant.getpalette() or []
     total = small.width * small.height
@@ -138,7 +140,7 @@ def spine_palette(img: Image.Image) -> str:
 def spine_colours(cfg: Config, book_id: int) -> str | None:
     """The spine palette of Loft's stored copy of the book's cover; None if there isn't a readable one."""
     try:
-        with Image.open(cfg.cover_dir / f"{book_id}-480.jpg") as img:
+        with Image.open(cfg.cover_dir / f"{book_id}-{SPINE_SOURCE}.jpg") as img:
             img.load()
             return spine_palette(img)
     except (OSError, ValueError):
@@ -149,6 +151,11 @@ def fill_spines(cfg: Config, batch: int = 50) -> int:
     """Give every book with a cover but no spine palette yet its palette, from Loft's stored copy of the
     cover (never the book). A book whose copy is missing or unreadable is skipped. Returns how many it filled."""
     with session(cfg.db_path) as con:
+        recipe = con.execute("SELECT value FROM meta WHERE key = 'spine_recipe'").fetchone()
+        if not recipe or recipe[0] != SPINE_RECIPE:   # made the old way: made again
+            con.execute("UPDATE books SET spine_colors = NULL")
+            con.execute("INSERT INTO meta(key, value) VALUES ('spine_recipe', ?) "
+                        "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (SPINE_RECIPE,))
         ids = [r[0] for r in con.execute("SELECT id FROM books WHERE has_cover = 1 AND spine_colors IS NULL ORDER BY id")]
     filled = 0
     for start in range(0, len(ids), batch):

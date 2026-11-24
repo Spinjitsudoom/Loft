@@ -458,6 +458,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             safety = backups.restore(cfg, name)
         except backups.BackupError as e:
             raise HTTPException(400, str(e))
+        covers.SpineFiller(cfg).start()   # a library backed up before 0.2.0 has no spine colours yet
         # Written into the library as restored. The admin is named as they were; linked only when the
         # restored library still has them under the same number.
         same = auth.get_user(cfg, me.id)
