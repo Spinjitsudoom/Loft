@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import time
 
+from . import loans
 from .config import Config
 from .db import session
 
@@ -116,6 +117,7 @@ def set_status(cfg: Config, user_id: int, book_id: int, status: str, at: float |
     at = time.time() if at is None else at
     with session(cfg.db_path) as con:
         _book(con, book_id)
+        loans.settle(con, user_id, time.time())
         want = _want_shelf(con, user_id)
         if status == "want":
             con.execute("DELETE FROM book_status WHERE user_id = ? AND book_id = ?", (user_id, book_id))
@@ -126,6 +128,7 @@ def set_status(cfg: Config, user_id: int, book_id: int, status: str, at: float |
                         "ON CONFLICT(user_id, book_id) DO UPDATE SET status = excluded.status, set_at = excluded.set_at",
                         (user_id, book_id, status, at))
             con.execute("DELETE FROM shelf_books WHERE shelf_id = ? AND book_id = ?", (want, book_id))
+        loans.marked(con, user_id, book_id, status, at)
         return _answer(con, user_id, book_id)
 
 
@@ -135,10 +138,13 @@ def opened(cfg: Config, user_id: int, book_id: int) -> dict:
     book doesn't unfinish it; a peek at one not started doesn't start it)."""
     with session(cfg.db_path) as con:
         _book(con, book_id)
-        if status_for(con, user_id, book_id) in ("incomplete", "abandoned"):
+        now = time.time()
+        loans.settle(con, user_id, now)
+        if status_for(con, user_id, book_id, now) in ("incomplete", "abandoned"):
             con.execute("INSERT INTO book_status(user_id, book_id, status, set_at) VALUES (?, ?, 'reading', ?) "
                         "ON CONFLICT(user_id, book_id) DO UPDATE SET status = excluded.status, set_at = excluded.set_at",
-                        (user_id, book_id, time.time()))
+                        (user_id, book_id, now))
+            loans.out(con, user_id, book_id, now)
         return _answer(con, user_id, book_id)
 
 

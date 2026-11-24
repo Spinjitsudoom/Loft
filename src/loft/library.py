@@ -13,7 +13,7 @@ from .pages import READABLE as PAGE_FORMATS, file_layout, is_arranged
 from .reading import get_progress, in_progress
 from .settings import DEFAULTS, get_settings
 from . import shelves as shelf_store
-from . import statuses
+from . import loans, ratings, statuses
 
 RECENT = 15
 SERIES_ROWS = 8
@@ -24,6 +24,10 @@ SORTS = {
     "title": "sort_title COLLATE NOCASE, id",
     "added": "added_at DESC, id DESC",
     "author": "author_sort COLLATE NOCASE, sort_title COLLATE NOCASE, id",
+    # Highest rated: by the average (books no one has rated last), then by how many rated.
+    "rating": "(SELECT AVG(stars) FROM ratings r WHERE r.book_id = books.id) IS NULL, "
+              "(SELECT AVG(stars) FROM ratings r WHERE r.book_id = books.id) DESC, "
+              "(SELECT COUNT(*) FROM ratings r WHERE r.book_id = books.id) DESC, sort_title COLLATE NOCASE, id",
 }
 SERIES_ORDER = "COALESCE(series_index, 1e9), sort_title COLLATE NOCASE"
 
@@ -177,6 +181,8 @@ def get_book(cfg: Config, book_id: int, user=None) -> dict | None:
         if row["series"]:
             series_books = [book_card(r) for r in con.execute(
                 f"SELECT * FROM books WHERE series = ? AND id != ? ORDER BY {SERIES_ORDER}", (row["series"], book_id))]
+        rating = ratings.summary(con, book_id, user.id if user else None)
+        loan = loans.loan_for(con, user.id if user else None, book_id)
     return {
         **book_card(row),
         "description": row["description"],
@@ -189,6 +195,8 @@ def get_book(cfg: Config, book_id: int, user=None) -> dict | None:
         "progress": get_progress(cfg, user.id, book_id) if user else None,
         "shelves": shelf_store.for_book(cfg, user.id, book_id) if user else [],
         "status": statuses.get_status(cfg, user.id, book_id)["status"] if user else "unread",
+        "rating": rating,
+        "loan": loan,
     }
 
 
