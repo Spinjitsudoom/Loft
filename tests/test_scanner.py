@@ -190,3 +190,14 @@ def test_scans_leave_locked_fields_alone(cfg, make_pdf):
     assert json.loads(b["authors"]) == ["File Author"]
     with session(cfg.db_path) as con:
         assert con.execute("SELECT COUNT(*) FROM books_fts WHERE books_fts MATCH 'admin'").fetchone()[0] == 1
+
+
+def test_scan_stores_the_spine_palette(cfg, make_calibre_db, make_cbz):
+    import re
+    root = library(cfg, make_calibre_db, make_cbz)
+    (root / "Broken Book.pdf").write_bytes(b"")      # no cover to be had
+    scan(cfg)
+    b = books(cfg)
+    assert re.fullmatch(r"#[0-9a-f]{6} #[0-9a-f]{6}", b["It"]["spine_colors"])
+    assert re.fullmatch(r"#[0-9a-f]{6} #[0-9a-f]{6}", b["Thing #1"]["spine_colors"])
+    assert b["Broken Book"]["spine_colors"] is None

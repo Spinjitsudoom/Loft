@@ -37,6 +37,7 @@ def book_card(row) -> dict:
         "series_index": row["series_index"],
         "has_cover": bool(row["has_cover"]),
         "color": row["cover_color"],
+        "spine": row["spine_colors"].split() if row["spine_colors"] else None,  # [base, accent] for the stacks
         "cover_v": int(row["updated_at"]),  # changes when the cover might have, so browsers fetch it again
     }
 

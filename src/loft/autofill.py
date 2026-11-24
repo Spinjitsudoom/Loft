@@ -327,7 +327,7 @@ def undo(cfg: Config, book_id: int) -> None:
                     freed.add("series_index")
         if "cover" in after and row["has_cover"] and row["cover_color"] == after["cover"]:
             remove_cover(cfg, book_id)
-            columns.update(has_cover=0, cover_color=None)
+            columns.update(has_cover=0, cover_color=None, spine_colors=None)
             freed.add("cover")
         columns.update(locked=json.dumps(sorted(locked_fields(con, book_id) - freed)), updated_at=time.time())
         con.execute(f"UPDATE books SET {', '.join(f'{k} = ?' for k in columns)} WHERE id = ?",

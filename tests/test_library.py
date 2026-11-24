@@ -38,7 +38,7 @@ def test_card_shape(cfg, add):
     card = library.home(cfg, None)["hero"]
     assert card.pop("cover_v") > 0
     assert card == {"id": bid, "title": "The Long Road", "authors": ["A. Marlow"], "series": "Road",
-                    "series_index": 2.0, "has_cover": False, "color": None}
+                    "series_index": 2.0, "has_cover": False, "color": None, "spine": None}
 
 
 def test_empty_library(cfg):
@@ -97,3 +97,13 @@ def test_search_sees_changes(cfg, add):
     assert titles(library.search(cfg, "atlas")) == []
     add("Night Atlas")
     assert titles(library.search(cfg, "atlas")) == ["Night Atlas"]
+
+
+def test_book_card_carries_the_spine(cfg, add):
+    bid = add("Painted")
+    plain = add("Plain")
+    with session(cfg.db_path) as con:
+        con.execute("UPDATE books SET spine_colors = '#aa0000 #ddbb44' WHERE id = ?", (bid,))
+        cards = {r["id"]: library.book_card(r) for r in con.execute("SELECT * FROM books")}
+    assert cards[bid]["spine"] == ["#aa0000", "#ddbb44"]
+    assert cards[plain]["spine"] is None

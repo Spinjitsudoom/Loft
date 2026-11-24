@@ -76,3 +76,26 @@ def test_old_library_gains_m4_columns_and_tables(tmp_path):
     tables = {r["name"] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert {"shelves", "shelf_books", "check_ignored", "file_checks"} <= tables
     con.close()
+
+
+def test_old_library_gains_spine_colors(tmp_path):
+    import sqlite3
+    db = tmp_path / "old.db"
+    con = sqlite3.connect(db)
+    con.executescript("""
+        CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT NOT NULL, sort_title TEXT NOT NULL,
+                            authors TEXT NOT NULL DEFAULT '[]', author_sort TEXT NOT NULL DEFAULT '',
+                            series TEXT NOT NULL DEFAULT '', series_index REAL, description TEXT NOT NULL DEFAULT '',
+                            publisher TEXT NOT NULL DEFAULT '', published TEXT NOT NULL DEFAULT '',
+                            language TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '[]', calibre_id INTEGER,
+                            cover_color TEXT, has_cover INTEGER NOT NULL DEFAULT 0, added_at REAL NOT NULL,
+                            updated_at REAL NOT NULL, locked TEXT NOT NULL DEFAULT '[]', title_from_name INTEGER);
+        INSERT INTO books(id, title, sort_title, cover_color, has_cover, added_at, updated_at)
+            VALUES (1, 'It', 'It', '#402020', 1, 1, 1);
+    """)
+    con.commit()
+    con.close()
+    con = connect(db)
+    assert "spine_colors" in {r["name"] for r in con.execute("PRAGMA table_info(books)")}
+    assert con.execute("SELECT spine_colors FROM books").fetchone()["spine_colors"] is None
+    con.close()

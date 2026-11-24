@@ -140,3 +140,17 @@ def test_edit_routes(client, cfg):
     assert client.patch(f"/api/books/{bid}", json={"title": "Mine"}).status_code == 403
     assert client.put(f"/api/books/{bid}/cover", content=jpg((1, 2, 3))).status_code == 403
     assert client.delete(f"/api/books/{bid}/cover").status_code == 403
+
+
+def test_set_cover_stores_the_spine_palette(cfg, add):
+    import re
+    bid = add("Book")
+    editing.set_cover(cfg, bid, jpg((200, 20, 20), (300, 450)))
+    assert re.fullmatch(r"#[0-9a-f]{6} #[0-9a-f]{6}", row(cfg, bid)["spine_colors"])
+
+
+def test_clear_cover_clears_the_spine_palette(cfg, add):
+    bid = add("Book")
+    editing.set_cover(cfg, bid, jpg((200, 20, 20), (300, 450)))
+    editing.clear_cover(cfg, bid)
+    assert row(cfg, bid)["spine_colors"] is None
