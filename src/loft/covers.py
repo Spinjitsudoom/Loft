@@ -7,6 +7,7 @@ import io
 import logging
 import posixpath
 import re
+import threading
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -15,6 +16,7 @@ from PIL import Image
 
 from . import comics
 from .config import Config
+from .db import session
 from .pdfium import open_pdf
 
 log = logging.getLogger(__name__)
@@ -142,3 +144,41 @@ def spine_colours(cfg: Config, book_id: int) -> str | None:
             return spine_palette(img)
     except (OSError, ValueError):
         return None
+
+
+def fill_spines(cfg: Config, batch: int = 50) -> int:
+    """Give every book with a cover but no spine palette yet its palette, from Loft's stored copy of the
+    cover (never the book). A book whose copy is missing or unreadable is skipped. Returns how many it filled."""
+    with session(cfg.db_path) as con:
+        ids = [r[0] for r in con.execute("SELECT id FROM books WHERE has_cover = 1 AND spine_colors IS NULL ORDER BY id")]
+    filled = 0
+    for start in range(0, len(ids), batch):
+        found = [(spine, bid) for bid in ids[start:start + batch] if (spine := spine_colours(cfg, bid))]
+        if not found:
+            continue
+        with session(cfg.db_path) as con:   # one short write per batch; a cover cleared or set meanwhile wins
+            for spine, bid in found:
+                filled += con.execute("UPDATE books SET spine_colors = ? WHERE id = ? AND has_cover = 1 "
+                                      "AND spine_colors IS NULL", (spine, bid)).rowcount
+    if filled:
+        log.info("Gave %d books their spine colours", filled)
+    return filled
+
+
+class SpineFiller:
+    """Once, at start: fills in the spine palettes of books stored before Loft kept them."""
+
+    def __init__(self, cfg: Config) -> None:
+        self.cfg = cfg
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self._thread is None:
+            self._thread = threading.Thread(target=self._run, name="loft-spines", daemon=True)
+            self._thread.start()
+
+    def _run(self) -> None:
+        try:
+            fill_spines(self.cfg)
+        except Exception:   # the spines keep their plain look until the next start
+            log.exception("Filling in the spine colours failed")

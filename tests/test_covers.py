@@ -5,7 +5,9 @@ import re
 import pytest
 from PIL import Image
 
-from loft.covers import cover_path, extract_cover, spine_colours, spine_palette, store_cover
+from loft import covers
+from loft.covers import cover_path, extract_cover, fill_spines, spine_colours, spine_palette, store_cover
+from loft.db import session
 from conftest import jpg
 
 
@@ -86,3 +88,51 @@ def test_spine_colours_reads_the_stored_cover(cfg):
     assert _near(spine_colours(cfg, 7).split()[0], (160, 20, 20))
     (cfg.cover_dir / "7-480.jpg").write_bytes(b"junk")
     assert spine_colours(cfg, 7) is None
+
+
+def rows(cfg):
+    with session(cfg.db_path) as con:
+        return [dict(r) for r in con.execute("SELECT id, spine_colors FROM books ORDER BY id")]
+
+
+def test_fill_spines_fills_books_missing_a_palette(cfg, add):
+    a, b, c = add("A"), add("B"), add("C")
+    for bid in (a, b):
+        store_cover(cfg, bid, jpg((160, 20, 20), (600, 900)))
+    with session(cfg.db_path) as con:
+        con.execute("UPDATE books SET has_cover = 1 WHERE id IN (?, ?, ?)", (a, b, c))   # c: cover file missing
+        con.execute("UPDATE books SET spine_colors = '#010101 #020202' WHERE id = ?", (b,))
+    assert fill_spines(cfg, batch=1) == 1
+    spines = {r["id"]: r["spine_colors"] for r in rows(cfg)}
+    assert re.fullmatch(r"#[0-9a-f]{6} #[0-9a-f]{6}", spines[a])
+    assert spines[b] == "#010101 #020202"     # already filled: left alone
+    assert spines[c] is None                  # no cover file: skipped, no error
+    assert fill_spines(cfg) == 0              # nothing left; c isn't retried forever in one run
+
+
+def test_fill_spines_skips_a_cover_cleared_meanwhile(cfg, add, monkeypatch):
+    a = add("A")
+    store_cover(cfg, a, jpg((160, 20, 20), (600, 900)))
+    with session(cfg.db_path) as con:
+        con.execute("UPDATE books SET has_cover = 1 WHERE id = ?", (a,))
+    real = covers.spine_colours
+
+    def clear_then_read(cfg_, bid):
+        with session(cfg.db_path) as con:
+            con.execute("UPDATE books SET has_cover = 0, cover_color = NULL WHERE id = ?", (bid,))
+        return real(cfg_, bid)
+    monkeypatch.setattr(covers, "spine_colours", clear_then_read)
+    fill_spines(cfg)
+    assert rows(cfg)[0]["spine_colors"] is None
+
+
+def test_spine_filler_runs_in_the_background(cfg, add):
+    a = add("A")
+    store_cover(cfg, a, jpg((160, 20, 20), (600, 900)))
+    with session(cfg.db_path) as con:
+        con.execute("UPDATE books SET has_cover = 1 WHERE id = ?", (a,))
+    filler = covers.SpineFiller(cfg)
+    filler.start()
+    filler._thread.join(10)
+    assert filler._thread.name == "loft-spines" and filler._thread.daemon
+    assert rows(cfg)[0]["spine_colors"]
