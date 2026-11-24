@@ -232,7 +232,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         if user is None:
             if not locked:
                 activity.note(cfg, "sign_in.failed", "couldn’t sign in",
-                              user_name=" ".join((body.username or "").split())[:100], details={"ip": ip})
+                              user_name=" ".join((body.username or "").split())[:100] or "(no name)", details={"ip": ip})
             raise HTTPException(401, "That name and password don’t match (or there were too many tries; wait 15 minutes)")
         activity.note(cfg, "sign_in.ok", "signed in", user_id=user.id, user_name=user.username)
         return _signed_in(cfg, request, response, user)

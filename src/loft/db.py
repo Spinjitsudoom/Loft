@@ -234,7 +234,13 @@ CREATE TABLE IF NOT EXISTS activity (
     text       TEXT NOT NULL,
     details    TEXT
 );
-CREATE INDEX IF NOT EXISTS activity_at ON activity(at);
+CREATE INDEX IF NOT EXISTS activity_at ON activity(at, id);
+-- A removed person or book lets go of their entries (the names stay), so ids used again later never
+-- inherit them.
+CREATE TRIGGER IF NOT EXISTS activity_forget_user AFTER DELETE ON users
+    BEGIN UPDATE activity SET user_id = NULL WHERE user_id = OLD.id; END;
+CREATE TRIGGER IF NOT EXISTS activity_forget_book AFTER DELETE ON books
+    BEGIN UPDATE activity SET book_id = NULL WHERE book_id = OLD.id; END;
 CREATE INDEX IF NOT EXISTS activity_user ON activity(user_id, id);
 
 -- 0.2.0: ratings (ratings.py), one per person per book.

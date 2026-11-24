@@ -36,8 +36,8 @@ def test_names_outlive_what_they_name(cfg, add):
     with session(cfg.db_path) as con:
         con.execute("DELETE FROM books WHERE id = ?", (bid,))
     e = entries(cfg)[0]
-    assert e["user"] == {"id": sam.id, "name": "sam", "exists": False}
-    assert e["book"] == {"id": bid, "title": "Tide Line", "exists": False}
+    assert e["user"] == {"id": None, "name": "sam", "exists": False}      # let go: the id may be used again
+    assert e["book"] == {"id": None, "title": "Tide Line", "exists": False}
 
 
 def test_loft_itself_and_entries_without_a_book(cfg):
@@ -70,7 +70,7 @@ def test_a_year_is_kept(cfg):
         assert activity.trim(con, now) == 1
         activity.record(con, "loft.scan", "older still", at=now - 500 * DAY)
         assert activity.trim(con, now) == 0          # once a day
-    assert [e["text"] for e in entries(cfg)] == ["older still", "recent"]
+    assert [e["text"] for e in entries(cfg)] == ["recent", "older still"]   # in time order
 
 
 def test_a_failed_write_never_stops_the_action(cfg, caplog):
@@ -323,3 +323,62 @@ def test_setting_up_the_first_admin_is_logged(app_lib):
     assert app_lib.post("/api/setup", json={"username": "admin", "password": "longpassword"}).status_code == 200
     e = app_lib.get("/api/activity?group=people").json()["entries"]
     assert [(x["kind"], x["user"]["name"], x["text"]) for x in e] == [("people.added", "admin", "set up Loft")]
+
+
+def test_entries_are_in_time_order_even_when_written_later(cfg):
+    now = time.time()
+    with session(cfg.db_path) as con:
+        activity.record(con, "sign_in.ok", "signed in", at=now)
+        activity.record(con, "loans.returned", "returned", at=now - 10 * DAY)    # a return worked out later
+        activity.record(con, "sign_in.ok", "signed in again", at=now - 5)
+    assert [e["text"] for e in entries(cfg)] == ["signed in", "signed in again", "returned"]
+    first = activity.listing(cfg, limit=2)
+    assert [e["text"] for e in activity.listing(cfg, before=first["entries"][-1]["id"])["entries"]] == ["returned"]
+
+
+def test_a_new_person_never_inherits_a_removed_ones_entries(cfg, add):
+    from loft import auth
+    gone = auth.create_user(cfg, "test", "longpassword")
+    book = add("Old Book")
+    with session(cfg.db_path) as con:
+        activity.record(con, "sign_in.ok", "signed in", user_id=gone.id, book_id=book)
+    auth.delete_user(cfg, gone.id)
+    with session(cfg.db_path) as con:
+        con.execute("DELETE FROM books WHERE id = ?", (book,))
+    new = auth.create_user(cfg, "cassidy", "longpassword")
+    fresh = add("New Book")
+    assert entries(cfg, user_id=new.id) == []
+    e = entries(cfg)[0]
+    assert e["user"]["name"] == "test" and not e["user"]["exists"] and e["user"]["id"] != new.id
+    assert e["book"]["title"] == "Old Book" and not e["book"]["exists"] and e["book"]["id"] != fresh
+
+
+def test_writing_never_raises_even_when_the_database_cant_be_opened(cfg, caplog, tmp_path):
+    (tmp_path / "not-a-folder").write_text("a file where Loft's data folder should be")
+    cfg.data_dir = tmp_path / "not-a-folder"
+    activity.note(cfg, "loft.scan", "scanned")
+    with activity.writing(cfg) as con:
+        con.execute("SELECT 1")                           # con is None: the error stays in here
+    assert "activity log" in caplog.text
+
+
+def test_a_failed_sign_in_with_no_name_isnt_shown_as_loft(client):
+    client.post("/api/login", json={"username": "", "password": "wrongwrongwrong"})
+    client.post("/api/login", json={"username": "admin", "password": "longpassword"})
+    e = client.get("/api/activity?group=sign_in").json()["entries"]
+    failed = [x for x in e if x["kind"] == "sign_in.failed"][0]
+    assert failed["user"]["name"] == "(no name)"
+
+
+def test_taking_a_folder_out_logs_its_books(cfg, tmp_path, make_pdf):
+    from loft import libsettings
+    from loft.scanner import scan
+    extra = tmp_path / "extra"
+    make_pdf(extra / "One.pdf", title="One")
+    make_pdf(extra / "Two.pdf", title="Two")
+    libsettings.update_library(cfg, {"books_dirs": [str(cfg.books_dirs[0]), str(extra)]})
+    scan(cfg)
+    libsettings.update_library(cfg, {"books_dirs": [str(cfg.books_dirs[0])]})
+    gone = [e for e in entries(cfg, group="books") if e["text"] == "removed"]
+    assert sorted(e["book"]["title"] for e in gone) == ["One", "Two"]
+    assert all(e["details"]["after"] == "(its folder was taken out of the library)" for e in gone)

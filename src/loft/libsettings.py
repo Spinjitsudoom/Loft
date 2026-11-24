@@ -295,11 +295,20 @@ def update_library(cfg: Config, patch: dict) -> dict:
 
 def _forget_folders(cfg: Config, roots: list[str]) -> None:
     """The admin took these folders out of the library: their books go (the files are untouched)."""
+    from . import activity, scanner
     from .scanner import _delete_book
 
     with session(cfg.db_path) as con:
         for root in roots:
             con.execute("DELETE FROM book_files WHERE root = ?", (root,))
-        for r in con.execute("SELECT id FROM books b WHERE NOT EXISTS "
-                             "(SELECT 1 FROM book_files f WHERE f.book_id = b.id)").fetchall():
+        gone = con.execute("SELECT id, title FROM books b WHERE NOT EXISTS "
+                           "(SELECT 1 FROM book_files f WHERE f.book_id = b.id)").fetchall()
+        for i, r in enumerate(gone):
+            if i < scanner.LOGGED_EACH:
+                activity.record(con, "books.removed", "removed", book_id=r["id"], book_title=r["title"],
+                                details={"after": "(its folder was taken out of the library)"})
             _delete_book(cfg, con, r["id"])
+        if len(gone) > scanner.LOGGED_EACH:
+            rest = len(gone) - scanner.LOGGED_EACH
+            activity.record(con, "books.removed", f"removed {rest} more {'book' if rest == 1 else 'books'}",
+                            details={"after": "(their folder was taken out of the library)"})

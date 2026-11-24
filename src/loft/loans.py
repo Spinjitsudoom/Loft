@@ -48,9 +48,11 @@ def back(con, user_id: int, book_id: int, how: str, at: float) -> bool:
 def reading(con, user_id: int, book_id: int, at: float, finished: bool) -> None:
     """The reader saved a place (and it was kept). The last page returns the book; any other page checks
     it out, when that reading is what decides the status (not a later status set by hand)."""
+    decided = statuses.status_for(con, user_id, book_id, now=at)
     if finished:
-        back(con, user_id, book_id, "finished", at)
-    elif statuses.status_for(con, user_id, book_id, now=at) == "reading":
+        if decided == "finished":   # a later status set elsewhere (opened again, say) keeps the newer loan
+            back(con, user_id, book_id, "finished", at)
+    elif decided == "reading":
         out(con, user_id, book_id, at)
 
 

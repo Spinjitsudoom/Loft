@@ -133,6 +133,13 @@ function wireRatingAndLoan(main, b) {
   }
   const line = main.querySelector("[data-loan-line]");
   if (line) {
+    // A status set in the Status or Shelves menu can check the book out or return it.
+    main.addEventListener("loft:shelves", async () => {
+      try {
+        const fresh = await api(`/books/${b.id}`);
+        if (fresh.loan && document.body.contains(line)) { b.loan = fresh.loan; line.innerHTML = loanHTML(b.loan); }
+      } catch { /* the line stays as it was */ }
+    });
     line.addEventListener("click", async (e) => {
       const button = e.target.closest("[data-loan]");
       if (!button) return;

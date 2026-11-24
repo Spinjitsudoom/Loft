@@ -58,7 +58,7 @@ def save_progress(cfg: Config, user_id: int, book_id: int, *, file_id: int, page
     position = min(1.0, max(0.0, page / max(1, pages - 1)))
     finished = page >= pages - 1
     with session(cfg.db_path) as con:
-        loans.settle(con, user_id, now)   # a loan quiet for a month was abandoned before this reading
+        loans.settle(con, user_id, at)    # a loan quiet for a month before this reading was abandoned
         kept = con.execute(
             "INSERT INTO progress(user_id, book_id, file_id, page, pages, position, finished, updated_at, locator) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, book_id) DO UPDATE SET "

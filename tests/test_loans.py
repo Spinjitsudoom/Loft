@@ -277,3 +277,40 @@ def test_merging_two_copies_keeps_loans(cfg, add, ann, ben):
     assert [r["out_at"] for r in open_loans(cfg, ann, keep)] == [now]   # one loan, from the earlier copy
     assert len(open_loans(cfg, ben, keep)) == 1 and [r["how"] for r in rows(cfg, ben, keep)] == ["finished", None]
     assert rows(cfg, book=other) == []
+
+
+def test_want_to_read_from_the_shelves_menu_returns_the_book(cfg, add, ann):
+    from loft import shelves
+    book = add("Tide Line")
+    read(cfg, ann, book, 3)
+    with session(cfg.db_path) as con:
+        want = con.execute("SELECT id FROM shelves WHERE user_id = ? AND kind = 'want'", (ann.id,)).fetchone()
+        want = want[0] if want else None
+    if want is None:
+        statuses.set_status(cfg, ann.id, book, "reading")          # makes the Want shelf
+        with session(cfg.db_path) as con:
+            want = con.execute("SELECT id FROM shelves WHERE user_id = ? AND kind = 'want'", (ann.id,)).fetchone()[0]
+    shelves.add(cfg, ann.id, want, book)
+    assert open_loans(cfg, ann, book) == [] and rows(cfg, ann, book)[-1]["how"] == "returned"
+
+
+def test_a_late_finished_save_leaves_a_newer_loan_alone(cfg, add, ann):
+    now = time.time() - 3600
+    book = add("Tide Line")
+    read(cfg, ann, book, 3, at=now)                 # read on the desktop
+    read(cfg, ann, book, 9, at=now + 100)           # the phone, offline, reaches the last page...
+    with session(cfg.db_path) as con:               # (pretend it hasn't synced: back to the desktop's state)
+        con.execute("UPDATE progress SET page = 3, finished = 0, updated_at = ? WHERE user_id = ?", (now, ann.id))
+        con.execute("DELETE FROM loans")
+        loans.out(con, ann.id, book, now)
+    statuses.set_status(cfg, ann.id, book, "reading", at=now + 200)   # ...the desktop picks it up again
+    read(cfg, ann, book, 9, at=now + 100)           # ...then the phone's old save arrives
+    assert len(open_loans(cfg, ann, book)) == 1
+
+
+def test_offline_reading_counts_from_when_it_was_read(cfg, add, ann):
+    now = time.time()
+    book = add("Tide Line")
+    read(cfg, ann, book, 2, at=now - 32 * DAY)      # last read on the server 32 days ago
+    read(cfg, ann, book, 3, at=now - 3 * DAY)       # read offline 3 days ago, synced now: 29 days quiet
+    assert [r["how"] for r in rows(cfg, ann, book)] == [None]

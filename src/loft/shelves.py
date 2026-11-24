@@ -91,12 +91,17 @@ def delete(cfg: Config, user_id: int, shelf_id: int) -> None:
 
 
 def add(cfg: Config, user_id: int, shelf_id: int, book_id: int) -> None:
+    from . import loans
+
     with session(cfg.db_path) as con:
-        _shelf(con, user_id, shelf_id)
+        shelf = _shelf(con, user_id, shelf_id)
         if not con.execute("SELECT 1 FROM books WHERE id = ?", (book_id,)).fetchone():
             raise LookupError(book_id)
-        con.execute("INSERT OR IGNORE INTO shelf_books(shelf_id, book_id, added_at) VALUES (?, ?, ?)",
-                    (shelf_id, book_id, time.time()))
+        now = time.time()
+        added = con.execute("INSERT OR IGNORE INTO shelf_books(shelf_id, book_id, added_at) VALUES (?, ?, ?)",
+                            (shelf_id, book_id, now)).rowcount
+        if added and shelf["kind"] == "want":   # Want to read is a status too: a book you want isn't out
+            loans.marked(con, user_id, book_id, "want", now)
 
 
 def remove(cfg: Config, user_id: int, shelf_id: int, book_id: int) -> None:

@@ -14,7 +14,7 @@ import time
 from contextlib import contextmanager
 
 from .config import Config
-from .db import session
+from .db import connect, session
 
 log = logging.getLogger(__name__)
 
@@ -49,12 +49,24 @@ def record(con, kind: str, text: str, *, user_id: int | None = None, user_name: 
 @contextmanager
 def writing(cfg: Config):
     """A short session for writing entries, for callers without one of their own. Whatever goes
-    wrong inside it (looking up a name for the entry, say) goes to the server's log, never further."""
+    wrong (opening the database, looking up a name for the entry) goes to the server's log, never
+    further. When the database can't be opened, the block gets None, and what fails inside stays here."""
     try:
-        with session(cfg.db_path) as con:
-            yield con
+        con = connect(cfg.db_path)
+    except Exception:
+        log.exception("Couldn’t open the database to write to the activity log")
+        con = None
+    try:
+        yield con
+        if con is not None:
+            con.commit()
     except Exception:
         log.exception("Couldn’t write to the activity log")
+        if con is not None:
+            con.rollback()
+    finally:
+        if con is not None:
+            con.close()
 
 
 def note(cfg: Config, kind: str, text: str, **kw) -> None:
@@ -78,8 +90,8 @@ def listing(cfg: Config, *, before: int | None = None, user_id: int | None = Non
             limit: int = 50) -> dict:
     """A page of entries, newest first; `before` is the id of the last entry already shown."""
     where, args = [], []
-    if before is not None:
-        where.append("a.id < ?")
+    if before is not None:   # entries come in time order (some are dated earlier than they were written)
+        where.append("(a.at, a.id) < (SELECT at, id FROM activity WHERE id = ?)")
         args.append(before)
     if user_id is not None:
         where.append("a.user_id = ?")
@@ -89,7 +101,7 @@ def listing(cfg: Config, *, before: int | None = None, user_id: int | None = Non
         args.append(f"{group}.%")
     sql = ("SELECT a.*, u.id IS NOT NULL AS user_exists, b.id IS NOT NULL AS book_exists FROM activity a "
            "LEFT JOIN users u ON u.id = a.user_id LEFT JOIN books b ON b.id = a.book_id"
-           + (f" WHERE {' AND '.join(where)}" if where else "") + " ORDER BY a.id DESC LIMIT ?")
+           + (f" WHERE {' AND '.join(where)}" if where else "") + " ORDER BY a.at DESC, a.id DESC LIMIT ?")
     with session(cfg.db_path) as con:
         rows = con.execute(sql, (*args, limit + 1)).fetchall()
         people = [{"id": r["id"], "name": r["username"]}
@@ -104,6 +116,6 @@ def _entry(r) -> dict:
         "user": {"id": r["user_id"], "name": r["user_name"], "exists": bool(r["user_exists"])}
         if r["user_id"] is not None or r["user_name"] else None,
         "book": {"id": r["book_id"], "title": r["book_title"], "exists": bool(r["book_exists"])}
-        if r["book_id"] is not None else None,
+        if r["book_id"] is not None or r["book_title"] else None,
         "details": json.loads(r["details"]) if r["details"] else None,
     }

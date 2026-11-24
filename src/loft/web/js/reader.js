@@ -344,7 +344,8 @@ export class Reader {
 
   openJump() {
     const where = this.root.querySelector(".reader-where");
-    if (!where || !(this.count >= 1)) return;
+    // Not while zoomed in, nor while a flowing book is laid out again (its pages aren't on screen yet).
+    if (!where || !(this.count >= 1) || this.zoomView || (!this.flip && !this.scroller)) return;
     this.showControls(true);
     clearTimeout(this.hideTimer);
     const box = document.createElement("input");
@@ -459,6 +460,10 @@ export class Reader {
     this.on(this.stage, "wheel", (e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); this.zoom(); } }, { passive: false });
     this.on(window, "keydown", (e) => {
       if (e.target.closest && e.target.closest("input, textarea, select")) return;
+      if (e.target.closest && e.target.closest(".reader-rate")) {   // the stars use Space and arrows themselves
+        if (e.key === "Escape") { e.preventDefault(); e.target.closest(".reader-rate").remove(); }
+        return;
+      }
       if ((e.key === "g" || e.key === "G") && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); this.openJump(); return; }
       const [ahead, behind] = this.rtl ? ["ArrowLeft", "ArrowRight"] : ["ArrowRight", "ArrowLeft"];
       if ([ahead, "PageDown", " "].includes(e.key)) { e.preventDefault(); this.step(1); }
