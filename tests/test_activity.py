@@ -317,3 +317,9 @@ def test_reading_is_never_logged(client, cfg):
         assert r.status_code == 200, r.text
     new = [e for e in activity.listing(cfg, limit=500)["entries"] if e["id"] not in before]
     assert all(e["group"] == "loans" for e in new)
+
+
+def test_setting_up_the_first_admin_is_logged(app_lib):
+    assert app_lib.post("/api/setup", json={"username": "admin", "password": "longpassword"}).status_code == 200
+    e = app_lib.get("/api/activity?group=people").json()["entries"]
+    assert [(x["kind"], x["user"]["name"], x["text"]) for x in e] == [("people.added", "admin", "set up Loft")]

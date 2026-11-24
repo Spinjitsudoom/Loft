@@ -136,3 +136,14 @@ def test_two_ratings_at_once_leave_one_row(cfg, add, ann):
     for t in threads:
         t.join()
     assert errors == [] and count(cfg) == 1
+
+
+def test_merging_two_copies_keeps_ratings(cfg, add, ann, ben):
+    keep, other = add("Tide Line"), add("Tide Line (copy)")
+    ratings.rate(cfg, ann.id, keep, 2)
+    ratings.rate(cfg, ann.id, other, 5)                  # Ann rated the copy later: that one counts
+    ratings.rate(cfg, ben.id, other, 4)
+    library.merge_books(cfg, keep, other)
+    with session(cfg.db_path) as con:
+        assert ratings.summary(con, keep, ann.id) == {"mine": 5, "average": 4.5, "count": 2}
+    assert count(cfg) == 2

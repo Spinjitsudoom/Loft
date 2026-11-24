@@ -244,8 +244,9 @@ def search(cfg: Config, q: str, limit: int = 40) -> list[dict]:
 
 
 def merge_books(cfg: Config, into: int, other: int) -> None:
-    """Make one book of two: other's files, shelf places, bookmarks, reading progress and statuses move
-    to into (the newer progress or status wins when someone has both), and other goes. Every detail of into is locked,
+    """Make one book of two: other's files, shelf places, bookmarks, reading progress, statuses, ratings
+    and loans move to into (the newer progress, status or rating wins when someone has both; two open
+    loans become one, from the earlier), and other goes. Every detail of into is locked,
     so a Calibre change can't pull them apart again. The files themselves are untouched."""
     import time
 
@@ -274,6 +275,19 @@ def merge_books(cfg: Config, into: int, other: int) -> None:
                     "SELECT user_id, ?, status, set_at FROM book_status WHERE book_id = ? AND true "
                     "ON CONFLICT(user_id, book_id) DO UPDATE SET status = excluded.status, set_at = excluded.set_at "
                     "WHERE excluded.set_at > book_status.set_at", (into, other))
+        # Ratings: someone who rated both copies keeps the rating they gave last.
+        con.execute("INSERT INTO ratings(user_id, book_id, stars, rated_at) "
+                    "SELECT user_id, ?, stars, rated_at FROM ratings WHERE book_id = ? AND true "
+                    "ON CONFLICT(user_id, book_id) DO UPDATE SET stars = excluded.stars, rated_at = excluded.rated_at "
+                    "WHERE excluded.rated_at > ratings.rated_at", (into, other))
+        # Loans: someone with both copies out has one loan, from when the first went out.
+        for o in con.execute("SELECT * FROM loans WHERE book_id = ? AND returned_at IS NULL", (other,)).fetchall():
+            mine = con.execute("SELECT id, out_at FROM loans WHERE book_id = ? AND user_id = ? AND returned_at IS NULL",
+                               (into, o["user_id"])).fetchone()
+            if mine:
+                con.execute("UPDATE loans SET out_at = ? WHERE id = ?", (min(mine["out_at"], o["out_at"]), mine["id"]))
+                con.execute("DELETE FROM loans WHERE id = ?", (o["id"],))
+        con.execute("UPDATE loans SET book_id = ? WHERE book_id = ?", (into, other))
         _delete_book(cfg, con, other)
         con.execute("UPDATE books SET locked = ?, updated_at = ? WHERE id = ?",
                     (json.dumps(sorted([*FIELDS, "cover"])), time.time(), into))

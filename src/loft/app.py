@@ -221,6 +221,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             user = auth.create_user(cfg, body.username, body.password, admin=True)
         except ValueError as e:
             raise HTTPException(400, str(e))
+        activity.note(cfg, "people.added", "set up Loft", user_id=user.id, details={"person": user.username})
         return _signed_in(cfg, request, response, user)
 
     @app.post("/api/login")

@@ -263,3 +263,17 @@ def test_the_card_and_routes(client):
     client.post("/api/login", json={"username": "sam", "password": "longpassword"})
     assert client.get(f"/api/books/{one}").json()["loan"] == {"mine": None, "others": ["admin"]}
     assert client.get("/api/me/loans").json() == {"out": [], "returned": []}
+
+
+def test_merging_two_copies_keeps_loans(cfg, add, ann, ben):
+    now = time.time() - 3600
+    keep, other = add("Tide Line"), add("Tide Line (copy)")
+    read(cfg, ann, keep, 2, at=now + 100)                # Ann has both copies out
+    read(cfg, ann, other, 2, at=now)
+    read(cfg, ben, other, 3, at=now + 50)                # Ben has only the other copy out
+    read(cfg, ben, other, 9, at=now + 60)                # ... and finished it once
+    read(cfg, ben, other, 1, at=now + 70)                # ... then started again
+    library.merge_books(cfg, keep, other)
+    assert [r["out_at"] for r in open_loans(cfg, ann, keep)] == [now]   # one loan, from the earlier copy
+    assert len(open_loans(cfg, ben, keep)) == 1 and [r["how"] for r in rows(cfg, ben, keep)] == ["finished", None]
+    assert rows(cfg, book=other) == []
