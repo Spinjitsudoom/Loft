@@ -33,6 +33,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+from . import activity
 from .config import Config
 from .db import session
 
@@ -224,6 +225,7 @@ def check(cfg: Config, download: bool = True) -> dict:
             try:
                 _fetch(version, state["assets"])
                 _save(cfg, ready=version, downloading=False)
+                activity.note(cfg, "loft.update_ready", f"downloaded Loft {version}")
             except Exception as e:
                 log.warning("Downloading Loft %s failed: %s", version, e)
                 _save(cfg, downloading=False, error=f"Loft {version} couldn’t be downloaded; it will try again later.")
@@ -347,28 +349,34 @@ def _tell_admins(cfg: Config, version: str) -> None:
 
 # ---------- installing ----------
 
-def install(cfg: Config) -> str:
+def install(cfg: Config, by=None) -> str:
     """Swap the downloaded version in and start it. Returns the version; the restart happens a
-    moment later, so the answer reaches the admin first. Raises LookupError when nothing is ready."""
+    moment later, so the answer reaches the admin first. Raises LookupError when nothing is ready.
+    `by` is the admin who chose it: the activity log names them once the update is under way."""
     now = status(cfg)
     if not now["ready"]:
         raise LookupError("No new version is downloaded and ready")
     version = now["latest"]
-    threading.Timer(0.5, _restart_into, (version,)).start()
+
+    def installed() -> None:
+        activity.note(cfg, "loft.update_installed", f"restarted into Loft {version}",
+                      user_id=by.id if by else None, user_name=by.username if by else "")
+    threading.Timer(0.5, _restart_into, (version, installed)).start()
     return version
 
 
-def _restart_into(version: str) -> None:
+def _restart_into(version: str, installed=lambda: None) -> None:
+    """`installed` is called once nothing can stop the update any more, just before Loft gives way."""
     home, stage = install_dir(), staging_dir(version)
     previous = home.with_name(home.name + ".previous")
     argv = [str(home / PROGRAM), *sys.argv[1:]]
     env = {**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1"}
     log.warning("Restarting into Loft %s", version)
     if sys.platform == "win32" and by_setup():
-        _start_setup(version, env)
+        _start_setup(version, env, installed)
         return
     if sys.platform == "win32":
-        _restart_windows(home, stage, previous, argv, env)
+        _restart_windows(home, stage, previous, argv, env, installed)
         return
     try:
         shutil.rmtree(previous, ignore_errors=True)
@@ -384,11 +392,12 @@ def _restart_into(version: str) -> None:
         if not home.exists() and previous.exists():
             previous.rename(home)
         return
+    installed()
     _flush_logs()
     os.execve(argv[0], argv, env)
 
 
-def _start_setup(version: str, env: dict) -> None:
+def _start_setup(version: str, env: dict, installed=lambda: None) -> None:
     """Run the downloaded setup silently. It stops Loft (and the tray) itself, installs over it and
     starts the tray again, so Loft carries on until then; if the setup can't start, nothing stops."""
     setup = _staged(version)
@@ -400,6 +409,7 @@ def _start_setup(version: str, env: dict) -> None:
         try:
             subprocess.Popen(args, env=env, creationflags=flags, close_fds=True, cwd=str(setup.parent.parent))
             log.warning("Started the setup for Loft %s; it closes Loft and starts it again", version)
+            installed()
             return
         except PermissionError:
             continue
@@ -409,7 +419,8 @@ def _start_setup(version: str, env: dict) -> None:
     log.error("Couldn’t start the setup for Loft %s: Windows refused", version)
 
 
-def _restart_windows(home: Path, stage: Path, previous: Path, argv: list[str], env: dict) -> None:
+def _restart_windows(home: Path, stage: Path, previous: Path, argv: list[str], env: dict,
+                     installed=lambda: None) -> None:
     # A running program's folder can't be moved on Windows: a small script waits for Loft to
     # stop, swaps the folders and starts the new one in a window of its own.
     script = home.parent / f".{home.name}.update.cmd"
@@ -448,6 +459,7 @@ def _restart_windows(home: Path, stage: Path, previous: Path, argv: list[str], e
     else:
         log.error("Couldn’t start the update script for Loft: Windows refused")
         return
+    installed()
     _flush_logs()
     os._exit(UPDATING)
 
