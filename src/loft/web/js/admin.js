@@ -1,6 +1,7 @@
 // Library settings, for admins: the library itself, its folders and scanning, the people in it,
 // backups and updates.
 import { updatesPanelHTML, wireUpdates } from "./updates.js";
+import { activityLinkHTML } from "./activity.js";
 import { backupsPanelHTML, wireBackups } from "./backups.js";
 import { api, esc, icon } from "./api.js";
 import { state } from "./main.js";
@@ -56,6 +57,7 @@ export async function renderAdmin(main) {
   main.innerHTML = `<section class="page narrow">
     <header class="page-head"><h1>Library settings</h1></header>
 
+    ${activityLinkHTML()}
     <a class="check-link ${attention ? "" : "quiet"}" href="#/check">
       ${icon("check")}<span><strong>Library check</strong>
       <span class="muted">${attention ? `${attention} ${attention === 1 ? "thing needs" : "things need"} attention` : "Nothing needs attention"}</span></span>

@@ -33,7 +33,8 @@ export async function renderSettings(main) {
   const r = prefs.reading, l = prefs.look;
   main.innerHTML = `<section class="page narrow">
     <header class="page-head"><h1>Your settings</h1>
-      <p class="muted">Signed in as ${esc(state.me.username)}. These follow you to every device.</p></header>
+      <p class="muted">Signed in as ${esc(state.me.username)}. These follow you to every device.</p>
+      <p><a class="btn btn-small" href="#/card">Your library card</a></p></header>
 
     <section class="settings-section">
       <h2>Reading</h2>

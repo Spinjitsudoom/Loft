@@ -10,6 +10,8 @@ import { wireDownload } from "./downloads.js";
 import { wireDiscussion } from "./discussion.js";
 import { searchTitle } from "./titles.js";
 import { trailFor, trailHTML, wireTrail } from "./trail.js";
+import { averageText } from "./pagejump.js";
+import { starsHTML, wireStars } from "./stars.js";
 
 function size(bytes) {
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
@@ -35,6 +37,32 @@ function publishedText(value) {
   return date.toLocaleDateString(undefined, { year: "numeric", month: "long", ...(parts[2] ? { day: "numeric" } : {}), timeZone: "UTC" });
 }
 
+function dayText(at) {
+  const d = new Date(at * 1000);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(undefined, sameYear ? { day: "numeric", month: "long" } : { day: "numeric", month: "long", year: "numeric" });
+}
+
+/** "Cassidy", "Cassidy and Ben", "Cassidy, Ben and 2 others". */
+export function namesText(names) {
+  if (names.length <= 2) return names.join(" and ");
+  if (names.length === 3) return `${names[0]}, ${names[1]} and ${names[2]}`;
+  return `${names[0]}, ${names[1]} and ${names.length - 2} others`;
+}
+
+function loanHTML(loan) {
+  const mine = loan.mine
+    ? `<span>Checked out to you since ${esc(dayText(loan.mine.out_at))}.</span>
+       <button class="link-btn" type="button" data-loan="return">Return</button>`
+    : `<button class="btn btn-small" type="button" data-loan="out">${icon("bookmark")}Check out</button>`;
+  const others = loan.others.length ? `<span class="muted">Also checked out by ${esc(namesText(loan.others))}.</span>` : "";
+  return `${mine}${others}`;
+}
+
+function ratingHTML(r) {
+  return `${starsHTML(r.mine)}<span class="rating-average muted">${esc(averageText(r.average, r.count))}</span>`;
+}
+
 export async function renderBook(main, id, params = new URLSearchParams()) {
   const b = await api(`/books/${id}`);
   const editing = state.me.admin && params.get("edit");
@@ -56,6 +84,7 @@ export async function renderBook(main, id, params = new URLSearchParams()) {
       <h1 class="book-page-title">${esc(b.title)}</h1>
       ${authors ? `<p class="book-page-author">${authors}</p>` : ""}
       ${b.series ? `<p class="book-page-series">${link("series", b.series, seriesLine(b))}</p>` : ""}
+      ${b.rating ? `<div class="book-rating" data-rating>${ratingHTML(b.rating)}</div>` : ""}
       <div class="files">
         ${canRead(b) ? `<a class="btn btn-primary" href="#/read/${b.id}${b.progress && b.progress.finished ? "?page=0" : ""}">${readLabel(b.progress)}</a>` : ""}
         ${canRead(b) ? `<span class="download-slot" data-download></span>` : ""}
@@ -66,6 +95,8 @@ export async function renderBook(main, id, params = new URLSearchParams()) {
         ${shelfButtonHTML(b)}
         ${state.me.admin ? `<a class="btn" href="#/book/${b.id}?edit=1">${icon("edit")}Edit</a>` : ""}
       </div>
+      ${b.loan ? `<p class="loan-line" data-loan-line>${loanHTML(b.loan)}</p>` : ""}
+      <p class="form-error" data-book-error role="alert" hidden></p>
       ${paragraphs ? `<div class="description">${paragraphs}</div>` : ""}
       ${facts.length ? `<dl class="facts">${facts.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("")}</dl>` : ""}
       ${b.tags.length ? `<ul class="tags">${b.tags.map((t) => `<li>${link("tag", t)}</li>`).join("")}</ul>` : ""}
@@ -80,10 +111,39 @@ export async function renderBook(main, id, params = new URLSearchParams()) {
   wireTrail(main);
   wireStatusMenu(main, b);
   wireShelfMenu(main, b);
+  wireRatingAndLoan(main, b);
   const slot = main.querySelector("[data-download]");
   if (slot) wireDownload(slot, b);
   wireDiscussion(main.querySelector("[data-talk]"), b.id);
   if (params.get("discussion")) main.querySelector("#discussion").scrollIntoView({ block: "start" });
+}
+
+function wireRatingAndLoan(main, b) {
+  const error = main.querySelector("[data-book-error]");
+  const fail = (e) => { error.textContent = e.message; error.hidden = false; };
+  const rating = main.querySelector("[data-rating]");
+  if (rating) {
+    wireStars(rating, async (stars) => {
+      try {
+        b.rating = await api(`/books/${b.id}/rating`, { method: "PUT", body: { stars } });
+        rating.querySelector(".rating-average").textContent = averageText(b.rating.average, b.rating.count);
+        error.hidden = true;
+      } catch (e) { fail(e); throw e; }
+    });
+  }
+  const line = main.querySelector("[data-loan-line]");
+  if (line) {
+    line.addEventListener("click", async (e) => {
+      const button = e.target.closest("[data-loan]");
+      if (!button) return;
+      button.disabled = true;
+      try {
+        b.loan = await api(`/books/${b.id}/loan`, { method: button.dataset.loan === "out" ? "POST" : "DELETE" });
+        line.innerHTML = loanHTML(b.loan);
+        error.hidden = true;
+      } catch (err) { fail(err); button.disabled = false; }
+    });
+  }
 }
 
 const SPLIT = [[null, "Automatic"], [true, "Split them"], [false, "Don’t split"]];

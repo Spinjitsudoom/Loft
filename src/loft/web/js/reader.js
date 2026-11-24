@@ -6,6 +6,8 @@ import * as offline from "./offline.js";
 import { wireDiscussion } from "./discussion.js";
 import { loadPrefs, patchPrefs } from "./prefs.js";
 import { downloadFits } from "./fixedfit.js";
+import { targetPage } from "./pagejump.js";
+import { starsHTML, wireStars } from "./stars.js";
 
 let FlowReaderClass = null;  // set by flow.js (it extends Reader)
 export function registerFlowReader(cls) { FlowReaderClass = cls; }
@@ -152,7 +154,7 @@ export class Reader {
       </header>
       <footer class="reader-bottom">
         <input class="scrubber" type="range" min="0" max="${Math.max(0, this.count - 1)}" value="${this.page}" aria-label="Go to page"${this.rtl ? ` dir="rtl"` : ""}>
-        <span class="reader-where"></span>
+        <button class="reader-where" type="button" title="Go to a ${this.jumpUnit()}"></button>
       </footer>
       <aside class="reader-panel" data-for="contents" hidden></aside>
       <aside class="reader-panel" data-for="prefs" hidden></aside>
@@ -326,12 +328,70 @@ export class Reader {
     if (document.activeElement !== scrubber) scrubber.value = i;
     this.root.querySelector(".reader-where").textContent = `Page ${i + 1} of ${this.count}`;
     this.markBookmarkButton();
+    if (save && !this.quiet) this.maybeAskRating();
     if (save && !this.quiet) {
       this.dirty = true;
       this.pageAt = Date.now() / 1000;
       clearTimeout(this.saveTimer);
       this.saveTimer = setTimeout(() => this.saveNow(), SAVE_AFTER);
     }
+  }
+
+  // ---------- going to a page, and rating at the end ----------
+
+  /** What the number in the bottom bar counts: pages (the flowing reader's Scroll mode counts chapters). */
+  jumpUnit() { return "page"; }
+
+  openJump() {
+    const where = this.root.querySelector(".reader-where");
+    if (!where || !(this.count >= 1)) return;
+    this.showControls(true);
+    clearTimeout(this.hideTimer);
+    const box = document.createElement("input");
+    Object.assign(box, { className: "reader-jump", type: "text", inputMode: "numeric", value: String(this.page + 1) });
+    box.setAttribute("aria-label", `Go to ${this.jumpUnit()} (1 to ${this.count})`);
+    box.setAttribute("enterkeyhint", "go");
+    where.hidden = true;
+    where.after(box);
+    box.focus();
+    box.select();
+    let done = false;
+    const finish = (go) => {
+      if (done) return;
+      done = true;
+      const i = go ? targetPage(box.value, this.count) : null;
+      box.remove();
+      where.hidden = false;
+      if (i !== null && i !== this.page) this.goTo(i);
+      else if (go) where.focus();
+    };
+    box.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); finish(true); }
+      else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); }
+    });
+    box.addEventListener("blur", () => finish(false));
+  }
+
+  /** At the end of a book you haven't rated: "How was it?", once per book on this device. */
+  maybeAskRating() {
+    const b = this.progressBody();
+    if (b.page < b.pages - 1 || offline.isOffline() || !this.book.rating || this.book.rating.mine) return;
+    const key = `loft-asked-rating-${this.book.id}`;
+    try { if (localStorage.getItem(key)) return; localStorage.setItem(key, "1"); } catch { return; }
+    if (this.root.querySelector(".reader-rate")) return;
+    const bar = document.createElement("div");
+    bar.className = "reader-rate";
+    bar.setAttribute("role", "dialog");
+    bar.setAttribute("aria-label", "Rate this book");
+    bar.innerHTML = `<span>How was it?</span>${starsHTML(null, { label: "Rate this book" })}
+      <button class="icon-btn" type="button" data-close aria-label="Not now">${icon("close")}</button>`;
+    this.root.append(bar);
+    const close = () => bar.remove();
+    bar.querySelector("[data-close]").addEventListener("click", close);
+    wireStars(bar, async (stars) => {
+      this.book.rating = await api(`/books/${this.book.id}/rating`, { method: "PUT", body: { stars } });
+      setTimeout(close, 700);
+    });
   }
 
   saveNow(leaving = false) {
@@ -396,6 +456,7 @@ export class Reader {
     this.on(this.stage, "wheel", (e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); this.zoom(); } }, { passive: false });
     this.on(window, "keydown", (e) => {
       if (e.target.closest && e.target.closest("input, textarea, select")) return;
+      if ((e.key === "g" || e.key === "G") && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); this.openJump(); return; }
       const [ahead, behind] = this.rtl ? ["ArrowLeft", "ArrowRight"] : ["ArrowRight", "ArrowLeft"];
       if ([ahead, "PageDown", " "].includes(e.key)) { e.preventDefault(); this.step(1); }
       else if ([behind, "PageUp"].includes(e.key)) { e.preventDefault(); this.step(-1); }
@@ -419,6 +480,7 @@ export class Reader {
       this.root.querySelector(".reader-where").textContent = `Page ${Number(scrubber.value) + 1} of ${this.count}`;
     });
     scrubber.addEventListener("change", () => { this.goTo(Number(scrubber.value)); scrubber.blur(); });
+    this.root.querySelector(".reader-where").addEventListener("click", () => this.openJump());
 
     this.root.querySelectorAll("[data-panel]").forEach((b) =>
       b.addEventListener("click", () => this.togglePanel(b.dataset.panel)));

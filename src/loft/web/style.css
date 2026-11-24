@@ -229,6 +229,11 @@ main { outline: none; }
 .book-page-text { max-width: 68ch; min-width: 0; }
 .book-page-title { font: 600 clamp(30px, 4vw, 52px)/1.06 var(--serif); letter-spacing: -.02em; text-wrap: balance; overflow-wrap: anywhere; }
 .book-page-author { margin-top: 12px; font-size: 19px; color: #d4c9bc; }
+.book-rating { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 14px; }
+.book-rating .star { width: 30px; height: 30px; }
+.rating-average { font-size: 14px; }
+.loan-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 14px 0 0; font-size: 14px; color: var(--muted); }
+.loan-line > span:first-child { color: var(--ink); }
 .book-page-series { margin-top: 2px; color: var(--muted); }
 .book-page-author a:hover, .book-page-series a:hover, .tags a:hover { color: var(--brass); }
 .files { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
@@ -347,7 +352,41 @@ input:not([type="search"]):focus { outline: none; border-color: var(--brass); }
   padding: 0 6px;
 }
 [data-bookmark][aria-pressed="true"] { color: var(--brass) !important; --fill: currentColor; }
-.reader-where { flex: none; font-size: 14px; color: var(--r-muted); min-width: 9.5em; text-align: right; font-variant-numeric: tabular-nums; }
+.reader-where {
+  flex: none; font: inherit; font-size: 14px; color: var(--r-muted); min-width: 9.5em; text-align: right; font-variant-numeric: tabular-nums;
+  background: none; border: 0; border-radius: 6px; padding: 4px 6px; margin: -4px -6px; cursor: pointer;
+  text-decoration: underline dotted transparent; text-underline-offset: 4px;
+}
+.reader-where:hover { color: var(--r-ink); text-decoration-color: currentColor; }
+.reader-where:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+/* Go to a page: the number box that takes the place of "Page 12 of 340". */
+.reader-jump {
+  flex: none; width: 6.5em; min-height: 32px; padding: 0 10px; font: inherit; font-size: 14px; text-align: right;
+  font-variant-numeric: tabular-nums; color: var(--r-ink); background: transparent;
+  border: 1px solid var(--brass); border-radius: 6px;
+}
+.reader-jump:focus { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--brass) 35%, transparent); }
+/* At the end of a book: "How was it?" */
+.reader-rate {
+  position: absolute; left: 50%; bottom: max(84px, calc(env(safe-area-inset-bottom) + 84px)); transform: translateX(-50%); z-index: 6;
+  display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 18px; max-width: calc(100% - 32px);
+  background: var(--r-bar); color: var(--r-ink); border: 1px solid var(--r-line); border-radius: 999px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .35); backdrop-filter: blur(10px); font: 500 15px/1.2 var(--serif);
+}
+.reader-rate > span:first-child { white-space: nowrap; }
+
+/* Stars: a rating from 1 to 5. */
+.stars { display: inline-flex; gap: 2px; }
+.star {
+  display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px;
+  background: none; color: color-mix(in srgb, var(--brass) 70%, transparent); cursor: pointer;
+}
+.star svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+.star.is-on { color: var(--brass); }
+.star.is-on svg { fill: currentColor; }
+.stars:not(.is-busy) .star:hover svg { transform: scale(1.12); }
+.star:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
+.stars.is-busy { opacity: .7; }
 .scrubber { flex: 1; accent-color: var(--brass); height: 28px; }
 
 .reader-panel {
@@ -1108,3 +1147,39 @@ body.arranging { overflow: hidden; }
 .zoom-frame { overflow: hidden; }
 /* A blank page the admin put in (Arrange pages): plain paper. */
 .fixed-blank, .zoom-frame.zoom-blank { background: #fff; }
+
+/* A list of books: how they're sorted. */
+.grid-sort { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 14px; color: var(--muted); }
+.grid-sort select { min-height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--raised); color: var(--ink); font: inherit; }
+
+/* Your library card: what you have out, and what you've returned. */
+.library-card h2 { margin: 28px 0 10px; font: 600 20px/1.2 var(--serif); }
+.card-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.card-row { display: flex; align-items: center; gap: 14px; padding: 8px; border-radius: var(--radius); }
+.card-row:hover { background: var(--raised); }
+.card-cover { flex: none; width: 46px; }
+.card-cover .book { width: 46px; }
+.card-text { display: grid; gap: 2px; min-width: 0; }
+.card-text strong { font: 600 16px/1.25 var(--serif); overflow-wrap: anywhere; }
+.card-text .muted { font-size: 13px; }
+.card-note { font-size: 13px; color: var(--brass); }
+
+/* Activity: the admins' log. */
+.act-top { margin: 4px 0 18px; }
+.act-out summary { cursor: pointer; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.act-out ul { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
+.act-out li { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.act-filters { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 0 0 18px; }
+.act-filters label { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+.act-filters select { min-height: 34px; max-width: 60vw; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--raised); color: var(--ink); font: inherit; }
+.act-list { list-style: none; margin: 0 0 20px; padding: 0; }
+.act-day h2 { margin: 22px 0 8px; font: 600 15px/1.2 var(--sans); color: var(--muted); letter-spacing: .01em; }
+.act-day:first-child h2 { margin-top: 0; }
+.act-entry { display: grid; grid-template-columns: 3.6em minmax(0, 1fr); gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 14px; line-height: 1.45; }
+.act-entry time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.act-entry > span { overflow-wrap: anywhere; }
+.act-who { font-weight: 600; color: var(--ink); }
+.act-who.is-loft { color: var(--brass); }
+.act-entry a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+.act-entry a:hover { text-decoration-color: var(--brass); }
+.act-gone { font-style: italic; }

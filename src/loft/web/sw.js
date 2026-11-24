@@ -4,8 +4,8 @@
 const CACHE = "loft-shell-v9";
 const SHELL = ["./", "style.css", "fonts/fonts.css", "fonts/literata.woff2", "fonts/literata-italic.woff2",
   "fonts/instrument-sans.woff2", "vendor/page-flip.browser.js", "manifest.webmanifest", "icons/icon.svg",
-  ...["add", "admin", "api", "arrange", "backups", "book", "check", "cover", "downloads", "edit", "fill", "filled", "fixed", "fixedfit", "flow", "titles", "grid", "home",
-    "login", "main", "notifications", "offline", "requests", "discussion", "prefs", "reader", "settings", "shelfmenu", "stacks", "statusmenu", "trail", "updates", "whatsnew", "zoom"].map((n) => `js/${n}.js`)];
+  ...["activity", "add", "admin", "api", "arrange", "backups", "book", "card", "check", "cover", "downloads", "edit", "fill", "filled", "fixed", "fixedfit", "flow", "titles", "grid", "home",
+    "login", "main", "notifications", "offline", "pagejump", "requests", "discussion", "prefs", "reader", "settings", "shelfmenu", "stacks", "stars", "statusmenu", "trail", "updates", "whatsnew", "zoom"].map((n) => `js/${n}.js`)];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

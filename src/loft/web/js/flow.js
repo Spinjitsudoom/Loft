@@ -320,6 +320,8 @@ class FlowReader extends Reader {
     this.onScroll();
   }
 
+  jumpUnit() { return this.reading.mode === "scroll" ? "chapter" : "page"; }
+
   onPage(i, save = true) {
     super.onPage(i, save);
     if (this.reading.mode === "scroll") {

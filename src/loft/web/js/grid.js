@@ -3,6 +3,7 @@ import { api, authorLine, esc } from "./api.js";
 import { coverHTML } from "./cover.js";
 
 const PAGE = 60;
+const SORTS = [["title", "Title"], ["author", "Author"], ["added", "Recently added"], ["rating", "Highest rated"]];
 
 export function gridItem(book) {
   return `<li><a href="#/book/${book.id}" class="grid-link">
@@ -33,12 +34,20 @@ export async function renderGrid(main, { kind, value, title, query }) {
   main.innerHTML = `<section class="page">
     <header class="page-head"><h1>${esc(shelf ? shelf.name : heading)}</h1>
       <p class="muted">${first.total || !empty ? `${first.total} ${first.total === 1 ? "book" : "books"}` : empty}</p>
+      ${first.total > 1 ? `<label class="grid-sort">Sort <select data-sort>${SORTS.map(([k, label]) =>
+        `<option value="${k}"${k === sort ? " selected" : ""}>${k === "title" && kind === "series" ? "Series order" : label}</option>`).join("")}</select></label>` : ""}
       ${shelf && shelf.kind === "own" ? `<div class="head-actions">
         <button class="btn btn-small" type="button" data-rename>Rename</button>
         <button class="btn btn-small" type="button" data-delete>Remove shelf</button></div>` : ""}</header>
     <ul class="grid" data-trail="${esc(shelf ? shelf.name : heading)}" data-more="${esc(base)}" data-total="${first.total}">${first.books.map(gridItem).join("")}</ul>
     <div class="grid-more" aria-hidden="true"></div>
   </section>`;
+  main.querySelector("[data-sort]")?.addEventListener("change", (e) => {
+    const [path, query = ""] = location.hash.split("?");
+    const params = new URLSearchParams(query);
+    params.set("sort", e.target.value);
+    location.hash = `${path}?${params}`;
+  });
   main.querySelector("[data-rename]")?.addEventListener("click", async () => {
     const name = prompt("New name for this shelf", shelf.name);
     if (!name || name.trim() === shelf.name) return;

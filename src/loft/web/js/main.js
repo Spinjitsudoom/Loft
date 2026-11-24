@@ -11,6 +11,8 @@ import { renderReader } from "./reader.js";
 import "./flow.js";
 import "./fixed.js";
 import { renderSettings } from "./settings.js";
+import { renderActivity } from "./activity.js";
+import { renderCard } from "./card.js";
 import { applyLook, loadPrefs } from "./prefs.js";
 import * as offline from "./offline.js";
 import { needsServer, renderOfflineBook, renderOfflineHome } from "./downloads.js";
@@ -143,6 +145,8 @@ async function route() {
     else if (page === "fill" && state.me.admin) await renderFill(main, params);
     else if (page === "filled" && state.me.admin) await renderFilled(main);
     else if (page === "settings") await renderSettings(main);
+    else if (page === "card") await renderCard(main);
+    else if (page === "activity" && state.me.admin) await renderActivity(main, params);
     else main.innerHTML = `<div class="empty"><p>There’s nothing here.</p><a class="btn" href="#/">Back to the library</a></div>`;
   } catch (e) {
     if (e.status === 401) return;
