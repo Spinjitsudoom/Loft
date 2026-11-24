@@ -23,7 +23,7 @@ from .config import Config
 from .covers import cover_path
 from .db import session
 from .sanitize import chapter_html
-from . import autofill, backups, fixedpage, updates
+from . import activity, autofill, backups, fixedpage, updates
 from .scanner import Scanner, last_report
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -362,6 +362,13 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             return libsettings.update_library(cfg, patch)
         except ValueError as e:
             raise HTTPException(400, str(e))
+
+    # ---------- the activity log ----------
+
+    @app.get("/api/activity")
+    def activity_log(before: int | None = None, user: int | None = None, group: str | None = None,
+                     _: User = Depends(admin_user)):
+        return activity.listing(cfg, before=before, user_id=user, group=group)
 
     # ---------- updates ----------
 

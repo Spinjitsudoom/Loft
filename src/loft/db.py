@@ -220,6 +220,21 @@ CREATE TABLE IF NOT EXISTS autofill (
     previous TEXT NOT NULL DEFAULT '{}',
     after    TEXT NOT NULL DEFAULT '{}'
 );
+
+-- 0.2.0: the activity log (no foreign keys: an entry outlives the person and book it names).
+CREATE TABLE IF NOT EXISTS activity (
+    id         INTEGER PRIMARY KEY,
+    at         REAL NOT NULL,
+    user_id    INTEGER,
+    user_name  TEXT NOT NULL DEFAULT '',
+    kind       TEXT NOT NULL,
+    book_id    INTEGER,
+    book_title TEXT NOT NULL DEFAULT '',
+    text       TEXT NOT NULL,
+    details    TEXT
+);
+CREATE INDEX IF NOT EXISTS activity_at ON activity(at);
+CREATE INDEX IF NOT EXISTS activity_user ON activity(user_id, id);
 """
 
 
