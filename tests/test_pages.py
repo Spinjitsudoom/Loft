@@ -146,7 +146,7 @@ def test_scanned_spreads_are_split(cfg):
 def test_text_pdf_in_landscape_is_not_split(cfg):
     """Slides and landscape documents have real text: they stay whole."""
     from pypdf import PdfWriter
-    from pypdf.generic import ContentStream, DecodedStreamObject, NameObject
+    from pypdf.generic import DecodedStreamObject, NameObject
     root = cfg.books_dirs[0]
     w = PdfWriter()
     for _ in range(3):

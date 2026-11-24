@@ -111,3 +111,42 @@ def test_start_with_windows_works_when_the_run_key_is_missing(tray, monkeypatch)
     tray.set_autostart(False)
     assert not tray.autostart()
     tray.set_autostart(False)   # already off: nothing to do
+
+
+def test_restart_from_the_menu_starts_one_server(tray, monkeypatch):
+    # The watcher of the stopped server can wake after Restart has already cleared "quitting":
+    # it mustn't take the stop for a crash and start a second server beside the new one.
+    import threading
+    import types
+    started, release = [], threading.Event()
+
+    class Proc:
+        def __init__(self):
+            self.done = threading.Event()
+        def wait(self, timeout=None):
+            if timeout is None:          # the watcher: held until Restart is starting the new server,
+                release.wait(5)          # and only ever wakes for a server that was stopped
+                self.done.wait()
+            return 1
+        def poll(self):
+            return 1 if self.done.is_set() else None
+        def terminate(self):
+            self.done.set()
+
+    def popen(*args, **kw):
+        if started:                      # Restart starting the new server: the old watcher wakes now
+            release.set()
+            threading.Event().wait(0.3)
+        started.append(Proc())
+        return started[-1]
+
+    monkeypatch.setattr(tray, "subprocess", types.SimpleNamespace(Popen=popen, CREATE_NO_WINDOW=0, STDOUT=-2,
+                                                                  DEVNULL=-3, TimeoutExpired=TimeoutError))
+    monkeypatch.setattr(tray.time, "sleep", lambda s: None)
+    monkeypatch.setattr(tray, "answering", lambda timeout=1.5: False)
+    tray.DATA.mkdir(parents=True)
+    server = tray.Server(on_update=lambda: None, on_trouble=lambda what: None)
+    server.start()
+    server.restart()
+    threading.Event().wait(0.3)
+    assert len(started) == 2 and server.proc is started[1] and server.crashes == 0

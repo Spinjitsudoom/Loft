@@ -155,7 +155,8 @@ export async function renderStacks(main, params) {
           <div class="case-row">${shelfHTML(c, state.view)}</div>
         </div>
       </section>`).join("")
-      : `<div class="empty"><p>No books match those filters.</p><button class="btn" type="button" data-clear>Clear filters</button></div>`}
+      : active ? `<div class="empty"><p>No books match those filters.</p><button class="btn" type="button" data-clear>Clear filters</button></div>`
+      : `<div class="empty"><p>The shelves are empty.</p><a class="btn" href="#/add">Add books</a></div>`}
   </section>`;
 
   const books = new Map(data.cases.flatMap((c) => c.books).map((b) => [String(b.id), b]));

@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from loft import autofill, editing, googlebooks, libsettings, lookups, openlibrary
+from loft import autofill, editing, libsettings, lookups, openlibrary
 from loft.db import session
 from loft.titles import search_title, series_from_title
 

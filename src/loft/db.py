@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -241,11 +242,26 @@ def migrate(con: sqlite3.Connection) -> None:
     con.commit()
 
 
+def _use_wal(con: sqlite3.Connection) -> None:
+    """WAL lets readers carry on while a scan writes. Switching a new database to it needs a lock
+    SQLite won't wait for, and when Loft first starts several parts open it at once: so only switch
+    when it isn't already, and try again for a few seconds if another part is switching it now."""
+    for attempt in range(100):
+        try:
+            if con.execute("PRAGMA journal_mode").fetchone()[0] != "wal":
+                con.execute("PRAGMA journal_mode=WAL")
+            return
+        except sqlite3.OperationalError as e:
+            if "locked" not in str(e) or attempt == 99:
+                raise
+            time.sleep(0.05)
+
+
 def connect(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(path, timeout=30, check_same_thread=False)
     con.row_factory = sqlite3.Row
-    con.execute("PRAGMA journal_mode=WAL")
+    _use_wal(con)
     con.execute("PRAGMA foreign_keys=ON")
     con.executescript(SCHEMA)
     migrate(con)

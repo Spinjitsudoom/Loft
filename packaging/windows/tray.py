@@ -155,13 +155,16 @@ class Server:
             self.on_trouble(what)
 
     def stop(self) -> None:
+        # Let go of the process before stopping it, so its watcher knows it was asked to stop
+        # (and never takes it for a crash, even if it wakes after a restart has begun).
         self.quitting = True
-        if self.proc and self.proc.poll() is None:
-            self.proc.terminate()
+        proc, self.proc = self.proc, None
+        if proc and proc.poll() is None:
+            proc.terminate()
             try:
-                self.proc.wait(10)
+                proc.wait(10)
             except subprocess.TimeoutExpired:
-                self.proc.kill()
+                proc.kill()
 
     def restart(self) -> None:
         self.stop()

@@ -76,3 +76,26 @@ def test_old_library_gains_m4_columns_and_tables(tmp_path):
     tables = {r["name"] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert {"shelves", "shelf_books", "check_ignored", "file_checks"} <= tables
     con.close()
+
+
+def test_a_new_library_opened_by_many_parts_at_once(tmp_path):
+    # When Loft first starts, the scan, the update checker and the rest open the brand-new
+    # database together; switching it to WAL used to fail for some with "database is locked".
+    import threading
+    failures = []
+    for round_ in range(25):
+        path, go, errors = tmp_path / f"{round_}" / "loft.db", threading.Event(), []
+        def open_it():
+            go.wait()
+            try:
+                connect(path).close()
+            except Exception as e:
+                errors.append(e)
+        threads = [threading.Thread(target=open_it) for _ in range(6)]
+        for t in threads:
+            t.start()
+        go.set()
+        for t in threads:
+            t.join()
+        failures += errors
+    assert failures == []

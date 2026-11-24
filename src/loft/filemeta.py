@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
+import struct
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -112,6 +113,8 @@ def read_file_meta(path: Path, fmt: str) -> FileMeta:
             meta = _pdf(path)
         elif fmt == "epub":
             meta = _epub(path)
+        elif fmt in KINDLE:
+            meta = _kindle(path)
         else:
             return fallback
     except Exception as e:  # damaged files must never stop a scan
@@ -178,6 +181,56 @@ def _epub(path: Path) -> FileMeta:
                 pos = refines.get(el.get("id", ""))
                 meta.series_index = _float(pos.text if pos is not None else None)
                 break
+    return meta
+
+
+KINDLE = ("mobi", "azw", "azw3")
+KINDLE_MAX_RECORD = 1 << 20
+
+
+def _person(name: str) -> str:
+    """Kindle files often hold an author as "Last, First"; Loft shows "First Last"."""
+    last, comma, first = name.partition(",")
+    if comma and first.strip() and last.strip() and "," not in first:
+        return f"{first.strip()} {last.strip()}"
+    return name.strip()
+
+
+def _kindle(path: Path) -> FileMeta:
+    """MOBI, AZW and AZW3: the details in the first record's MOBI header and its EXTH block."""
+    with path.open("rb") as f:
+        head = f.read(86)
+        if len(head) < 86 or head[60:68] not in (b"BOOKMOBI", b"TEXtREAD"):
+            raise ValueError("not a Kindle book")
+        start, = struct.unpack_from(">I", head, 78)
+        f.seek(start)
+        rec = f.read(KINDLE_MAX_RECORD)
+    if rec[16:20] != b"MOBI":
+        raise ValueError("no MOBI header")
+    mobi_len, encoding = struct.unpack_from(">I", rec, 20)[0], struct.unpack_from(">I", rec, 28)[0]
+    codec = "utf-8" if encoding == 65001 else "cp1252"
+    name_at, name_len = struct.unpack_from(">II", rec, 0x54)
+    meta = FileMeta(title=rec[name_at:name_at + name_len].decode(codec, "replace"))
+    flags, = struct.unpack_from(">I", rec, 0x80)
+    exth = 16 + mobi_len
+    if not flags & 0x40 or rec[exth:exth + 4] != b"EXTH":
+        return meta
+    count, = struct.unpack_from(">I", rec, exth + 8)
+    at, found = exth + 12, {}
+    for _ in range(count):
+        kind, size = struct.unpack_from(">II", rec, at)
+        if size < 8:
+            break
+        found.setdefault(kind, []).append(rec[at + 8:at + size].decode(codec, "replace").strip())
+        at += size
+    one = lambda kind: next((v for v in found.get(kind, []) if v), "")  # noqa: E731
+    meta.title = one(503) or meta.title
+    meta.authors = real_authors([_person(a) for a in found.get(100, []) if a])
+    meta.publisher = one(101)
+    meta.description = _text(one(103))
+    meta.isbn = valid_isbn(one(104))
+    meta.published = one(106)[:10]
+    meta.language = one(524)
     return meta
 
 

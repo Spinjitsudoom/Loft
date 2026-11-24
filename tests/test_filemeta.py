@@ -1,3 +1,4 @@
+import struct
 from pathlib import Path
 
 import pytest
@@ -90,3 +91,57 @@ def test_title_cleanup(tmp_path, make_pdf):
 def test_placeholder_author_dropped(tmp_path, make_pdf, placeholder):
     p = make_pdf(tmp_path / "x.pdf", title="Real Title", author=placeholder)
     assert read_file_meta(p, "pdf").authors == []
+
+
+def kindle_file(path: Path, *, title="", exth=(), encoding=65001) -> Path:
+    """A minimal MOBI/AZW3: a PalmDB header, then record 0 with the PalmDOC and MOBI headers, the
+    full name and (when given) an EXTH block of (type, bytes) records."""
+    exth_block = b""
+    if exth:
+        records = b"".join(struct.pack(">II", t, 8 + len(v)) + v for t, v in exth)
+        exth_block = b"EXTH" + struct.pack(">II", 12 + len(records), len(exth)) + records
+    mobi_len = 0xE8
+    name = title.encode("utf-8" if encoding == 65001 else "cp1252")
+    name_at = 16 + mobi_len + len(exth_block)
+    mobi = bytearray(mobi_len)
+    mobi[0:4] = b"MOBI"
+    struct.pack_into(">I", mobi, 4, mobi_len)
+    struct.pack_into(">I", mobi, 12, encoding)
+    struct.pack_into(">II", mobi, 0x54 - 16, name_at, len(name))
+    struct.pack_into(">I", mobi, 0x80 - 16, 0x40 if exth else 0)
+    record0 = bytes(16) + bytes(mobi) + exth_block + name + bytes(4)
+    header = bytearray(78)
+    header[0:10] = b"some-name\0"
+    header[60:68] = b"BOOKMOBI"
+    struct.pack_into(">H", header, 76, 1)
+    first = 78 + 8 + 2
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(header) + struct.pack(">II", first, 0) + bytes(2) + record0)
+    return path
+
+
+@pytest.mark.parametrize("fmt", ["azw3", "mobi", "azw"])
+def test_kindle_details(tmp_path, fmt):
+    p = kindle_file(tmp_path / f"54812911c00c8f82bb1fb0a81d6a3b03.{fmt}", title="Short Name", exth=[
+        (503, "The Mouse Island Marathon".encode()), (100, b"Stilton, Geronimo"), (100, b"Elisabetta Dami"),
+        (101, b"Scholastic Inc."), (106, b"2011-11-01T00:00:00+00:00"), (524, b"en"),
+        (103, b"<p>A <b>race</b> across the island.</p>"), (104, b"978-0-545-39187-0")])
+    m = read_file_meta(p, fmt)
+    assert m.title == "The Mouse Island Marathon"          # the EXTH title beats the short full name
+    assert m.authors == ["Geronimo Stilton", "Elisabetta Dami"]
+    assert (m.publisher, m.published, m.language) == ("Scholastic Inc.", "2011-11-01", "en")
+    assert m.description == "A race across the island."
+    assert m.isbn == "9780545391870"
+    assert m.title_from_name is False
+
+
+def test_kindle_full_name_when_theres_no_exth(tmp_path):
+    p = kindle_file(tmp_path / "abc.mobi", title="Café Stories", encoding=1252)
+    m = read_file_meta(p, "mobi")
+    assert m.title == "Café Stories" and m.authors == []
+
+
+def test_damaged_kindle_files_use_the_filename(tmp_path):
+    p = tmp_path / "Wedding Crashers.azw3"
+    p.write_bytes(b"BOOKMOBI is not enough")
+    assert read_file_meta(p, "azw3").title == "Wedding Crashers"

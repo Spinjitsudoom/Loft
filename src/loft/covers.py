@@ -6,7 +6,6 @@ import colorsys
 import io
 import logging
 import posixpath
-import re
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET

@@ -48,7 +48,7 @@ export async function renderFill(main, params) {
   async function show() {
     if (at >= queue.length) {
       progress.textContent = `${KINDS[kind]}: done.`;
-      card.innerHTML = `<div class="empty"><p>${filled ? `Filled in ${filled} ${filled === 1 ? "book" : "books"}.` : "Nothing was changed."}
+      card.innerHTML = `<div class="empty"><p>${!queue.length ? "No books need this right now." : filled ? `Filled in ${filled} ${filled === 1 ? "book" : "books"}.` : "Nothing was changed."}
         ${queue.length - filled > 0 ? `${queue.length - filled} skipped; they’re still in the library check.` : ""}</p>
         <a class="btn btn-primary" href="#/check">Back to the library check</a>
         <a class="btn" href="#/stacks?by=section">See the stacks</a></div>`;

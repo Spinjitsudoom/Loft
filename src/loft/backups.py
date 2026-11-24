@@ -298,7 +298,7 @@ def restore(cfg: Config, name: str) -> Path:
                     dst.close()
                     src.close()
             except (OSError, sqlite3.Error) as e:
-                for live, aside, restored in reversed(moved):
+                for live, aside, _ in reversed(moved):
                     try:
                         if live.exists():
                             shutil.rmtree(live)

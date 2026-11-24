@@ -65,7 +65,7 @@ WRAPPERS = re.compile(r"<!\[CDATA\[|\]\]>|<!--|-->")   # around old pages' <styl
 def fonts(book: FlowBook) -> dict[str, Resource]:
     """The book's fonts, by path, with their media types (from the extension: books label them many ways)."""
     found = {}
-    for path, r in book.resources.items():
+    for path in book.resources:
         kind = FONT_TYPES.get(posixpath.splitext(path)[1].lower())
         if kind:
             found[path] = Resource(path, kind)
