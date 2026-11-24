@@ -11,7 +11,7 @@ import math
 import time
 
 from .config import Config
-from . import statuses
+from . import loans, statuses
 from .db import session
 
 CLOCK_SLACK = 60  # seconds a device's clock may run ahead of the server's
@@ -58,15 +58,18 @@ def save_progress(cfg: Config, user_id: int, book_id: int, *, file_id: int, page
     position = min(1.0, max(0.0, page / max(1, pages - 1)))
     finished = page >= pages - 1
     with session(cfg.db_path) as con:
-        con.execute(
+        loans.settle(con, user_id, now)   # a loan quiet for a month was abandoned before this reading
+        kept = con.execute(
             "INSERT INTO progress(user_id, book_id, file_id, page, pages, position, finished, updated_at, locator) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, book_id) DO UPDATE SET "
             "file_id = excluded.file_id, page = excluded.page, pages = excluded.pages, position = excluded.position, "
             "finished = excluded.finished, updated_at = excluded.updated_at, locator = excluded.locator "
             "WHERE excluded.updated_at >= progress.updated_at",
             (user_id, book_id, file_id, page, pages, position, int(finished), at,
-             json.dumps(locator) if locator else None))
+             json.dumps(locator) if locator else None)).rowcount
         statuses.read_now(con, user_id, book_id, at)
+        if kept:   # a late save from another device, older than what's kept, moves nothing
+            loans.reading(con, user_id, book_id, at, finished)
     return get_progress(cfg, user_id, book_id)
 
 

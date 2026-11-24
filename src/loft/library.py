@@ -13,7 +13,7 @@ from .pages import READABLE as PAGE_FORMATS, file_layout, is_arranged
 from .reading import get_progress, in_progress
 from .settings import DEFAULTS, get_settings
 from . import shelves as shelf_store
-from . import ratings, statuses
+from . import loans, ratings, statuses
 
 RECENT = 15
 SERIES_ROWS = 8
@@ -182,6 +182,7 @@ def get_book(cfg: Config, book_id: int, user=None) -> dict | None:
             series_books = [book_card(r) for r in con.execute(
                 f"SELECT * FROM books WHERE series = ? AND id != ? ORDER BY {SERIES_ORDER}", (row["series"], book_id))]
         rating = ratings.summary(con, book_id, user.id if user else None)
+        loan = loans.loan_for(con, user.id if user else None, book_id)
     return {
         **book_card(row),
         "description": row["description"],
@@ -195,6 +196,7 @@ def get_book(cfg: Config, book_id: int, user=None) -> dict | None:
         "shelves": shelf_store.for_book(cfg, user.id, book_id) if user else [],
         "status": statuses.get_status(cfg, user.id, book_id)["status"] if user else "unread",
         "rating": rating,
+        "loan": loan,
     }
 
 

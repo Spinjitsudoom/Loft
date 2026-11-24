@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import threading
 import time
@@ -23,10 +24,11 @@ from .config import Config
 from .covers import cover_path
 from .db import session
 from .sanitize import chapter_html
-from . import activity, autofill, backups, fixedpage, ratings, updates
+from . import activity, autofill, backups, fixedpage, loans, ratings, updates
 from .scanner import Scanner, last_report
 
 WEB_DIR = Path(__file__).parent / "web"
+log = logging.getLogger(__name__)
 
 
 class WebFiles(StaticFiles):
@@ -175,6 +177,10 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     app = FastAPI(title="Loft", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.cfg = cfg
     app.state.scanner = scanner
+    try:
+        loans.fill_in(cfg)   # once, on upgrading: the books people are reading are checked out to them
+    except Exception:
+        log.exception("Couldn’t check out the books being read")
 
     @app.exception_handler(RequestValidationError)
     def invalid_request(request: Request, e: RequestValidationError):
@@ -232,6 +238,10 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     @app.get("/api/me")
     def me(user: User = Depends(current_user)):
         return user.json()
+
+    @app.get("/api/me/loans")
+    def my_loans(user: User = Depends(current_user)):
+        return loans.card(cfg, user.id)
 
     @app.post("/api/me/password")
     def change_password(body: PasswordChange, request: Request, response: Response, user: User = Depends(current_user)):
@@ -372,7 +382,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     @app.get("/api/activity")
     def activity_log(before: int | None = None, user: int | None = None, group: str | None = None,
                      _: User = Depends(admin_user)):
-        return activity.listing(cfg, before=before, user_id=user, group=group)
+        return {**activity.listing(cfg, before=before, user_id=user, group=group), "out_now": loans.out_now(cfg)}
 
     # ---------- updates ----------
 
@@ -960,6 +970,20 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
     def opened(book_id: int, user: User = Depends(current_user)):
         try:
             return statuses.opened(cfg, user.id, book_id)
+        except LookupError:
+            raise HTTPException(404, "No such book")
+
+    @app.post("/api/books/{book_id}/loan")
+    def check_out(book_id: int, user: User = Depends(current_user)):
+        try:
+            return loans.check_out(cfg, user.id, book_id)
+        except LookupError:
+            raise HTTPException(404, "No such book")
+
+    @app.delete("/api/books/{book_id}/loan")
+    def give_back(book_id: int, user: User = Depends(current_user)):
+        try:
+            return loans.give_back(cfg, user.id, book_id)
         except LookupError:
             raise HTTPException(404, "No such book")
 

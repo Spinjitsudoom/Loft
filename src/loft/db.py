@@ -245,6 +245,19 @@ CREATE TABLE IF NOT EXISTS ratings (
     PRIMARY KEY (user_id, book_id)
 );
 CREATE INDEX IF NOT EXISTS ratings_book ON ratings(book_id);
+
+-- 0.2.0: loans (loans.py). how is finished, abandoned or returned; NULL while the book is out.
+CREATE TABLE IF NOT EXISTS loans (
+    id          INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    book_id     INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    out_at      REAL NOT NULL,
+    returned_at REAL,
+    how         TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS loans_open ON loans(user_id, book_id) WHERE returned_at IS NULL;
+CREATE INDEX IF NOT EXISTS loans_user ON loans(user_id, out_at);
+CREATE INDEX IF NOT EXISTS loans_book ON loans(book_id);
 """
 
 
