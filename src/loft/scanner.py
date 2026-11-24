@@ -18,7 +18,7 @@ from pathlib import Path
 
 from .calibre import CalibreBook, read_calibre
 from .config import Config
-from .covers import extract_cover, remove_cover, store_cover
+from .covers import extract_cover, remove_cover, spine_colours, store_cover
 from .db import session
 from .filemeta import FileMeta, read_file_meta
 from .formats import format_of
@@ -148,15 +148,17 @@ def _write_book(con: sqlite3.Connection, book_id: int | None, *, title: str, aut
 def _set_cover(cfg: Config, con: sqlite3.Connection, book_id: int, image: bytes | None) -> None:
     if "cover" in locked_fields(con, book_id):
         return  # the admin chose this book's cover
-    colour = None
+    colour = spine = None
     if image:
         try:
             colour = store_cover(cfg, book_id, image)
+            spine = spine_colours(cfg, book_id)
         except Exception as e:
             log.info("Couldn't use the cover for book %s: %s", book_id, e)
     if colour is None:
         remove_cover(cfg, book_id)
-    con.execute("UPDATE books SET has_cover = ?, cover_color = ? WHERE id = ?", (int(colour is not None), colour, book_id))
+    con.execute("UPDATE books SET has_cover = ?, cover_color = ?, spine_colors = ? WHERE id = ?",
+                (int(colour is not None), colour, spine, book_id))
 
 
 def _upsert_file(con: sqlite3.Connection, book_id: int, path: Path, f: _Found, root: Path) -> None:

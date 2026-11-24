@@ -236,3 +236,14 @@ def test_admins_are_told_and_can_undo_from_the_app(client, cfg, online):
     assert client.post(f"/api/autofill/{bid}/undo").status_code == 404
     r = client.post("/api/autofill/rest")
     assert r.status_code == 202 and "queued" in r.json()
+
+
+def test_undoing_a_filled_cover_clears_its_spine_palette(cfg, add, online):
+    _, answers = online
+    answers["found"] = [MATCH]
+    bid = add("Uzumaki", authors=["Junji Ito"])
+    autofill.run(cfg, pause=0)
+    assert book(cfg, bid)["has_cover"] == 1 and book(cfg, bid)["spine_colors"]
+    autofill.undo(cfg, bid)
+    b = book(cfg, bid)
+    assert b["has_cover"] == 0 and b["cover_color"] is None and b["spine_colors"] is None

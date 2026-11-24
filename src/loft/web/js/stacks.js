@@ -5,6 +5,7 @@ import { api, authorLine, esc, seriesLine } from "./api.js";
 import { coverHTML } from "./cover.js";
 import { spineTitle } from "./titles.js";
 import { STATUS_LABELS as STATUS } from "./statusmenu.js";
+import { LINE_HEIGHT, fitTitle, hash, spineColours } from "./spines.js";
 
 const KEPT = "loft-stacks";
 const BY = [["series", "Series"], ["section", "Sections"], ["author", "Authors"]];
@@ -14,27 +15,6 @@ const FILTERS = ["status", "section", "author", "format"];
 
 function remembered() {
   try { return JSON.parse(localStorage.getItem(KEPT) || "{}"); } catch { return {}; }
-}
-
-function hash(text) {
-  let h = 2166136261;
-  for (const ch of String(text)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
-  return h >>> 0;
-}
-
-// A spine's colour: the cover's own, or one made from the title for books without a cover.
-function spineColour(b) {
-  if (b.color) return b.color;
-  const h = hash(b.title) % 360;
-  return `hsl(${h} 32% 32%)`;
-}
-
-function readableOn(colour) {
-  const m = /^#([0-9a-f]{6})$/i.exec(colour || "");
-  if (!m) return "#f3ece3";
-  const n = parseInt(m[1], 16);
-  const [r, g, b] = [n >> 16, (n >> 8) & 255, n & 255];
-  return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? "#1b140e" : "#f3ece3";
 }
 
 // Thicker for longer books: pages when Loft knows them, else the file's size.
@@ -47,16 +27,61 @@ function thickness(b) {
 
 const number = (i) => (i == null ? "" : String(i).replace(/\.0$/, ""));
 
+// A bound spine: cloth in the cover's main colour, two ribs, and the title on a label in its second.
 function spineHTML(b, inSeries = false) {
-  const c = spineColour(b);
+  const { c, label, letter, trim } = spineColours(b);
   const tall = 84 + (hash(b.id) % 15);  // a real shelf is never all one height
   const reading = b.progress && !b.progress.finished;
   return `<button type="button" class="spine${reading ? " is-reading" : ""}" data-book="${b.id}" aria-expanded="false"
-      style="--c:${c};--ink:${readableOn(c)};--w:${thickness(b)}px;--tall:${tall}%"
+      style="--c:${esc(c)};--label:${esc(label)};--letter:${letter};--trim:${trim};--w:${thickness(b)}px;--tall:${tall}%"
       aria-label="${esc(b.title)}${b.authors.length ? `, by ${esc(authorLine(b.authors))}` : ""}${reading ? ", reading" : ""}">
+    <span class="spine-rib spine-rib-top"></span><span class="spine-rib spine-rib-foot"></span>
+    <span class="spine-orn" aria-hidden="true">✦</span>
+    <span class="spine-label"></span>
     <span class="spine-title">${esc(spineTitle(b, inSeries))}</span>
     ${b.series_index ? `<span class="spine-no">${esc(number(b.series_index))}</span>` : ""}
   </button>`;
+}
+
+// Every title at the largest size at which it fits its label. Sizes come from one layout read (a
+// spine's height, so the row's) and a canvas, so a long shelf costs no extra layout.
+const LABEL_TOP = 0.15, LABEL_FOOT = 0.18;
+const FONT = "Literata";
+let pen = null;
+// Measured at the size itself, not scaled: Literata's letters are wider at small (optical) sizes.
+const textWidths = new Map();
+function measure(text, size) {
+  const key = `${size} ${text}`;
+  let w = textWidths.get(key);
+  if (w === undefined) {
+    pen ||= document.createElement("canvas").getContext("2d");
+    pen.font = `600 ${size}px ${FONT}`;
+    w = pen.measureText(text).width;
+    textWidths.set(key, w);
+  }
+  return w;
+}
+
+async function fitSpines(main) {
+  const spines = [...main.querySelectorAll(".spine")];
+  if (!spines.length) return;
+  try {
+    await document.fonts.load(`600 12px ${FONT}`);
+    await document.fonts.ready;
+  } catch { /* measured with whatever font there is */ }
+  if (!spines[0].isConnected) return;
+  const tall = (s) => parseFloat(s.style.getPropertyValue("--tall")) / 100;
+  const row = spines[0].offsetHeight / tall(spines[0]);
+  if (!row) return;
+  textWidths.clear();  // the font may have arrived since the last fitting
+  for (const s of spines) {
+    const t = s.querySelector(".spine-title");
+    const width = parseFloat(s.style.getPropertyValue("--w"));
+    const { size, lines, fits } = fitTitle(t.textContent, row * tall(s) * (1 - LABEL_TOP - LABEL_FOOT), width, measure);
+    const block = (fits ? lines : 1) * size * LINE_HEIGHT;  // a title that can't fit: one line, cut short
+    t.style.setProperty("--fs", `${size}px`);
+    Object.assign(t.style, { width: `${block}px`, left: `${(width - block) / 2}px`, right: "auto", whiteSpace: fits ? "" : "nowrap" });
+  }
 }
 
 function faceHTML(b) {
@@ -159,6 +184,13 @@ export async function renderStacks(main, params) {
       : `<div class="empty"><p>The shelves are empty.</p><a class="btn" href="#/add">Add books</a></div>`}
   </section>`;
 
+  const phone = matchMedia("(max-width: 700px)");  // where the rows are shorter
+  const refit = () => fitSpines(main);
+  if (state.view !== "covers") {
+    fitSpines(main);
+    phone.addEventListener("change", refit);
+  }
+
   const books = new Map(data.cases.flatMap((c) => c.books).map((b) => [String(b.id), b]));
   main.querySelectorAll("[data-by]").forEach((b) => b.addEventListener("click", () => go({ by: b.dataset.by })));
   main.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => go({ view: b.dataset.view })));
@@ -194,5 +226,8 @@ export async function renderStacks(main, params) {
   });
   const onKey = (e) => { if (e.key === "Escape") putBack(); };
   document.addEventListener("keydown", onKey);
-  window.addEventListener("hashchange", () => document.removeEventListener("keydown", onKey), { once: true });
+  window.addEventListener("hashchange", () => {
+    document.removeEventListener("keydown", onKey);
+    phone.removeEventListener("change", refit);
+  }, { once: true });
 }

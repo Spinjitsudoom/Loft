@@ -18,7 +18,7 @@ import time
 from PIL import Image
 
 from .config import Config
-from .covers import remove_cover, store_cover
+from .covers import remove_cover, spine_colours, store_cover
 from .db import session
 from .scanner import index_book, locked_fields, sort_title
 
@@ -172,9 +172,10 @@ def set_cover(cfg: Config, book_id: int, image: bytes) -> None:
         colour = store_cover(cfg, book_id, image)
     except Exception:
         raise ValueError("That isn’t a picture Loft can use (JPEG, PNG, WebP or GIF, up to 20 MB)") from None
+    spine = spine_colours(cfg, book_id)
     with session(cfg.db_path) as con:
-        con.execute("UPDATE books SET has_cover = 1, cover_color = ?, updated_at = ?, locked = ? WHERE id = ?",
-                    (colour, time.time(), _lock(con, book_id, ["cover"]), book_id))
+        con.execute("UPDATE books SET has_cover = 1, cover_color = ?, spine_colors = ?, updated_at = ?, locked = ? "
+                    "WHERE id = ?", (colour, spine, time.time(), _lock(con, book_id, ["cover"]), book_id))
 
 
 def clear_cover(cfg: Config, book_id: int) -> None:
@@ -182,5 +183,6 @@ def clear_cover(cfg: Config, book_id: int) -> None:
     with session(cfg.db_path) as con:
         _exists(con, book_id)
         remove_cover(cfg, book_id)
-        con.execute("UPDATE books SET has_cover = 0, cover_color = NULL, updated_at = ?, locked = ? WHERE id = ?",
+        con.execute("UPDATE books SET has_cover = 0, cover_color = NULL, spine_colors = NULL, updated_at = ?, "
+                    "locked = ? WHERE id = ?",
                     (time.time(), _lock(con, book_id, ["cover"]), book_id))

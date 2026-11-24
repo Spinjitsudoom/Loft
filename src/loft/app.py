@@ -24,7 +24,7 @@ from .config import Config
 from .covers import cover_path
 from .db import session
 from .sanitize import chapter_html
-from . import activity, autofill, backups, fixedpage, loans, ratings, updates
+from . import activity, autofill, backups, covers, fixedpage, loans, ratings, updates
 from .scanner import Scanner, last_report
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -171,6 +171,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             scanner.start()
             updater.start()
             backups.BackupKeeper(cfg).start()
+            covers.SpineFiller(cfg).start()
         yield
 
     updater = updates.UpdateChecker(cfg)

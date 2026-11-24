@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS books (
     tags         TEXT NOT NULL DEFAULT '[]',   -- JSON list
     calibre_id   INTEGER,
     cover_color  TEXT,
+    spine_colors TEXT,                         -- "#base #accent" from the stored cover, for the stacks' spines
     has_cover    INTEGER NOT NULL DEFAULT 0,
     added_at     REAL NOT NULL,
     updated_at   REAL NOT NULL,
@@ -269,6 +270,7 @@ MIGRATIONS = [
     ("books", "title_from_name", "INTEGER"),
     ("book_files", "layout", "TEXT"),
     ("book_files", "layout_rev", "INTEGER NOT NULL DEFAULT 0"),
+    ("books", "spine_colors", "TEXT"),
 ]
 
 
