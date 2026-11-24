@@ -34,11 +34,11 @@ def rate(cfg: Config, user_id: int, book_id: int, stars: int | None) -> dict:
             raise LookupError(book_id)
         if stars is None:
             if con.execute("DELETE FROM ratings WHERE user_id = ? AND book_id = ?", (user_id, book_id)).rowcount:
-                activity.record(con, "ratings.cleared", "cleared the rating", user_id=user_id, book_id=book_id)
+                activity.record(con, "ratings.cleared", "cleared their rating of", user_id=user_id, book_id=book_id)
         else:
             con.execute("INSERT INTO ratings(user_id, book_id, stars, rated_at) VALUES (?, ?, ?, ?) "
                         "ON CONFLICT(user_id, book_id) DO UPDATE SET stars = excluded.stars, rated_at = excluded.rated_at",
                         (user_id, book_id, stars, time.time()))
-            activity.record(con, "ratings.rated", f"rated it {'★' * stars}{'☆' * (5 - stars)}", user_id=user_id,
-                            book_id=book_id, details={"stars": stars})
+            activity.record(con, "ratings.rated", "rated", user_id=user_id, book_id=book_id,
+                            details={"stars": stars, "after": "★" * stars + "☆" * (5 - stars)})
         return summary(con, book_id, user_id)

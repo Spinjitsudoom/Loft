@@ -93,7 +93,7 @@ def test_rating_is_logged(cfg, add, ann):
     bid = add("Tide Line")
     ratings.rate(cfg, ann.id, bid, 4)
     e = activity.listing(cfg)["entries"][0]
-    assert (e["kind"], e["text"], e["details"]) == ("ratings.rated", "rated it ★★★★☆", {"stars": 4})
+    assert (e["kind"], e["text"], e["details"]) == ("ratings.rated", "rated", {"stars": 4, "after": "★★★★☆"})
     assert e["user"]["name"] == "ann" and e["book"]["title"] == "Tide Line"
     ratings.rate(cfg, ann.id, bid, None)
     e = activity.listing(cfg)["entries"][0]

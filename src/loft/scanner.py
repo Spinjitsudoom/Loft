@@ -361,11 +361,11 @@ def _log_scan(con: sqlite3.Connection, report: dict, added: list[tuple[int, str]
     thousands), then how many more; and the scan itself, when it changed anything."""
     from .activity import record
 
-    for books, count, kind, text, more in ((added, report["added"], "books.added", "added (scan)", "added"),
-                                           (removed, report["removed"], "books.removed",
-                                            "removed (gone from the folder)", "removed")):
+    for books, count, kind, after, more in ((added, report["added"], "books.added", None, "added"),
+                                            (removed, report["removed"], "books.removed",
+                                             "(gone from the books folder)", "removed")):
         for book_id, title in books[:LOGGED_EACH]:
-            record(con, kind, text, book_id=book_id, book_title=title)
+            record(con, kind, more, book_id=book_id, book_title=title, details={"after": after} if after else None)
         rest = count - min(len(books), LOGGED_EACH)
         if rest > 0:
             record(con, kind, f"{more} {rest} more {'book' if rest == 1 else 'books'}")

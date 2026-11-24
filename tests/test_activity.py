@@ -141,18 +141,18 @@ def test_book_edits_name_the_fields(client, cfg):
     assert client.patch(f"/api/books/{tale}", json={"title": "Tale Retold", "tags": ["sea"]}).status_code == 200
     e = newest(cfg)
     assert (e["kind"], e["text"], e["user"]["name"], e["book"]["title"]) == \
-        ("books.edited", "edited the details", "admin", "Tale Retold")
+        ("books.edited", "edited the details of", "admin", "Tale Retold")
     assert e["details"] == {"fields": ["title", "tags"]}
 
     assert client.put(f"/api/books/{tale}/cover", content=png((1, 2, 3))).status_code == 200
     e = newest(cfg)
-    assert (e["kind"], e["text"], e["book"]["title"]) == ("books.cover", "changed the cover", "Tale Retold")
+    assert (e["kind"], e["text"], e["book"]["title"]) == ("books.cover", "changed the cover of", "Tale Retold")
     assert client.delete(f"/api/books/{tale}/cover").status_code == 200
-    assert (newest(cfg)["kind"], newest(cfg)["text"]) == ("books.cover", "removed the cover")
+    assert (newest(cfg)["kind"], newest(cfg)["text"]) == ("books.cover", "removed the cover of")
 
     assert client.post(f"/api/books/{it}/merge", json={"other": tale}).status_code == 200
     e = newest(cfg)
-    assert (e["kind"], e["text"], e["book"]["title"]) == ("books.edited", "merged in another copy", "It")
+    assert (e["kind"], e["text"], e["book"]["title"]) == ("books.edited", "merged another copy into", "It")
     assert e["details"] == {"other": "Tale Retold"}
 
 
@@ -163,7 +163,7 @@ def test_uploads_and_suggestions_are_logged(client, cfg, tmp_path, make_epub):
     bid = client.post(f"/api/uploads/{token}/save", json={"details": {**DETAILS, "title": "Mine"}}).json()["book_id"]
     e = newest(cfg)
     assert (e["kind"], e["text"], e["user"]["name"], e["book"]) == \
-        ("books.added", "added (upload)", "admin", {"id": bid, "title": "Mine", "exists": True})
+        ("books.added", "uploaded", "admin", {"id": bid, "title": "Mine", "exists": True})
 
     sam = member(client)
     token = sam.put("/api/uploads?name=Fresh.epub", content=epub(tmp_path, make_epub, "Fresh")).json()["token"]
@@ -175,7 +175,7 @@ def test_uploads_and_suggestions_are_logged(client, cfg, tmp_path, make_epub):
     bid = client.post(f"/api/submissions/{sid}/approve", json={"details": {**DETAILS, "title": "Fresh"}}).json()["book_id"]
     e = newest(cfg)
     assert (e["kind"], e["text"], e["user"]["name"], e["book"]["id"], e["book"]["title"]) == \
-        ("books.added", "added (from sam’s suggestion)", "admin", bid, "Fresh")
+        ("books.added", "added", "admin", bid, "Fresh")
 
 
 def test_requests_and_comments_are_logged(client, cfg):
@@ -265,12 +265,12 @@ def test_filling_in_and_undoing_are_logged(client, cfg, monkeypatch):
     assert autofill.fill_book(cfg, tale) == "filled"
     e = newest(cfg)
     assert (e["kind"], e["user"], e["book"]["title"]) == ("books.filled", None, "Tale")
-    assert e["text"] == "filled in tags, description automatically"
+    assert e["text"] == "filled in the details of" and e["details"]["fields"] == ["tags", "description"]
     assert e["details"] == {"fields": ["tags", "description"]}
     assert client.post(f"/api/autofill/{tale}/undo").status_code == 200
     e = newest(cfg)
     assert (e["kind"], e["text"], e["user"]["name"], e["book"]["title"]) == \
-        ("books.unfilled", "undid the automatic details", "admin", "Tale")
+        ("books.unfilled", "undid the automatic details of", "admin", "Tale")
 
 
 def test_a_big_scan_logs_50_books_then_a_summary(cfg, make_pdf):
@@ -282,7 +282,7 @@ def test_a_big_scan_logs_50_books_then_a_summary(cfg, make_pdf):
     assert log[0]["kind"] == "loft.scan" and log[0]["user"] is None and log[0]["text"] == "scanned the library"
     assert log[0]["details"] == {"added": 60, "updated": 0, "removed": 0}
     added = [e for e in log if e["kind"] == "books.added"]
-    assert len([e for e in added if e["book"]]) == 50 and all(e["text"] == "added (scan)" for e in added if e["book"])
+    assert len([e for e in added if e["book"]]) == 50 and all(e["text"] == "added" for e in added if e["book"])
     assert [e["text"] for e in added if not e["book"]] == ["added 10 more books"]
     assert len(log) == 52
 
@@ -295,7 +295,7 @@ def test_a_big_scan_logs_50_books_then_a_summary(cfg, make_pdf):
     assert len([e for e in removed if e["book"]]) == 50
     assert [e["text"] for e in removed if not e["book"]] == ["removed 5 more books"]
     gone = next(e for e in removed if e["book"])
-    assert gone["text"] == "removed (gone from the folder)" and gone["book"]["title"].startswith("Book ")
+    assert (gone["text"], gone["details"]["after"]) == ("removed", "(gone from the books folder)") and gone["book"]["title"].startswith("Book ")
     assert not gone["book"]["exists"]
 
 

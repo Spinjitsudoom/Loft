@@ -361,10 +361,11 @@ input:not([type="search"]):focus { outline: none; border-color: var(--brass); }
 .reader-where:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
 /* Go to a page: the number box that takes the place of "Page 12 of 340". */
 .reader-jump {
-  flex: none; width: 6.5em; min-height: 32px; padding: 0 10px; font: inherit; font-size: 14px; text-align: right;
+  flex: none; width: 4.5em; min-height: 32px; padding: 0 10px; font: inherit; font-size: 14px; text-align: right;
   font-variant-numeric: tabular-nums; color: var(--r-ink); background: transparent;
   border: 1px solid var(--brass); border-radius: 6px;
 }
+.reader-jump-of { flex: none; margin-left: -8px; font-size: 14px; color: var(--r-muted); font-variant-numeric: tabular-nums; }
 .reader-jump:focus { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--brass) 35%, transparent); }
 /* At the end of a book: "How was it?" */
 .reader-rate {
@@ -374,6 +375,7 @@ input:not([type="search"]):focus { outline: none; border-color: var(--brass); }
   box-shadow: 0 10px 30px rgba(0, 0, 0, .35); backdrop-filter: blur(10px); font: 500 15px/1.2 var(--serif);
 }
 .reader-rate > span:first-child { white-space: nowrap; }
+.reader-rate .icon-btn { color: var(--r-ink); }
 
 /* Stars: a rating from 1 to 5. */
 .stars { display: inline-flex; gap: 2px; }
@@ -1193,8 +1195,9 @@ body.arranging { overflow: hidden; }
 .act-list { list-style: none; margin: 0 0 20px; padding: 0; }
 .act-day h2 { margin: 22px 0 8px; font: 600 15px/1.2 var(--sans); color: var(--muted); letter-spacing: .01em; }
 .act-day:first-child h2 { margin-top: 0; }
-.act-entry { display: grid; grid-template-columns: 3.6em minmax(0, 1fr); gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 14px; line-height: 1.45; }
-.act-entry time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.act-entry { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 14px; line-height: 1.45; }
+.act-entry time { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 3.2em; }
+.act-after { color: var(--muted); }
 .act-entry > span { overflow-wrap: anywhere; }
 .act-who { font-weight: 600; color: var(--ink); }
 .act-who.is-loft { color: var(--brass); }

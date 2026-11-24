@@ -70,7 +70,7 @@ def test_reading_checks_out_and_the_last_page_returns(cfg, add, ann):
     read(cfg, ann, book, 9)
     [loan] = rows(cfg, ann, book)
     assert loan["how"] == "finished" and loan["returned_at"] is not None
-    assert [(e["kind"], e["text"]) for e in loan_entries(cfg)] == [("loans.returned", "returned (finished)"),
+    assert [(e["kind"], e["text"]) for e in loan_entries(cfg)] == [("loans.returned", "returned"),
                                                                   ("loans.out", "checked out")]
     assert loan_for(cfg, ann, book) == {"mine": None, "others": []}
 
@@ -106,7 +106,7 @@ def test_thirty_quiet_days_return_it_as_abandoned(cfg, add, ann):
     [loan] = rows(cfg)
     assert loan["how"] == "abandoned" and loan["returned_at"] == t + MONTH
     entry = loan_entries(cfg)[0]
-    assert (entry["kind"], entry["text"], entry["at"]) == ("loans.returned", "returned (abandoned)", t + MONTH)
+    assert (entry["kind"], entry["text"], entry["at"]) == ("loans.returned", "returned", t + MONTH)
     assert settle(cfg, None, t + 2 * MONTH) == 0                 # once
 
 
@@ -147,7 +147,7 @@ def test_return_early_keeps_the_place_and_status(cfg, add, ann):
     assert reading.get_progress(cfg, ann.id, book) == place and status(cfg, ann, book) == was == "reading"
     [loan] = rows(cfg)
     assert loan["how"] == "returned"
-    assert loan_entries(cfg)[0]["text"] == "returned early"
+    assert loan_entries(cfg)[0]["details"] == {"how": "returned", "after": "(early)"}
     assert loans.give_back(cfg, ann.id, book) == {"mine": None, "others": []}   # nothing out: nothing logged
     assert len(loan_entries(cfg)) == 2
     with pytest.raises(LookupError):

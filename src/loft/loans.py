@@ -18,7 +18,7 @@ from . import activity, statuses
 from .config import Config
 from .db import session
 
-HOWS = {"finished": "returned (finished)", "abandoned": "returned (abandoned)", "returned": "returned early"}
+HOWS = {"finished": "(finished)", "abandoned": "(abandoned: 30 days unread)", "returned": "(early)"}
 FILLED_IN = "loans_filled_in"
 
 
@@ -40,7 +40,8 @@ def back(con, user_id: int, book_id: int, how: str, at: float) -> bool:
                          "WHERE user_id = ? AND book_id = ? AND returned_at IS NULL",
                          (at, how, user_id, book_id)).rowcount > 0
     if closed:
-        activity.record(con, "loans.returned", HOWS[how], user_id=user_id, book_id=book_id, at=at)
+        activity.record(con, "loans.returned", "returned", user_id=user_id, book_id=book_id, at=at,
+                        details={"how": how, "after": HOWS[how]})
     return closed
 
 

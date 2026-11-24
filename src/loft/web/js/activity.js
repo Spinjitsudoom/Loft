@@ -33,7 +33,8 @@ function what(e) {
     : ` <span class="act-gone">${esc(e.book.title)}</span>`) : "";
   const fields = e.details && Array.isArray(e.details.fields) && e.details.fields.length
     ? ` <span class="muted">(${esc(e.details.fields.join(", "))})</span>` : "";
-  return `${esc(e.text)}${book}${fields}`;
+  const after = e.details && e.details.after ? ` <span class="act-after">${esc(e.details.after)}</span>` : "";
+  return `${esc(e.text)}${book}${after}${fields}`;
 }
 
 function entriesHTML(entries, lastDay) {

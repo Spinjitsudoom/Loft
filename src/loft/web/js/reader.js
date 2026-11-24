@@ -351,8 +351,10 @@ export class Reader {
     Object.assign(box, { className: "reader-jump", type: "text", inputMode: "numeric", value: String(this.page + 1) });
     box.setAttribute("aria-label", `Go to ${this.jumpUnit()} (1 to ${this.count})`);
     box.setAttribute("enterkeyhint", "go");
+    const of = document.createElement("span");
+    Object.assign(of, { className: "reader-jump-of", textContent: `of ${this.count}` });
     where.hidden = true;
-    where.after(box);
+    where.after(box, of);
     box.focus();
     box.select();
     let done = false;
@@ -361,6 +363,7 @@ export class Reader {
       done = true;
       const i = go ? targetPage(box.value, this.count) : null;
       box.remove();
+      of.remove();
       where.hidden = false;
       if (i !== null && i !== this.page) this.goTo(i);
       else if (go) where.focus();

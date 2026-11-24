@@ -292,7 +292,7 @@ def fill_book(cfg: Config, book_id: int) -> str:
         return "complete"
     after = {**patch, **({"cover": cover_colour} if "cover" in filled else {})}
     _record(cfg, book_id, "filled", tries=tries + 1, sources=sources, filled=filled, previous=previous, after=after)
-    activity.note(cfg, "books.filled", f"filled in {', '.join(filled)} automatically", book_id=book_id,
+    activity.note(cfg, "books.filled", "filled in the details of", book_id=book_id,
                   details={"fields": filled})
     return "filled"
 
@@ -337,7 +337,7 @@ def undo(cfg: Config, book_id: int, by=None) -> None:
                     (*columns.values(), book_id))
         index_book(con, book_id)
         con.execute("UPDATE autofill SET state = 'undone', at = ? WHERE book_id = ?", (time.time(), book_id))
-        activity.record(con, "books.unfilled", "undid the automatic details", book_id=book_id,
+        activity.record(con, "books.unfilled", "undid the automatic details of", book_id=book_id,
                         user_id=by.id if by else None, user_name=by.username if by else "")
 
 

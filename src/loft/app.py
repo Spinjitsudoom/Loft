@@ -514,7 +514,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             raise HTTPException(400, str(e))
         fields = [k for k in editing.FIELDS if k in patch]
         if fields:
-            activity.note(cfg, "books.edited", "edited the details", user_id=user.id, user_name=user.username,
+            activity.note(cfg, "books.edited", "edited the details of", user_id=user.id, user_name=user.username,
                           book_id=book_id, details={"fields": fields})
         return _edited(book_id, user)
 
@@ -535,7 +535,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             raise HTTPException(404, "No such book")
         except ValueError as e:
             raise HTTPException(400, str(e))
-        await run_in_threadpool(_cover_logged, user, book_id, "changed the cover")
+        await run_in_threadpool(_cover_logged, user, book_id, "changed the cover of")
         return await run_in_threadpool(_edited, book_id, user)
 
     def _cover_logged(user: User, book_id: int, text: str) -> None:
@@ -547,7 +547,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             editing.clear_cover(cfg, book_id)
         except LookupError:
             raise HTTPException(404, "No such book")
-        _cover_logged(user, book_id, "removed the cover")
+        _cover_logged(user, book_id, "removed the cover of")
         return _edited(book_id, user)
 
     def _lookup(call, *args, **kwargs):
@@ -577,7 +577,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             editing.set_cover(cfg, book_id, image)
         except ValueError as e:
             raise HTTPException(400, str(e))
-        _cover_logged(user, book_id, "changed the cover")
+        _cover_logged(user, book_id, "changed the cover of")
         return _edited(book_id, user)
 
     # ---------- adding books ----------
@@ -627,7 +627,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             raise HTTPException(502, str(e))
         except ValueError as e:
             raise HTTPException(400, str(e))
-        activity.note(cfg, "books.added", "added (upload)", user_id=user.id, user_name=user.username, book_id=new)
+        activity.note(cfg, "books.added", "uploaded", user_id=user.id, user_name=user.username, book_id=new)
         return {"book_id": new}
 
     @app.post("/api/uploads/{token}/submit")
@@ -676,8 +676,8 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
         with activity.writing(cfg) as con:
             by = con.execute("SELECT COALESCE(u.username, 'someone') FROM submissions s "
                              "LEFT JOIN users u ON u.id = s.user_id WHERE s.id = ?", (sub_id,)).fetchone()[0]
-            activity.record(con, "books.added", f"added (from {by}’s suggestion)", user_id=me.id,
-                            user_name=me.username, book_id=new)
+            activity.record(con, "books.added", "added", user_id=me.id, user_name=me.username, book_id=new,
+                            details={"after": f"(suggested by {by})"})
         return {"book_id": new}
 
     @app.post("/api/submissions/{sub_id}/decline")
@@ -874,7 +874,7 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             raise HTTPException(404, "No such book")
         except ValueError as e:
             raise HTTPException(400, str(e))
-        activity.note(cfg, "books.edited", "merged in another copy", user_id=user.id, user_name=user.username,
+        activity.note(cfg, "books.edited", "merged another copy into", user_id=user.id, user_name=user.username,
                       book_id=book_id, details={"other": other["title"] if other else ""})
         return _edited(book_id, user)
 
