@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The stacks' spines look bound: cloth, ribs and a title label, in two colours taken from each cover,
+  and the whole title fits (smaller, or on two or three lines). Existing books get their colours in
+  the background after updating.
+
 ## 0.1.8 (2026-11-23)
 
 - Windows: Restart to update (and Update in the tray's menu) installs the new version and starts

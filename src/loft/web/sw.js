@@ -1,11 +1,11 @@
 // Keeps Loft's own files on this device so the app opens with no connection, to read downloaded
 // books. Browsers only allow this over https (or on this computer). Never touches /api: books,
 // pages and the library always come from the server, or from downloads (offline.js).
-const CACHE = "loft-shell-v8";
+const CACHE = "loft-shell-v10";
 const SHELL = ["./", "style.css", "fonts/fonts.css", "fonts/literata.woff2", "fonts/literata-italic.woff2",
   "fonts/instrument-sans.woff2", "vendor/page-flip.browser.js", "manifest.webmanifest", "icons/icon.svg",
   ...["add", "admin", "api", "arrange", "backups", "book", "check", "cover", "downloads", "edit", "fill", "filled", "fixed", "fixedfit", "flow", "titles", "grid", "home",
-    "login", "main", "notifications", "offline", "requests", "discussion", "prefs", "reader", "settings", "shelfmenu", "stacks", "statusmenu", "trail", "updates", "whatsnew", "zoom"].map((n) => `js/${n}.js`)];
+    "login", "main", "notifications", "offline", "requests", "discussion", "prefs", "reader", "settings", "shelfmenu", "spines", "stacks", "statusmenu", "trail", "updates", "whatsnew", "zoom"].map((n) => `js/${n}.js`)];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
