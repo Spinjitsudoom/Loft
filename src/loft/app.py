@@ -15,7 +15,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StrictInt
 
 from . import auth, browse, statuses, check, discussion, editing, flowbooks, joining, libsettings, library, lookups, notifications, openlibrary, book_requests, submissions, pages, reading, settings, shelves, txt, uploads
 from .auth import User, admin_user, current_user
@@ -23,7 +23,7 @@ from .config import Config
 from .covers import cover_path
 from .db import session
 from .sanitize import chapter_html
-from . import activity, autofill, backups, fixedpage, updates
+from . import activity, autofill, backups, fixedpage, ratings, updates
 from .scanner import Scanner, last_report
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -122,6 +122,10 @@ class ArrangementIn(BaseModel):
 
 class StatusIn(BaseModel):
     status: str
+
+
+class RatingIn(BaseModel):
+    stars: StrictInt | None
 
 
 class ProgressIn(BaseModel):
@@ -958,6 +962,15 @@ def create_app(cfg: Config, scan_on_start: bool = True) -> FastAPI:
             return statuses.opened(cfg, user.id, book_id)
         except LookupError:
             raise HTTPException(404, "No such book")
+
+    @app.put("/api/books/{book_id}/rating")
+    def put_rating(book_id: int, body: RatingIn, user: User = Depends(current_user)):
+        try:
+            return ratings.rate(cfg, user.id, book_id, body.stars)
+        except LookupError:
+            raise HTTPException(404, "No such book")
+        except ValueError as e:
+            raise HTTPException(422, str(e))
 
     @app.put("/api/books/{book_id}/progress")
     def put_progress(book_id: int, body: ProgressIn, user: User = Depends(current_user)):

@@ -235,6 +235,16 @@ CREATE TABLE IF NOT EXISTS activity (
 );
 CREATE INDEX IF NOT EXISTS activity_at ON activity(at);
 CREATE INDEX IF NOT EXISTS activity_user ON activity(user_id, id);
+
+-- 0.2.0: ratings (ratings.py), one per person per book.
+CREATE TABLE IF NOT EXISTS ratings (
+    user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    book_id  INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    stars    INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5),
+    rated_at REAL NOT NULL,
+    PRIMARY KEY (user_id, book_id)
+);
+CREATE INDEX IF NOT EXISTS ratings_book ON ratings(book_id);
 """
 
 
